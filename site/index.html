@@ -71,7 +71,7 @@
         border-radius: 6px;
       }
       .wrap {
-        max-width: 1040px;
+        max-width: 1120px;
         margin: 0 auto;
         padding: 0 24px;
       }
@@ -80,7 +80,8 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        height: 64px;
+        height: 72px;
+        border-bottom: 1px solid var(--border);
       }
       .brand {
         display: flex;
@@ -95,6 +96,11 @@
         width: 28px;
         height: 28px;
       }
+      header nav {
+        display: flex;
+        align-items: center;
+        gap: 28px;
+      }
       header nav a {
         color: var(--muted);
         text-decoration: none;
@@ -103,17 +109,37 @@
       header nav a:hover {
         color: var(--text);
       }
+      header nav .nav-download {
+        padding: 8px 14px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        color: var(--text);
+        font-weight: 600;
+        transition: background 120ms ease;
+      }
+      header nav .nav-download:hover {
+        background: var(--surface);
+      }
 
       .hero {
         text-align: center;
-        padding: 72px 0 48px;
+        padding: 88px 0 48px;
+        background: radial-gradient(ellipse at 50% 0%, rgb(47 129 247 / 0.12), transparent 62%);
+      }
+      .eyebrow {
+        margin: 0 0 18px;
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
       }
       h1 {
         margin: 0 auto;
-        max-width: 14ch;
-        font-size: clamp(36px, 6vw, 60px);
+        max-width: 16ch;
+        font-size: clamp(40px, 6vw, 68px);
         line-height: 1.05;
-        letter-spacing: -0.025em;
+        letter-spacing: -0.045em;
         font-weight: 600;
       }
       h1,
@@ -122,34 +148,60 @@
         text-wrap: balance;
       }
       .lede {
-        margin: 20px auto 0;
-        max-width: 36ch;
-        font-size: 19px;
+        margin: 18px auto 0;
+        max-width: 42ch;
+        font-size: 20px;
         color: var(--muted);
       }
 
-      .cta {
-        margin-top: 36px;
+      .cta-card {
+        max-width: 620px;
+        margin: 36px auto 0;
+        padding: 24px;
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        background: color-mix(in srgb, var(--surface) 82%, transparent);
+        box-shadow: 0 16px 48px rgb(1 4 9 / 0.12);
+      }
+      .cta-card h2 {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 600;
+        letter-spacing: -0.015em;
+      }
+      .cta-card > p {
+        margin: 4px 0 18px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .cta-actions {
         display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 12px;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 10px;
       }
       .button {
         display: inline-flex;
         align-items: center;
+        justify-content: center;
         gap: 10px;
-        height: 52px;
-        padding: 0 28px;
-        border-radius: 10px;
+        min-height: 48px;
+        padding: 0 22px;
+        border: 1px solid transparent;
+        border-radius: 999px;
         background: var(--accent-emphasis);
         color: var(--on-emphasis);
         font-weight: 600;
-        font-size: 17px;
+        font-size: 15px;
         text-decoration: none;
         transition:
           filter 120ms ease,
           transform 100ms ease;
+      }
+      .button-secondary {
+        border-color: var(--border);
+        background: var(--elevated);
+        color: var(--text);
       }
       .button:hover {
         filter: brightness(1.1);
@@ -162,7 +214,8 @@
         height: 20px;
       }
       .meta {
-        font-size: 14px;
+        margin: 14px 0 0;
+        font-size: 13px;
         color: var(--muted);
       }
       .meta a {
@@ -191,39 +244,69 @@
       .features {
         display: grid;
         grid-template-columns: repeat(3, 1fr);
-        gap: 32px;
-        padding: 88px 0 24px;
+        gap: 14px;
+        padding: 72px 0 24px;
       }
-      .features h2 {
+      .section-heading {
+        margin: 0 auto 28px;
+        max-width: 34ch;
+        text-align: center;
+      }
+      .section-heading h2 {
+        margin: 0;
+        font-size: clamp(24px, 3vw, 32px);
+        letter-spacing: -0.03em;
+      }
+      .section-heading p {
+        margin: 8px 0 0;
+        color: var(--muted);
+      }
+      .feature {
+        padding: 24px;
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        background: var(--surface);
+      }
+      .feature h3 {
         margin: 0 0 6px;
-        font-size: 18px;
+        font-size: 17px;
         font-weight: 600;
         letter-spacing: -0.01em;
       }
-      .features p {
+      .feature p {
         margin: 0;
         color: var(--muted);
       }
-      .features svg {
-        width: 22px;
-        height: 22px;
+      .feature svg {
+        width: 24px;
+        height: 24px;
         color: var(--accent);
-        margin-bottom: 12px;
+        margin-bottom: 16px;
       }
 
       .formats {
-        margin: 40px 0 0;
-        padding: 0;
+        margin: 32px 0 0;
+        padding: 20px 24px;
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        background: var(--surface);
         list-style: none;
         display: flex;
         flex-wrap: wrap;
         justify-content: center;
-        gap: 8px;
+        align-items: center;
+        gap: 10px;
+      }
+      .formats-label {
+        margin-right: 4px;
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 600;
       }
       .formats li {
         border: 1px solid var(--border);
         border-radius: 999px;
-        padding: 2px 12px;
+        padding: 4px 12px;
         font-size: 14px;
         color: var(--muted);
       }
@@ -231,12 +314,17 @@
       .closing {
         text-align: center;
         padding: 88px 0 96px;
+        border-top: 1px solid var(--border);
       }
       .closing h2 {
         margin: 0;
         font-size: clamp(26px, 4vw, 36px);
         letter-spacing: -0.02em;
         font-weight: 600;
+      }
+      .closing > p {
+        margin: 10px 0 22px;
+        color: var(--muted);
       }
 
       footer {
@@ -261,13 +349,48 @@
       }
 
       @media (max-width: 720px) {
+        header {
+          height: 64px;
+        }
+        header nav {
+          gap: 14px;
+        }
+        header nav a:first-child {
+          display: none;
+        }
         .hero {
-          padding-top: 40px;
+          padding-top: 64px;
+        }
+        .cta-card {
+          padding: 20px 16px;
         }
         .features {
           grid-template-columns: 1fr;
-          gap: 28px;
-          padding-top: 64px;
+          gap: 12px;
+          padding-top: 56px;
+        }
+        .feature {
+          padding: 20px;
+        }
+        .formats {
+          padding: 18px 14px;
+          gap: 8px;
+        }
+        .formats-label {
+          flex-basis: 100%;
+          text-align: center;
+        }
+      }
+      @media (max-width: 420px) {
+        .wrap {
+          padding-right: 18px;
+          padding-left: 18px;
+        }
+        .cta-actions {
+          flex-direction: column;
+        }
+        .cta-actions .button {
+          width: 100%;
         }
       }
       @media (prefers-reduced-motion: reduce) {
@@ -288,25 +411,36 @@
         </svg>
         Prancha
       </a>
-      <nav aria-label="Atalhos da página"><a href="#baixar">Baixar</a></nav>
+      <nav aria-label="Atalhos da página">
+        <a href="#recursos">Recursos</a>
+        <a class="nav-download" href="#baixar">Baixar</a>
+      </nav>
     </header>
 
     <main>
       <section class="hero wrap" id="baixar">
+        <p class="eyebrow">Uma nova casa para sua coleção</p>
         <h1>Seus quadrinhos, num só lugar.</h1>
         <p class="lede">Organize, leia e retome de onde parou. Sem conta e sem internet.</p>
-        <div class="cta">
-          <a class="button" href="downloads/Prancha_0.1.0_x64-setup.exe" download>
+        <div class="cta-card">
+          <h2>Comece sua próxima leitura</h2>
+          <p>Instale em instantes e tenha sua coleção sempre à mão.</p>
+          <div class="cta-actions">
+            <a class="button" href="downloads/Prancha_0.1.0_x64-setup.exe" download>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M12 3v12" />
               <path d="m7 10 5 5 5-5" />
               <path d="M5 21h14" />
             </svg>
-            Baixar para Windows
-          </a>
+              Baixar para Windows
+            </a>
+            <a class="button button-secondary" href="downloads/Prancha_0.1.0_x64_pt-BR.msi" download>
+              Baixar versão MSI
+            </a>
+          </div>
           <p class="meta">
             Gratuito · Windows 10 e 11 (64 bits) · 6,8 MB ·
-            <a href="downloads/Prancha_0.1.0_x64_pt-BR.msi" download>versão MSI</a>
+            Código aberto (MIT)
           </p>
         </div>
         <figure class="shot">
@@ -314,39 +448,44 @@
             <source srcset="assets/biblioteca-claro.png" media="(prefers-color-scheme: light)" />
             <img
             src="assets/biblioteca.png"
-            width="1280"
-            height="820"
+            width="1528"
+            height="849"
             alt="Biblioteca do Prancha com capas de quadrinhos e o progresso de leitura de cada um"
           />
           </picture>
         </figure>
       </section>
 
-      <section class="wrap" aria-label="Recursos">
+      <section class="wrap" id="recursos" aria-label="Recursos">
+        <div class="section-heading">
+          <h2>Feito para você mergulhar na leitura.</h2>
+          <p>Menos tempo organizando. Mais tempo virando páginas.</p>
+        </div>
         <div class="features">
-          <div>
+          <article class="feature">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <rect x="3" y="3" width="7" height="9" rx="1" /><rect x="14" y="3" width="7" height="5" rx="1" /><rect x="14" y="12" width="7" height="9" rx="1" /><rect x="3" y="16" width="7" height="5" rx="1" />
             </svg>
-            <h2>Organiza sozinho</h2>
+            <h3>Organiza sozinho</h3>
             <p>Capas geradas na hora, busca, favoritos e coleções.</p>
-          </div>
-          <div>
+          </article>
+          <article class="feature">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M2 4h7a3 3 0 0 1 3 3v14a2 2 0 0 0-2-2H2z" /><path d="M22 4h-7a3 3 0 0 0-3 3v14a2 2 0 0 1 2-2h8z" />
             </svg>
-            <h2>Lê do seu jeito</h2>
+            <h3>Lê do seu jeito</h3>
             <p>Página única, dupla ou rolagem contínua. Modo mangá.</p>
-          </div>
-          <div>
+          </article>
+          <article class="feature">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /><path d="M12 7v5l3 2" />
             </svg>
-            <h2>Lembra onde parou</h2>
+            <h3>Lembra onde parou</h3>
             <p>Feche quando quiser. Na volta, a página certa está lá.</p>
-          </div>
+          </article>
         </div>
         <ul class="formats" aria-label="Formatos aceitos">
+          <li class="formats-label">Seus formatos favoritos</li>
           <li>CBZ</li>
           <li>CBR</li>
           <li>CB7</li>
@@ -358,8 +497,10 @@
 
       <section class="closing wrap" aria-label="Baixar">
         <h2>Pronto para ler?</h2>
-        <div class="cta">
+        <p>Sua próxima história está a um clique.</p>
+        <div class="cta-actions">
           <a class="button" href="downloads/Prancha_0.1.0_x64-setup.exe" download>Baixar o Prancha</a>
+          <a class="button button-secondary" href="downloads/Prancha_0.1.0_x64_pt-BR.msi" download>Escolher versão MSI</a>
         </div>
       </section>
     </main>

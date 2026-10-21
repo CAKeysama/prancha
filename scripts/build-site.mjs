@@ -29,8 +29,10 @@ for (const w of ["400", "600"]) {
   copy(`node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-${w}-normal.woff2`, `fonts/ibm-plex-sans-${w}.woff2`);
 }
 copy("assets/app-icon.svg", "assets/favicon.svg");
-copy("artifacts/screenshots/06-biblioteca-capas-e-progresso.png", "assets/biblioteca.png");
-copy("artifacts/screenshots/11b-biblioteca-tema-claro.png", "assets/biblioteca-claro.png");
+// As imagens de vitrine podem ser trocadas à mão: só usa as capturas dos testes se ainda não existirem.
+const copyIfMissing = (from, to) => existsSync(join(site, to)) || copy(from, to);
+copyIfMissing("artifacts/screenshots/06-biblioteca-capas-e-progresso.png", "assets/biblioteca.png");
+copyIfMissing("artifacts/screenshots/11b-biblioteca-tema-claro.png", "assets/biblioteca-claro.png");
 
 const sha = (f) => createHash("sha256").update(readFileSync(f)).digest("hex");
 const exeFile = join(site, "downloads", exe);
