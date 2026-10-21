@@ -1,0 +1,197 @@
+@import "tailwindcss";
+
+/*
+ * Tokens de design do Prancha (base: GitHub Primer).
+ * Todas as cores da interface vêm daqui. Contrastes verificados em docs/ARCHITECTURE.md.
+ */
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --p-bg: #0d1117;
+  --p-surface: #161b22;
+  --p-elevated: #21262d;
+  --p-border: #30363d;
+  --p-border-control: #6e7681;
+  --p-text: #f0f6fc;
+  --p-muted: #8b949e;
+  --p-accent: #2f81f7;
+  --p-accent-fg: #58a6ff;
+  --p-accent-emphasis: #1f6feb;
+  --p-accent-subtle: rgb(56 139 253 / 0.15);
+  --p-on-emphasis: #ffffff;
+  --p-success: #3fb950;
+  --p-success-subtle: rgb(46 160 67 / 0.15);
+  --p-attention: #d29922;
+  --p-attention-subtle: rgb(187 128 9 / 0.15);
+  --p-danger: #f85149;
+  --p-danger-emphasis: #da3633;
+  --p-danger-subtle: rgb(248 81 73 / 0.12);
+  --p-hover: rgb(177 186 196 / 0.12);
+  --p-active: rgb(177 186 196 / 0.2);
+  --p-overlay: rgb(1 4 9 / 0.72);
+  --p-shadow: 0 8px 24px rgb(1 4 9 / 0.6);
+  --p-reader-bg: #05070a;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --p-bg: #ffffff;
+  --p-surface: #f6f8fa;
+  --p-elevated: #ffffff;
+  --p-border: #d1d9e0;
+  --p-border-control: #818b98;
+  --p-text: #1f2328;
+  --p-muted: #59636e;
+  --p-accent: #0969da;
+  --p-accent-fg: #0969da;
+  --p-accent-emphasis: #0969da;
+  --p-accent-subtle: rgb(84 174 255 / 0.15);
+  --p-on-emphasis: #ffffff;
+  --p-success: #1a7f37;
+  --p-success-subtle: rgb(74 194 107 / 0.15);
+  --p-attention: #9a6700;
+  --p-attention-subtle: rgb(212 167 44 / 0.18);
+  --p-danger: #d1242f;
+  --p-danger-emphasis: #cf222e;
+  --p-danger-subtle: rgb(255 129 130 / 0.15);
+  --p-hover: rgb(208 215 222 / 0.32);
+  --p-active: rgb(208 215 222 / 0.48);
+  --p-overlay: rgb(31 35 40 / 0.5);
+  --p-shadow: 0 8px 24px rgb(66 74 83 / 0.2);
+  --p-reader-bg: #1b1f24;
+}
+
+@theme inline {
+  --color-bg: var(--p-bg);
+  --color-surface: var(--p-surface);
+  --color-elevated: var(--p-elevated);
+  --color-border: var(--p-border);
+  --color-border-control: var(--p-border-control);
+  --color-fg: var(--p-text);
+  --color-muted: var(--p-muted);
+  --color-accent: var(--p-accent);
+  --color-accent-fg: var(--p-accent-fg);
+  --color-accent-emphasis: var(--p-accent-emphasis);
+  --color-accent-subtle: var(--p-accent-subtle);
+  --color-on-emphasis: var(--p-on-emphasis);
+  --color-success: var(--p-success);
+  --color-success-subtle: var(--p-success-subtle);
+  --color-attention: var(--p-attention);
+  --color-attention-subtle: var(--p-attention-subtle);
+  --color-danger: var(--p-danger);
+  --color-danger-emphasis: var(--p-danger-emphasis);
+  --color-danger-subtle: var(--p-danger-subtle);
+  --color-hover: var(--p-hover);
+  --color-active: var(--p-active);
+  --color-overlay: var(--p-overlay);
+  --color-reader: var(--p-reader-bg);
+  --shadow-overlay: var(--p-shadow);
+  --font-sans: "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  /* Escala tipográfica pequena e consistente. */
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1.125rem;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 0.875rem;
+  --text-base--line-height: 1.375rem;
+  --text-lg: 1rem;
+  --text-lg--line-height: 1.5rem;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl: 1.5rem;
+  --text-2xl--line-height: 2rem;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    margin: 0;
+    background: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    line-height: var(--text-base--line-height);
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+    user-select: none;
+  }
+  /* Troca de tema discreta, sem mexer no layout. */
+  body,
+  .theme-transition {
+    transition:
+      background-color 160ms ease,
+      color 160ms ease,
+      border-color 160ms ease;
+  }
+  input,
+  textarea,
+  [contenteditable] {
+    user-select: text;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+  button {
+    cursor: default;
+  }
+  ::selection {
+    background: var(--color-accent-subtle);
+  }
+  * {
+    scrollbar-color: var(--color-border-control) transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@keyframes p-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.p-skeleton {
+  animation: p-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes p-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.p-enter {
+  animation: p-fade-in 140ms ease-out;
+}
+
+@keyframes p-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.p-spin {
+  animation: p-spin 0.9s linear infinite;
+}

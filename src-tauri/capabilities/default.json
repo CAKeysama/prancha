@@ -1,0 +1,16 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Permissões da janela principal. O frontend só acessa arquivos por comandos próprios do Prancha.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-set-fullscreen",
+    "core:window:allow-is-fullscreen",
+    "core:window:allow-set-theme",
+    "core:window:allow-set-title",
+    "opener:allow-reveal-item-in-dir",
+    "dialog:allow-message",
+    "dialog:allow-ask"
+  ]
+}

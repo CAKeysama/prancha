@@ -1,0 +1,11 @@
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/schemas/
+test-results/
+playwright-report/
+tests/.tmp/
+*.log
+.DS_Store
+.vscode/
+public/pdfjs/

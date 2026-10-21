@@ -1,0 +1,53 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Prancha",
+  "version": "0.1.0",
+  "identifier": "app.prancha.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Prancha",
+        "width": 1280,
+        "height": 820,
+        "minWidth": 720,
+        "minHeight": 520,
+        "center": true,
+        "backgroundColor": "#0D1117",
+        "dragDropEnabled": true,
+        "visible": true
+      }
+    ],
+    "security": {
+      "csp": {
+        "default-src": "'self'",
+        "img-src": "'self' data: blob: http://prancha.localhost prancha:",
+        "connect-src": "'self' ipc: http://ipc.localhost http://prancha.localhost prancha:",
+        "style-src": "'self' 'unsafe-inline'",
+        "font-src": "'self' data:",
+        "worker-src": "'self' blob:",
+        "script-src": "'self' 'wasm-unsafe-eval'"
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "msi"],
+    "publisher": "Prancha",
+    "shortDescription": "Leitor e organizador de quadrinhos",
+    "longDescription": "Prancha organiza sua biblioteca local de quadrinhos, mangás e graphic novels (CBZ, CBR, CB7, CBT, PDF e pastas de imagens) e guarda o progresso de leitura.",
+    "category": "Utility",
+    "copyright": "© 2026 Prancha",
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico", "icons/icon.png"],
+    "windows": {
+      "nsis": { "languages": ["PortugueseBR"], "installMode": "currentUser" },
+      "wix": { "language": "pt-BR" }
+    }
+  }
+}
