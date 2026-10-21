@@ -3,7 +3,7 @@ import { EyeOff, Keyboard, RotateCcw, X } from "lucide-react";
 import { Button, IconButton } from "../../components/Button";
 import { ConfirmDialog, Dialog } from "../../components/Dialog";
 import { Kbd } from "../../components/Feedback";
-import { Segmented, Switch } from "../../components/Form";
+import { Segmented, Select, Switch } from "../../components/Form";
 import { cn } from "../../components/cn";
 import { FIT_LABELS, MODE_LABELS } from "../../domain/reader";
 import type { ControlsBehavior, FitMode, ReaderMode, ReadingDirection, WheelBehavior } from "../../domain/settings";
@@ -59,23 +59,22 @@ export function ReaderSettingsPanel({
   return (
     <SidePanel title="Configurações de leitura" onClose={onClose}>
       <div className="space-y-5">
-        <Segmented<ReaderMode>
-          label="Modo de página"
-          value={settings["reader.mode"]}
-          onChange={(v) => void update("reader.mode", v)}
-          size="sm"
-          options={(["single", "double", "vertical"] as ReaderMode[]).map((m) => ({ value: m, label: MODE_LABELS[m] }))}
-        />
-        <Segmented<ReadingDirection>
+        {/* Opções longas ficam num menu: só a escolha atual aparece. */}
+        <Select label="Modo de página" value={settings["reader.mode"]} onChange={(e) => void update("reader.mode", e.target.value as ReaderMode)}>
+          {(["single", "double", "vertical"] as ReaderMode[]).map((m) => (
+            <option key={m} value={m}>
+              {MODE_LABELS[m]}
+            </option>
+          ))}
+        </Select>
+        <Select
           label="Direção de leitura"
           value={settings["reader.direction"]}
-          onChange={(v) => void update("reader.direction", v)}
-          size="sm"
-          options={[
-            { value: "ltr", label: "Esquerda → direita" },
-            { value: "rtl", label: "Direita → esquerda (mangá)" },
-          ]}
-        />
+          onChange={(e) => void update("reader.direction", e.target.value as ReadingDirection)}
+        >
+          <option value="ltr">Esquerda → direita</option>
+          <option value="rtl">Direita → esquerda (mangá)</option>
+        </Select>
         <Segmented<FitMode>
           label="Ajuste da imagem"
           value={settings["reader.fit"]}
@@ -156,9 +155,11 @@ export function PageIndexPanel({
 }) {
   const [go, setGo] = useState("");
   const list = useRef<HTMLDivElement>(null);
+  // Centraliza a página atual só ao abrir; depois a rolagem é do usuário.
+  const [initialPage] = useState(() => current[0]);
   useEffect(() => {
-    list.current?.querySelector(`[data-index="${current[0]}"]`)?.scrollIntoView({ block: "center" });
-  }, [current]);
+    list.current?.querySelector(`[data-index="${initialPage}"]`)?.scrollIntoView({ block: "center" });
+  }, [initialPage]);
   const submit = () => {
     const n = Number(go);
     if (Number.isInteger(n) && n >= 1 && n <= count) {

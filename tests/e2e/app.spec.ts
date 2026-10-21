@@ -1,15 +1,15 @@
 // Testes E2E no executável real (backend Rust + WebView2). Apenas a escolha de caminho do
 // diálogo nativo é substituída (PRANCHA_E2E_PICK_FILE, só em builds de depuração); a importação,
 // o banco, as capas e a leitura são reais.
-import { cpSync, existsSync, renameSync, rmSync } from "node:fs";
+import { existsSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { FIXTURES, freshDataDir, launchApp, shot, type AppSession } from "./harness";
+import { FIXTURES, copyDir, freshDataDir, launchApp, shot, type AppSession } from "./harness";
 
 function copyFixtures(dataDir: string): { lib: string; errors: string } {
   const dest = join(dataDir, "..", `${dataDir.split(/[\\/]/).pop()}-arquivos`);
   rmSync(dest, { recursive: true, force: true });
-  cpSync(FIXTURES, dest, { recursive: true });
+  copyDir(FIXTURES, dest);
   return { lib: join(dest, "biblioteca"), errors: join(dest, "erros") };
 }
 
@@ -236,6 +236,32 @@ test.describe.serial("biblioteca, formatos e leitor", () => {
     // Mais uma HQ em andamento para a captura da biblioteca.
     await openReader(page, "Rio Vermelho 02");
     for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowRight");
+    await page.getByRole("button", { name: "Biblioteca" }).click();
+  });
+
+  test("índice de páginas respeita a rolagem do usuário e o painel usa menus", async () => {
+    const page = app.page;
+    await openReader(page, "O Farol de Papel");
+    await page.getByRole("button", { name: "Configurações de leitura" }).click();
+    const panel = page.getByRole("complementary", { name: "Configurações de leitura" });
+    await panel.getByLabel("Modo de página").selectOption("vertical");
+    await expect(panel.getByLabel("Direção de leitura")).toHaveValue("ltr");
+    await shot(page, "09d-leitor-configuracoes");
+    await panel.getByRole("button", { name: "Fechar configurações de leitura" }).click();
+    await page.keyboard.press("i");
+    const index = page.getByRole("complementary", { name: "Índice de páginas" });
+    const scroller = index.locator("div.overflow-y-auto");
+    await scroller.evaluate((el) => (el.scrollTop = el.scrollHeight));
+    const before = await scroller.evaluate((el) => el.scrollTop);
+    expect(before).toBeGreaterThan(0);
+    // Mover o mouse redesenha o leitor (controles); antes isso puxava a rolagem de volta.
+    for (let i = 0; i < 8; i++) await page.mouse.move(300 + i * 20, 300 + i * 10);
+    await page.waitForTimeout(600);
+    expect(await scroller.evaluate((el) => el.scrollTop)).toBe(before);
+    await index.getByRole("button", { name: "Fechar índice de páginas" }).click();
+    await page.getByRole("button", { name: "Configurações de leitura" }).click();
+    await panel.getByLabel("Modo de página").selectOption("single");
+    await panel.getByRole("button", { name: "Fechar configurações de leitura" }).click();
     await page.getByRole("button", { name: "Biblioteca" }).click();
   });
 

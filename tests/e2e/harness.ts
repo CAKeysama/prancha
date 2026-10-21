@@ -2,7 +2,7 @@
 // Cada sessão usa uma pasta de dados isolada; nada toca a biblioteca do usuário.
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { chromium, type Browser, type Page } from "@playwright/test";
 
@@ -28,6 +28,17 @@ export interface AppSession {
 }
 
 let portSeq = 9400 + Math.floor(Math.random() * 400);
+
+/** Cópia recursiva sem `fs.cpSync` (que falha no Node 22 em caminhos com "Á", ver scripts/copy-dir.mjs). */
+export function copyDir(from: string, to: string): void {
+  mkdirSync(to, { recursive: true });
+  for (const entry of readdirSync(from, { withFileTypes: true })) {
+    const src = join(from, entry.name);
+    const dest = join(to, entry.name);
+    if (entry.isDirectory()) copyDir(src, dest);
+    else if (entry.isFile()) copyFileSync(src, dest);
+  }
+}
 
 export function freshDataDir(name: string): string {
   const dir = join(ROOT, "tests", ".tmp", "data", name);
