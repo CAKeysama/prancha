@@ -10,3 +10,4 @@ tests/.tmp/
 .vscode/
 public/pdfjs/
 artifacts/installer/
+site/downloads/

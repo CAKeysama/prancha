@@ -16,6 +16,8 @@
     "e2e:build": "node scripts/build-e2e.mjs",
     "test:e2e": "playwright test",
     "licenses": "node scripts/generate-licenses.mjs",
+    "site:build": "node scripts/build-site.mjs",
+    "site:preview": "vite site --port 4321 --strictPort",
     "tauri": "tauri"
   },
   "dependencies": {

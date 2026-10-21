@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Prancha — leitor de quadrinhos para Windows</title>
+    <meta name="description" content="Organize e leia seus quadrinhos, mangás e graphic novels no Windows. Gratuito, sem conta e sem internet." />
+    <meta name="color-scheme" content="dark light" />
+    <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+    <style>
+      @font-face {
+        font-family: "IBM Plex Sans";
+        font-weight: 400;
+        font-display: swap;
+        src: url("fonts/ibm-plex-sans-400.woff2") format("woff2");
+      }
+      @font-face {
+        font-family: "IBM Plex Sans";
+        font-weight: 600;
+        font-display: swap;
+        src: url("fonts/ibm-plex-sans-600.woff2") format("woff2");
+      }
+
+      /* Mesmos tokens do aplicativo (src/styles/index.css). */
+      :root {
+        color-scheme: dark;
+        --bg: #0d1117;
+        --surface: #161b22;
+        --elevated: #21262d;
+        --border: #30363d;
+        --text: #f0f6fc;
+        --muted: #8b949e;
+        --accent: #2f81f7;
+        --accent-emphasis: #1f6feb;
+        --on-emphasis: #ffffff;
+        --success: #3fb950;
+        --shadow: 0 24px 64px rgb(1 4 9 / 0.65);
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          color-scheme: light;
+          --bg: #ffffff;
+          --surface: #f6f8fa;
+          --elevated: #ffffff;
+          --border: #d1d9e0;
+          --text: #1f2328;
+          --muted: #59636e;
+          --accent: #0969da;
+          --accent-emphasis: #0969da;
+          --success: #1a7f37;
+          --shadow: 0 24px 64px rgb(66 74 83 / 0.22);
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 400 16px/1.55 "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      a {
+        color: inherit;
+      }
+      :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 3px;
+        border-radius: 6px;
+      }
+      .wrap {
+        max-width: 1040px;
+        margin: 0 auto;
+        padding: 0 24px;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: 64px;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 600;
+        font-size: 18px;
+        letter-spacing: -0.01em;
+        text-decoration: none;
+      }
+      .brand svg {
+        width: 28px;
+        height: 28px;
+      }
+      header nav a {
+        color: var(--muted);
+        text-decoration: none;
+        font-size: 14px;
+      }
+      header nav a:hover {
+        color: var(--text);
+      }
+
+      .hero {
+        text-align: center;
+        padding: 72px 0 48px;
+      }
+      h1 {
+        margin: 0 auto;
+        max-width: 14ch;
+        font-size: clamp(36px, 6vw, 60px);
+        line-height: 1.05;
+        letter-spacing: -0.025em;
+        font-weight: 600;
+      }
+      h1,
+      .lede,
+      .closing h2 {
+        text-wrap: balance;
+      }
+      .lede {
+        margin: 20px auto 0;
+        max-width: 36ch;
+        font-size: 19px;
+        color: var(--muted);
+      }
+
+      .cta {
+        margin-top: 36px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+      }
+      .button {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        height: 52px;
+        padding: 0 28px;
+        border-radius: 10px;
+        background: var(--accent-emphasis);
+        color: var(--on-emphasis);
+        font-weight: 600;
+        font-size: 17px;
+        text-decoration: none;
+        transition:
+          filter 120ms ease,
+          transform 100ms ease;
+      }
+      .button:hover {
+        filter: brightness(1.1);
+      }
+      .button:active {
+        transform: scale(0.98);
+      }
+      .button svg {
+        width: 20px;
+        height: 20px;
+      }
+      .meta {
+        font-size: 14px;
+        color: var(--muted);
+      }
+      .meta a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+      .meta a:hover {
+        text-decoration: underline;
+      }
+
+      .shot {
+        margin: 56px auto 0;
+        max-width: 960px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        overflow: hidden;
+        background: var(--surface);
+        box-shadow: var(--shadow);
+      }
+      .shot img {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+
+      .features {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 32px;
+        padding: 88px 0 24px;
+      }
+      .features h2 {
+        margin: 0 0 6px;
+        font-size: 18px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+      .features p {
+        margin: 0;
+        color: var(--muted);
+      }
+      .features svg {
+        width: 22px;
+        height: 22px;
+        color: var(--accent);
+        margin-bottom: 12px;
+      }
+
+      .formats {
+        margin: 40px 0 0;
+        padding: 0;
+        list-style: none;
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 8px;
+      }
+      .formats li {
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 2px 12px;
+        font-size: 14px;
+        color: var(--muted);
+      }
+
+      .closing {
+        text-align: center;
+        padding: 88px 0 96px;
+      }
+      .closing h2 {
+        margin: 0;
+        font-size: clamp(26px, 4vw, 36px);
+        letter-spacing: -0.02em;
+        font-weight: 600;
+      }
+
+      footer {
+        border-top: 1px solid var(--border);
+        padding: 24px 0 40px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      footer .wrap {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      details summary {
+        cursor: pointer;
+      }
+      code {
+        font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+        font-size: 12px;
+        word-break: break-all;
+      }
+
+      @media (max-width: 720px) {
+        .hero {
+          padding-top: 40px;
+        }
+        .features {
+          grid-template-columns: 1fr;
+          gap: 28px;
+          padding-top: 64px;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .button {
+          transition: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="wrap">
+      <a class="brand" href="#" aria-label="Prancha, início">
+        <svg viewBox="0 0 1024 1024" aria-hidden="true">
+          <rect x="64" y="64" width="896" height="896" rx="200" fill="var(--accent-emphasis)" />
+          <rect x="232" y="224" width="250" height="576" rx="36" fill="#fff" />
+          <rect x="542" y="224" width="250" height="258" rx="36" fill="#fff" />
+          <rect x="542" y="542" width="250" height="258" rx="36" fill="#fff" fill-opacity="0.72" />
+        </svg>
+        Prancha
+      </a>
+      <nav aria-label="Atalhos da página"><a href="#baixar">Baixar</a></nav>
+    </header>
+
+    <main>
+      <section class="hero wrap" id="baixar">
+        <h1>Seus quadrinhos, num só lugar.</h1>
+        <p class="lede">Organize, leia e retome de onde parou. Sem conta e sem internet.</p>
+        <div class="cta">
+          <a class="button" href="downloads/Prancha_0.1.0_x64-setup.exe" download>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 3v12" />
+              <path d="m7 10 5 5 5-5" />
+              <path d="M5 21h14" />
+            </svg>
+            Baixar para Windows
+          </a>
+          <p class="meta">
+            Gratuito · Windows 10 e 11 (64 bits) · 6,8 MB ·
+            <a href="downloads/Prancha_0.1.0_x64_pt-BR.msi" download>versão MSI</a>
+          </p>
+        </div>
+        <figure class="shot">
+          <picture>
+            <source srcset="assets/biblioteca-claro.png" media="(prefers-color-scheme: light)" />
+            <img
+            src="assets/biblioteca.png"
+            width="1280"
+            height="820"
+            alt="Biblioteca do Prancha com capas de quadrinhos e o progresso de leitura de cada um"
+          />
+          </picture>
+        </figure>
+      </section>
+
+      <section class="wrap" aria-label="Recursos">
+        <div class="features">
+          <div>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="3" y="3" width="7" height="9" rx="1" /><rect x="14" y="3" width="7" height="5" rx="1" /><rect x="14" y="12" width="7" height="9" rx="1" /><rect x="3" y="16" width="7" height="5" rx="1" />
+            </svg>
+            <h2>Organiza sozinho</h2>
+            <p>Capas geradas na hora, busca, favoritos e coleções.</p>
+          </div>
+          <div>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M2 4h7a3 3 0 0 1 3 3v14a2 2 0 0 0-2-2H2z" /><path d="M22 4h-7a3 3 0 0 0-3 3v14a2 2 0 0 1 2-2h8z" />
+            </svg>
+            <h2>Lê do seu jeito</h2>
+            <p>Página única, dupla ou rolagem contínua. Modo mangá.</p>
+          </div>
+          <div>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /><path d="M12 7v5l3 2" />
+            </svg>
+            <h2>Lembra onde parou</h2>
+            <p>Feche quando quiser. Na volta, a página certa está lá.</p>
+          </div>
+        </div>
+        <ul class="formats" aria-label="Formatos aceitos">
+          <li>CBZ</li>
+          <li>CBR</li>
+          <li>CB7</li>
+          <li>CBT</li>
+          <li>PDF</li>
+          <li>Pastas de imagens</li>
+        </ul>
+      </section>
+
+      <section class="closing wrap" aria-label="Baixar">
+        <h2>Pronto para ler?</h2>
+        <div class="cta">
+          <a class="button" href="downloads/Prancha_0.1.0_x64-setup.exe" download>Baixar o Prancha</a>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        <span>Prancha 0.1.0 · Código aberto (MIT)</span>
+        <details>
+          <summary>Verificar o download (SHA-256)</summary>
+          <p>EXE <code>86072a8c96006f8dd08702cc9ff1a9ebb0d69760d055a593072b61fa19b7d166</code></p>
+          <p>MSI <code>efbf2e0220e669316fa8d71a7da238b4300beea46812eaaf78ce958f56dea5d1</code></p>
+        </details>
+      </div>
+    </footer>
+  </body>
+</html>
