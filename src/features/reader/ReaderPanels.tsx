@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { RotateCcw, X } from "lucide-react";
+import { EyeOff, Keyboard, RotateCcw, X } from "lucide-react";
 import { Button, IconButton } from "../../components/Button";
 import { ConfirmDialog, Dialog } from "../../components/Dialog";
 import { Kbd } from "../../components/Feedback";
@@ -41,7 +41,19 @@ export function SidePanel({ title, onClose, children, side = "right" }: { title:
   );
 }
 
-export function ReaderSettingsPanel({ onClose, onResetProgress }: { onClose: () => void; onResetProgress: () => void }) {
+export function ReaderSettingsPanel({
+  onClose,
+  onResetProgress,
+  onShowShortcuts,
+  onHideControls,
+  hideKey,
+}: {
+  onClose: () => void;
+  onResetProgress: () => void;
+  onShowShortcuts: () => void;
+  onHideControls: () => void;
+  hideKey?: string;
+}) {
   const { settings, update } = useSettings();
   const [confirm, setConfirm] = useState(false);
   return (
@@ -99,13 +111,17 @@ export function ReaderSettingsPanel({ onClose, onResetProgress }: { onClose: () 
             { value: "always", label: "Sempre visíveis" },
           ]}
         />
-        <div className="border-t border-border pt-4">
-          <Button icon={RotateCcw} onClick={() => setConfirm(true)}>
+        <div className="flex flex-wrap gap-2 border-t border-border pt-4">
+          <Button size="sm" icon={Keyboard} onClick={onShowShortcuts}>
+            Atalhos de teclado
+          </Button>
+          <Button size="sm" icon={EyeOff} onClick={onHideControls} title={hideKey ? `Atalho: ${hideKey}` : undefined}>
+            Ocultar controles
+          </Button>
+          <Button size="sm" icon={RotateCcw} onClick={() => setConfirm(true)}>
             Reiniciar progresso
           </Button>
-          <p className="mt-1 text-xs text-muted">Volta para a primeira página desta HQ.</p>
         </div>
-        <p className="text-xs text-muted">Essas preferências valem para todas as HQs e também ficam em Configurações › Leitura.</p>
       </div>
       <ConfirmDialog
         open={confirm}

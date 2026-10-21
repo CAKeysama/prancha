@@ -26,6 +26,9 @@ pub const MAX_COMICINFO_BYTES: u64 = 2 * 1024 * 1024;
 
 pub const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "jpe", "jfif", "png", "webp", "gif", "bmp", "avif"];
 pub const COMIC_EXTENSIONS: &[&str] = &["cbz", "zip", "cbr", "rar", "cb7", "7z", "cbt", "tar", "pdf"];
+/// Formatos de leitura conhecidos que ainda não são suportados: ao varrer pastas,
+/// são relatados como falha em vez de ignorados em silêncio.
+pub const KNOWN_UNSUPPORTED_EXTENSIONS: &[&str] = &["epub", "mobi", "azw", "azw3", "djvu", "cba", "cbw", "xps", "oxps", "fb2"];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

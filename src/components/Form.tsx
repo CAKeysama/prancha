@@ -140,6 +140,7 @@ export function Segmented<T extends string>({
   onChange,
   hideLabel,
   size = "md",
+  compactLabels,
 }: {
   label: string;
   value: T;
@@ -147,6 +148,8 @@ export function Segmented<T extends string>({
   onChange: (v: T) => void;
   hideLabel?: boolean;
   size?: "sm" | "md";
+  /** Em janelas estreitas, mostra só os ícones (o texto continua para leitores de tela). */
+  compactLabels?: boolean;
 }) {
   const id = useId();
   return (
@@ -157,7 +160,7 @@ export function Segmented<T extends string>({
       <div
         role="radiogroup"
         aria-labelledby={id}
-        className="inline-flex flex-wrap rounded-md border border-border bg-surface p-0.5"
+        className={cn("inline-flex rounded-md border border-border bg-surface p-0.5", compactLabels ? "flex-nowrap" : "flex-wrap")}
         onKeyDown={(e) => {
           const i = options.findIndex((o) => o.value === value);
           let next = -1;
@@ -189,7 +192,7 @@ export function Segmented<T extends string>({
               )}
             >
               {Icon && <Icon size={14} aria-hidden />}
-              {o.label}
+              <span className={compactLabels && Icon ? "max-md:sr-only" : undefined}>{o.label}</span>
               {selected && <span className="sr-only"> (selecionado)</span>}
             </button>
           );

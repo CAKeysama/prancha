@@ -42,7 +42,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       aria-busy={loading || undefined}
       className={cn(
         "inline-flex shrink-0 items-center justify-center rounded-md border font-medium whitespace-nowrap",
-        "transition-[background-color,color,border-color,filter] duration-100 disabled:cursor-not-allowed",
+        // Resposta no instante do clique (pointer-down), não só ao soltar.
+        "transition-[background-color,color,border-color,filter,transform] duration-100 active:scale-[0.98] disabled:cursor-not-allowed disabled:active:scale-100",
         VARIANTS[variant],
         SIZES[size],
         className,

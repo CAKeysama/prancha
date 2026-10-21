@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowDownWideNarrow, ArrowUpNarrowWide, LayoutGrid, List, Search, SearchX, X } from "lucide-react";
+import { LayoutGrid, List, Search, SearchX, SlidersHorizontal, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { IconButton } from "../../components/Button";
+import { Button } from "../../components/Button";
 import { EmptyState, ErrorState, Spinner } from "../../components/Feedback";
-import { Segmented, Select } from "../../components/Form";
+import { Checkbox, Segmented, Select } from "../../components/Form";
 import { PageHeader } from "../../components/PageHeader";
 import { cn } from "../../components/cn";
 import { STATUS_LABELS } from "../../domain/progress";
@@ -33,12 +33,106 @@ export interface LibraryPreset {
   collectionId?: number;
 }
 
-const SORT_LABELS: Record<Exclude<SortKey, "recentProgress">, string> = {
-  title: "Título",
-  added: "Data de adição",
-  opened: "Último acesso",
-  progress: "Progresso",
-};
+/** Ordenação em um único seletor (campo e direção juntos, com nomes que dizem o resultado). */
+const SORT_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "title:asc", label: "Título (A–Z)" },
+  { value: "title:desc", label: "Título (Z–A)" },
+  { value: "added:desc", label: "Adicionados recentemente" },
+  { value: "added:asc", label: "Adicionados há mais tempo" },
+  { value: "opened:desc", label: "Abertos recentemente" },
+  { value: "progress:desc", label: "Mais lidos" },
+  { value: "progress:asc", label: "Menos lidos" },
+];
+
+function ActiveChip({ label, onRemove }: { label: string; onRemove: () => void }) {
+  return (
+    <span className="inline-flex h-6 items-center gap-1 rounded-full border border-accent/50 bg-accent-subtle pr-1 pl-2.5 text-sm text-accent-fg">
+      {label}
+      <button type="button" onClick={onRemove} aria-label={`Remover filtro ${label}`} className="inline-flex size-5 items-center justify-center rounded-full hover:bg-hover">
+        <X size={12} aria-hidden />
+      </button>
+    </span>
+  );
+}
+
+/** Filtros ficam um nível abaixo (revelação progressiva); o botão mostra quantos estão ativos. */
+function FilterButton(props: {
+  count: number;
+  allowStatus: boolean;
+  allowFavorites: boolean;
+  statuses: ReadStatus[];
+  onToggleStatus: (s: ReadStatus) => void;
+  favoritesOnly: boolean;
+  onFavorites: (v: boolean) => void;
+  format: ComicFormat | "";
+  onFormat: (f: ComicFormat | "") => void;
+  onClear: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrap = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!wrap.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+  return (
+    <div
+      ref={wrap}
+      className="relative"
+      onKeyDown={(e) => {
+        if (e.key === "Escape" && open) {
+          e.stopPropagation();
+          setOpen(false);
+        }
+      }}
+    >
+      <Button icon={SlidersHorizontal} aria-expanded={open} aria-haspopup="dialog" onClick={() => setOpen((o) => !o)}>
+        Filtrar
+        {props.count > 0 && (
+          <span className="ml-0.5 inline-flex min-w-5 items-center justify-center rounded-full bg-accent-emphasis px-1.5 text-xs text-on-emphasis">
+            {props.count}
+            <span className="sr-only"> ativos</span>
+          </span>
+        )}
+      </Button>
+      {open && (
+        <div role="dialog" aria-label="Filtros" className="p-enter absolute top-full left-0 z-30 mt-1 w-72 space-y-4 rounded-lg border border-border bg-elevated p-4 shadow-overlay">
+          {props.allowStatus && (
+            <div role="group" aria-label="Estado de leitura">
+              <p className="mb-1.5 text-sm font-medium">Estado de leitura</p>
+              <div className="flex flex-wrap gap-1.5">
+                {(["unread", "reading", "completed"] as ReadStatus[]).map((s) => (
+                  <Chip key={s} pressed={props.statuses.includes(s)} onClick={() => props.onToggleStatus(s)}>
+                    {STATUS_LABELS[s]}
+                  </Chip>
+                ))}
+              </div>
+            </div>
+          )}
+          {props.allowFavorites && (
+            <Checkbox label="Somente favoritos" checked={props.favoritesOnly} onChange={props.onFavorites} />
+          )}
+          <Select label="Tipo de arquivo" value={props.format} onChange={(e) => props.onFormat(e.target.value as ComicFormat | "")}>
+            <option value="">Todos os tipos</option>
+            {(Object.keys(FORMAT_LABELS) as ComicFormat[]).map((f) => (
+              <option key={f} value={f}>
+                {FORMAT_LABELS[f]}
+              </option>
+            ))}
+          </Select>
+          {props.count > 0 && (
+            <button type="button" onClick={props.onClear} className="text-sm font-medium text-accent-fg hover:underline">
+              Limpar filtros
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function useDebounced<T>(value: T, ms: number): T {
   const [v, setV] = useState(value);
@@ -94,8 +188,16 @@ export function LibraryScreen({ preset }: { preset: LibraryPreset }) {
   const { data, error, loading, reload } = useLibraryData(() => api.listComics(query), [JSON.stringify(query)]);
   const filtering = Boolean(search.trim() || statuses.length || format || favoritesOnly);
 
-  const setSort = (s: SortKey) => (preset.persistSort ? void update("library.sort", s) : setLocalSort(s));
-  const toggleDesc = () => (preset.persistSort ? void update("library.sortDesc", !desc) : setLocalDesc(!desc));
+  const setSortValue = (value: string) => {
+    const [key, dir] = value.split(":") as [SortKey, string];
+    if (preset.persistSort) {
+      void update("library.sort", key);
+      void update("library.sortDesc", dir === "desc");
+    } else {
+      setLocalSort(key);
+      setLocalDesc(dir === "desc");
+    }
+  };
   const toggleStatus = (s: ReadStatus) => setStatuses((v) => (v.includes(s) ? v.filter((x) => x !== s) : [...v, s]));
   const clearFilters = () => {
     setText("");
@@ -104,7 +206,11 @@ export function LibraryScreen({ preset }: { preset: LibraryPreset }) {
     setFavoritesOnly(false);
   };
 
-  const countText = data ? `${data.length} ${data.length === 1 ? "quadrinho" : "quadrinhos"}${filtering ? " encontrados" : ""}` : undefined;
+  const countText = data
+    ? filtering
+      ? `${data.length} ${data.length === 1 ? "encontrado" : "encontrados"}`
+      : `${data.length} ${data.length === 1 ? "quadrinho" : "quadrinhos"}`
+    : undefined;
 
   return (
     <div ref={scrollRef} className="h-full overflow-y-auto">
@@ -115,8 +221,8 @@ export function LibraryScreen({ preset }: { preset: LibraryPreset }) {
         backLabel={preset.backLabel}
         actions={preset.headerActions ?? <AddComicsButtons />}
       >
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <div className="relative w-full max-w-xs min-w-48 flex-1">
+        <div className="flex items-center gap-2">
+          <div className="relative min-w-40 flex-1 sm:max-w-sm">
             <Search size={15} aria-hidden className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-muted" />
             <label htmlFor="library-search" className="sr-only">
               Pesquisar por título, arquivo, série, autor ou tag
@@ -132,7 +238,7 @@ export function LibraryScreen({ preset }: { preset: LibraryPreset }) {
                   setText("");
                 }
               }}
-              placeholder="Pesquisar título, arquivo, série, autor, tag…"
+              placeholder="Pesquisar"
               className="h-8 w-full rounded-md border border-border-control bg-bg pr-8 pl-8 text-base placeholder:text-muted focus-visible:border-accent focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-accent"
             />
             {text && (
@@ -146,45 +252,34 @@ export function LibraryScreen({ preset }: { preset: LibraryPreset }) {
               </button>
             )}
           </div>
-          {preset.allowStatusFilter !== false && (
-            <div role="group" aria-label="Filtrar por estado de leitura" className="flex flex-wrap gap-1.5">
-              {(["unread", "reading", "completed"] as ReadStatus[]).map((s) => (
-                <Chip key={s} pressed={statuses.includes(s)} onClick={() => toggleStatus(s)}>
-                  {STATUS_LABELS[s]}
-                </Chip>
-              ))}
-              {!preset.base.favoritesOnly && (
-                <Chip pressed={favoritesOnly} onClick={() => setFavoritesOnly((v) => !v)}>
-                  Favoritos
-                </Chip>
-              )}
-            </div>
-          )}
-          <Select label="Tipo de arquivo" hideLabel value={format} onChange={(e) => setFormat(e.target.value as ComicFormat | "")} className="w-40">
-            <option value="">Todos os tipos</option>
-            {(Object.keys(FORMAT_LABELS) as ComicFormat[]).map((f) => (
-              <option key={f} value={f}>
-                {FORMAT_LABELS[f]}
-              </option>
-            ))}
-          </Select>
-          <div className="ml-auto flex items-center gap-1.5">
-            <Select label="Ordenar por" hideLabel value={sort === "recentProgress" ? "opened" : sort} onChange={(e) => setSort(e.target.value as SortKey)} className="w-40">
-              {(Object.keys(SORT_LABELS) as Array<keyof typeof SORT_LABELS>).map((k) => (
-                <option key={k} value={k}>
-                  Ordenar: {SORT_LABELS[k]}
+          <FilterButton
+            count={statuses.length + (format ? 1 : 0) + (favoritesOnly ? 1 : 0)}
+            allowStatus={preset.allowStatusFilter !== false}
+            allowFavorites={!preset.base.favoritesOnly}
+            statuses={statuses}
+            onToggleStatus={toggleStatus}
+            favoritesOnly={favoritesOnly}
+            onFavorites={setFavoritesOnly}
+            format={format}
+            onFormat={setFormat}
+            onClear={() => {
+              setStatuses([]);
+              setFormat("");
+              setFavoritesOnly(false);
+            }}
+          />
+          <div className="ml-auto flex items-center gap-2">
+            <Select label="Ordenar" hideLabel value={`${sort === "recentProgress" ? "opened" : sort}:${desc ? "desc" : "asc"}`} onChange={(e) => setSortValue(e.target.value)} className="w-52 max-sm:w-40">
+              {SORT_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
                 </option>
               ))}
             </Select>
-            <IconButton
-              variant="secondary"
-              icon={desc ? ArrowDownWideNarrow : ArrowUpNarrowWide}
-              label={desc ? "Ordem decrescente (clique para inverter)" : "Ordem crescente (clique para inverter)"}
-              onClick={toggleDesc}
-            />
             <Segmented
               label="Modo de visualização"
               hideLabel
+              compactLabels
               value={view}
               onChange={(v) => void update("library.view", v)}
               options={[
@@ -194,6 +289,15 @@ export function LibraryScreen({ preset }: { preset: LibraryPreset }) {
             />
           </div>
         </div>
+        {(statuses.length > 0 || format || favoritesOnly) && (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5" aria-label="Filtros ativos">
+            {statuses.map((s) => (
+              <ActiveChip key={s} label={STATUS_LABELS[s]} onRemove={() => toggleStatus(s)} />
+            ))}
+            {favoritesOnly && <ActiveChip label="Favoritos" onRemove={() => setFavoritesOnly(false)} />}
+            {format && <ActiveChip label={FORMAT_LABELS[format]} onRemove={() => setFormat("")} />}
+          </div>
+        )}
       </PageHeader>
       <div className="px-6 py-5">
         {error && <ErrorState title="Não foi possível carregar a biblioteca" message={error} action={<button className="text-sm font-medium text-accent-fg hover:underline" onClick={reload}>Tentar novamente</button>} />}

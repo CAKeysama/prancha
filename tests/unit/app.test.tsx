@@ -101,7 +101,7 @@ describe("primeira execução", () => {
     // Depois de pular, a tela inicial continua ensinando a adicionar quadrinhos.
     expect(await screen.findByText("Sua biblioteca está vazia")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Adicionar quadrinhos" }).length).toBeGreaterThan(0);
-    expect(screen.getByText(/Formatos aceitos/)).toBeInTheDocument();
+    expect(screen.getByText(/CBZ, CBR, CB7, CBT, PDF/)).toBeInTheDocument();
   });
 
   it("não reaparece quando já foi concluído", async () => {

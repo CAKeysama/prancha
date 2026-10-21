@@ -180,7 +180,7 @@ function StepAdd() {
           Escolha um arquivo de quadrinhos no seu computador. O {APP_NAME} vai identificar o formato, preparar a capa e adicionar o item à sua
           biblioteca.
         </p>
-        <p className="mt-2 text-sm">Formatos aceitos: {SUPPORTED_FORMATS_TEXT}.</p>
+        <p className="mt-2 text-sm">{SUPPORTED_FORMATS_TEXT}</p>
         <button type="button" disabled={busy} onClick={() => void pick("folder")} className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-accent-fg hover:underline disabled:opacity-50">
           <FolderPlus size={14} aria-hidden /> Prefiro selecionar uma pasta com imagens
         </button>
@@ -271,16 +271,16 @@ function StepImported({ comicId }: { comicId: number | null }) {
             <ol className="space-y-2.5 text-sm text-fg">
               <li>
                 <span className="font-semibold">1 · Capa</span>
-                <span className="block text-muted">{comic.coverKind === "placeholder" ? "Capa substituta: a imagem original não pôde ser extraída." : comic.coverKind === "pending" ? "A capa está sendo preparada." : "Gerada a partir do próprio arquivo."}</span>
+                <span className="block text-muted">{comic.coverKind === "placeholder" ? "Substituta: a original não pôde ser extraída." : comic.coverKind === "pending" ? "Sendo preparada." : "Extraída do próprio arquivo."}</span>
               </li>
               <li>
                 <span className="font-semibold">2 · Título</span>
-                <span className="block text-muted">“{comic.title}” — você pode editá-lo nos detalhes.</span>
+                <span className="block text-muted">Editável nos detalhes.</span>
               </li>
               <li>
                 <span className="font-semibold">3 · Estado e páginas</span>
                 <span className="block text-muted">
-                  “Não iniciado” por enquanto{comic.pageCount ? `, ${comic.pageCount} páginas` : ""}. Depois aparece “Parou na página X de Y”.
+                  Não iniciado{comic.pageCount ? ` · ${comic.pageCount} páginas` : ""}. Ao ler, mostra onde você parou.
                 </span>
               </li>
             </ol>

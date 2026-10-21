@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { FolderOpen, GraduationCap, HardDrive, ImageMinus, Keyboard, RefreshCw, RotateCcw, ScanSearch, Scale, Trash2 } from "lucide-react";
+import { FolderOpen, GraduationCap, HardDrive, ImageMinus, RefreshCw, RotateCcw, ScanSearch, Scale, Trash2 } from "lucide-react";
 import { Button } from "../../components/Button";
 import { ConfirmDialog, Dialog } from "../../components/Dialog";
 import { Kbd, Spinner } from "../../components/Feedback";
@@ -103,7 +103,7 @@ function ShortcutEditor() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <p className="font-medium">Atalhos de teclado</p>
-          <p className="text-sm text-muted">Funcionam apenas com o leitor aberto. Clique em “Alterar” e pressione a nova tecla (Esc cancela).</p>
+          <p className="text-sm text-muted">Valem dentro do leitor. Esc cancela a gravação.</p>
         </div>
         <Button size="sm" icon={RotateCcw} onClick={() => save("reader.shortcuts", DEFAULT_SHORTCUTS)}>
           Restaurar atalhos padrão
@@ -231,7 +231,7 @@ function StorageSection() {
     }
   };
   return (
-    <Section id="armazenamento" title="Armazenamento" description="Dados do aplicativo ficam no seu computador. Limpar caches não apaga suas HQs nem o progresso de leitura.">
+    <Section id="armazenamento" title="Armazenamento" description="Limpar caches não apaga suas HQs nem o progresso.">
       <SettingRow label="Pasta de dados do aplicativo" description={info ? <span className="font-mono text-xs break-all select-text">{info.dataDir}</span> : "Carregando…"}>
         <Button icon={FolderOpen} onClick={() => void api.openDataDir().catch((e) => toast.error("Não foi possível abrir a pasta", errorMessage(e)))}>
           Abrir pasta
@@ -303,7 +303,7 @@ export function SettingsScreen() {
 
   return (
     <div className="h-full overflow-y-auto" id="settings-scroll">
-      <PageHeader title="Configurações" subtitle="As alterações são salvas e aplicadas na hora." />
+      <PageHeader title="Configurações" />
       <div className="mx-auto flex max-w-5xl gap-8 px-6">
         <nav aria-label="Seções das configurações" className="sticky top-20 h-fit w-44 shrink-0 py-6 max-md:hidden">
           <ul className="space-y-0.5">
@@ -340,7 +340,7 @@ export function SettingsScreen() {
                 ]}
               />
             </SettingRow>
-            <SettingRow label="Densidade da biblioteca" description="Espaçamento entre os itens da grade.">
+            <SettingRow label="Densidade da biblioteca">
               <Segmented
                 label="Densidade da biblioteca"
                 hideLabel
@@ -379,7 +379,7 @@ export function SettingsScreen() {
             </SettingRow>
           </Section>
 
-          <Section id="leitura" title="Leitura" description="Padrões do leitor. Também podem ser alterados durante a leitura.">
+          <Section id="leitura" title="Leitura">
             <SettingRow label="Modo de página">
               <Select label="Modo de página" hideLabel value={settings["reader.mode"]} onChange={(e) => save("reader.mode", e.target.value as Settings["reader.mode"])} className="w-48">
                 {(["single", "double", "vertical"] as const).map((m) => (
@@ -513,7 +513,7 @@ export function SettingsScreen() {
                 Abrir tutorial
               </Button>
             </SettingRow>
-            <SettingRow label="Licenças de terceiros" description="Bibliotecas de código aberto usadas pelo aplicativo.">
+            <SettingRow label="Licenças de terceiros">
               <Button icon={Scale} onClick={() => setLicensesOpen(true)}>
                 Ver licenças
               </Button>
@@ -535,9 +535,7 @@ export function SettingsScreen() {
                 <dt className="text-muted">Componentes principais</dt>
                 <dd>Tauri, React, SQLite, PDF.js, UnRAR, sevenz-rust2, zip, image</dd>
               </dl>
-              <p className="mt-3 flex items-center gap-1.5 text-xs text-muted">
-                <Keyboard size={13} aria-hidden /> Dica: no leitor, pressione <Kbd>?</Kbd> para ver todos os atalhos.
-              </p>
+
             </div>
           </Section>
         </div>

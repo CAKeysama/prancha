@@ -160,6 +160,15 @@
   }
 }
 
+/* Quem reduz a transparência no sistema recebe barras sólidas. */
+@media (prefers-reduced-transparency: reduce) {
+  .backdrop-blur,
+  .backdrop-blur-sm {
+    backdrop-filter: none !important;
+    background-color: var(--color-elevated) !important;
+  }
+}
+
 @keyframes p-pulse {
   0%,
   100% {

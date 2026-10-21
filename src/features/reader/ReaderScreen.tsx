@@ -3,18 +3,14 @@ import type { PDFDocumentProxy } from "pdfjs-dist";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   ArrowLeft,
-  ArrowLeftRight,
   ChevronLeft,
   ChevronRight,
   Columns2,
   Eye,
-  EyeOff,
-  Keyboard,
   LayoutList,
   Maximize,
   Minimize,
   MoveHorizontal,
-  MoveVertical,
   RectangleVertical,
   Settings2,
   Square,
@@ -53,7 +49,7 @@ import { usePreload } from "./PageView";
 import { useProgressSaver } from "./useProgressSaver";
 
 const MODE_ICONS: Record<ReaderMode, typeof Square> = { single: RectangleVertical, double: Columns2, vertical: LayoutList };
-const FIT_ICONS: Record<FitMode, typeof Square> = { page: Square, width: MoveHorizontal, height: MoveVertical };
+const FIT_ICONS: Record<"page" | "width", typeof Square> = { page: Square, width: MoveHorizontal };
 
 function isTyping(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null;
@@ -406,7 +402,6 @@ function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount
   };
 
   const indicator = mode === "vertical" ? pageIndicator([page], pageCount) : pageIndicator(spread, pageCount);
-  const pct = Math.round(((mode === "vertical" ? page : Math.max(...spread)) + 1) / pageCount * 100);
   const ModeIcon = MODE_ICONS[mode];
   const tour = tipActive ? "ring-2 ring-accent ring-offset-2 ring-offset-elevated rounded-md" : "";
   const prevLabel = "Página anterior";
@@ -466,8 +461,8 @@ function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount
           </p>
         </div>
         <div className="flex items-center gap-0.5 max-md:hidden" role="group" aria-label="Ajuste da imagem">
-          {(["page", "width", "height"] as FitMode[]).map((f) => (
-            <IconButton key={f} icon={FIT_ICONS[f]} label={FIT_LABELS[f]} shortcut={k(f === "page" ? "fitPage" : f === "width" ? "fitWidth" : "fitHeight")} pressed={fit === f} onClick={() => setFit(f)} size="sm" />
+          {(["page", "width"] as FitMode[]).map((f) => (
+            <IconButton key={f} icon={FIT_ICONS[f as "page" | "width"]} label={FIT_LABELS[f]} shortcut={k(f === "page" ? "fitPage" : "fitWidth")} pressed={fit === f} onClick={() => setFit(f)} size="sm" />
           ))}
         </div>
         <div className={cn("flex items-center gap-0.5", tour)} role="group" aria-label="Zoom" data-tour="reader-zoom">
@@ -485,23 +480,13 @@ function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount
         </div>
         <span className="mx-1 h-5 w-px bg-border" aria-hidden />
         <IconButton icon={ModeIcon} label={`Alternar modo de exibição (atual: ${MODE_LABELS[mode]})`} shortcut={k("cycleMode")} onClick={() => setMode(nextMode(mode))} size="sm" />
-        <IconButton
-          icon={ArrowLeftRight}
-          label={rtl ? "Direção: direita para a esquerda (clique para inverter)" : "Direção: esquerda para a direita (clique para inverter)"}
-          shortcut={k("toggleDirection")}
-          pressed={rtl}
-          onClick={() => void update("reader.direction", rtl ? "ltr" : "rtl")}
-          size="sm"
-        />
         <IconButton icon={ListOrdered} label="Abrir índice de páginas" shortcut={k("pageIndex")} pressed={panel === "index"} onClick={() => setPanel((p) => (p === "index" ? null : "index"))} size="sm" />
         <IconButton icon={Settings2} label="Configurações de leitura" pressed={panel === "settings"} onClick={() => setPanel((p) => (p === "settings" ? null : "settings"))} size="sm" />
-        <IconButton icon={Keyboard} label="Atalhos de teclado" shortcut={k("help")} onClick={() => setHelp(true)} size="sm" />
-        <IconButton icon={EyeOff} label="Ocultar controles" shortcut={k("toggleControls")} onClick={toggleControls} size="sm" />
         <IconButton icon={fullscreen ? Minimize : Maximize} label={fullscreen ? "Sair da tela cheia" : "Entrar em tela cheia"} shortcut={k("fullscreen")} onClick={() => void toggleFullscreen()} size="sm" />
       </header>
 
       {/* Área de leitura (com controles fixos, reserva espaço para não cobrir a página) */}
-      <div className={cn("relative flex-1 overflow-hidden", settings["reader.controls"] === "always" && "pt-[45px] pb-[49px]")}>
+      <div className={cn("relative flex-1 overflow-hidden", (mode !== "vertical" || settings["reader.controls"] === "always") && "pt-[45px] pb-[49px]")}>
         {mode === "vertical" ? (
           <VerticalView
             ref={verticalRef}
@@ -520,7 +505,21 @@ function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount
           <PagedView ref={pagedRef} comicId={comic.id} spread={spread} sizes={sizes} fit={fit} zoom={zoom} direction={direction} pdf={pdf} onSize={onSize} onWheelEdge={onWheelEdge} />
         )}
         {sideButtons}
-        {panel === "settings" && <ReaderSettingsPanel onClose={() => setPanel(null)} onResetProgress={resetProgress} />}
+        {panel === "settings" && (
+          <ReaderSettingsPanel
+            onClose={() => setPanel(null)}
+            onResetProgress={resetProgress}
+            onShowShortcuts={() => {
+              setPanel(null);
+              setHelp(true);
+            }}
+            onHideControls={() => {
+              setPanel(null);
+              toggleControls();
+            }}
+            hideKey={k("toggleControls")}
+          />
+        )}
         {panel === "index" && (
           <PageIndexPanel
             comicId={comic.id}
@@ -592,9 +591,6 @@ function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount
             <span className="max-sm:sr-only">{nextLabel}</span>
           </Button>
         </div>
-        <span className="w-12 text-right font-mono text-xs text-muted" aria-hidden>
-          {pct}%
-        </span>
       </footer>
 
       {tipActive && <ReaderTip shortcuts={shortcuts} />}

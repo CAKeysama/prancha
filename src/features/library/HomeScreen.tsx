@@ -71,10 +71,7 @@ function EmptyHome() {
         <Library size={26} aria-hidden />
       </div>
       <h2 className="text-2xl font-semibold">Sua biblioteca está vazia</h2>
-      <p className="mt-2 text-base text-muted">
-        O {APP_NAME} organiza seus quadrinhos em um só lugar, gera as capas e guarda onde você parou em cada leitura.
-        Os arquivos continuam onde estão no seu computador.
-      </p>
+      <p className="mt-2 text-base text-muted">Adicione seus quadrinhos. O {APP_NAME} prepara as capas e lembra onde você parou.</p>
       <div className="mt-6 flex flex-wrap justify-center gap-2">
         <Button variant="primary" icon={Plus} onClick={() => void pickAndImport("files")} data-tour="add-comics">
           Adicionar quadrinhos
@@ -83,7 +80,7 @@ function EmptyHome() {
           Selecionar uma pasta
         </Button>
       </div>
-      <p className="mt-4 text-sm text-muted">Formatos aceitos: {SUPPORTED_FORMATS_TEXT}. Você também pode arrastar arquivos para esta janela.</p>
+      <p className="mt-4 text-sm text-muted">{SUPPORTED_FORMATS_TEXT} · ou arraste os arquivos para cá</p>
       <Button variant="ghost" size="sm" icon={GraduationCap} className="mt-6" onClick={onboarding.restart}>
         Ver o tutorial novamente
       </Button>

@@ -13,6 +13,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "e2e:build": "node scripts/build-e2e.mjs",
     "test:e2e": "playwright test",
     "licenses": "node scripts/generate-licenses.mjs",
     "tauri": "tauri"

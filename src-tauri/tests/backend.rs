@@ -330,6 +330,15 @@ fn import_folder_of_images_and_nested_scan() {
     make_folder(&empty, &[("a.txt", b"x".to_vec())]);
     let (_, errors) = import::expand(&[empty]);
     assert!(errors[0].message.as_ref().unwrap().contains("não contém imagens"));
+
+    // Formatos de leitura não suportados dentro de pastas são relatados, não ignorados.
+    let mixed = e.input("mista");
+    make_folder(&mixed, &[("livro.epub", b"PK".to_vec()), ("leia.txt", b"x".to_vec())]);
+    make_cbz(&mixed.join("ok.cbz"), &as_files(&pages(1)));
+    let (cands, errors) = import::expand(&[mixed]);
+    assert_eq!(cands.len(), 1);
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert!(errors[0].message.as_ref().unwrap().contains(".epub"));
 }
 
 #[test]

@@ -127,6 +127,8 @@ pub fn expand(paths: &[PathBuf]) -> (Vec<PathBuf>, Vec<ItemResult>) {
                     }
                     if formats::is_comic_file(p) {
                         found.push(p.to_path_buf());
+                    } else if formats::KNOWN_UNSUPPORTED_EXTENSIONS.contains(&formats::extension_of(p).as_str()) {
+                        errors.push(failed(p, FormatError::Unsupported(format!(".{}", formats::extension_of(p))).to_string()));
                     } else if formats::is_image_name(&name) {
                         if let Some(parent) = p.parent() {
                             image_dirs.insert(parent.to_path_buf());

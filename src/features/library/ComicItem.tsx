@@ -12,23 +12,21 @@ import { useComicActions } from "./comic-actions";
 export function StatusLine({ comic, compact }: { comic: ComicSummary; compact?: boolean }) {
   const ratio = progressRatio(comic);
   const Icon = comic.status === "completed" ? CircleCheck : comic.status === "reading" ? BookOpen : CircleDashed;
+  // Uma linha só: em andamento mostra onde parou (o estado fica implícito e no leitor de tela).
+  const reading = comic.status === "reading";
   return (
     <div className="min-w-0">
       <p
         className={cn(
-          "flex items-center gap-1.5 text-xs font-medium",
-          comic.status === "completed" ? "text-success" : comic.status === "reading" ? "text-accent-fg" : "text-muted",
+          "flex items-center gap-1.5 text-xs",
+          comic.status === "completed" ? "font-medium text-success" : reading ? "text-fg" : "text-muted",
         )}
       >
-        <Icon size={13} aria-hidden className="shrink-0" />
-        <span className="truncate">{STATUS_LABELS[comic.status]}</span>
+        <Icon size={13} aria-hidden className={cn("shrink-0", reading && "text-accent")} />
+        {reading && <span className="sr-only">{STATUS_LABELS.reading}: </span>}
+        <span className="truncate">{reading ? progressLabel(comic) : STATUS_LABELS[comic.status]}</span>
       </p>
-      {comic.status === "reading" && (
-        <>
-          <p className="mt-0.5 truncate text-xs text-muted">{progressLabel(comic)}</p>
-          {!compact && ratio !== null && <ProgressBar value={ratio} label={`Progresso de ${comic.title}`} className="mt-1" />}
-        </>
-      )}
+      {reading && !compact && ratio !== null && <ProgressBar value={ratio} label={`Progresso de ${comic.title}`} className="mt-1.5" />}
     </div>
   );
 }
@@ -105,7 +103,7 @@ export const ComicCard = memo(function ComicCard({ comic, width, collectionId, h
           <h3 id={titleId} className="line-clamp-2 text-sm leading-5 font-semibold break-words" title={comic.title}>
             {comic.title}
           </h3>
-          <p className="truncate text-xs text-muted">{sub ?? FORMAT_LABELS[comic.format]}</p>
+          <p className="h-[18px] truncate text-xs text-muted">{sub}</p>
         </div>
         <div className="-mr-1 shrink-0">
           <MoreMenu comic={comic} collectionId={collectionId} />

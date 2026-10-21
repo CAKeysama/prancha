@@ -63,7 +63,6 @@ export function SourceBadge({ source }: { source?: FieldSource }) {
 // ---------------------------------------------------------------------------
 
 function EditMetadataDialog({ id, onClose }: { id: number; onClose: () => void }) {
-  const toast = useToast();
   const [details, setDetails] = useState<ComicDetails | null>(null);
   const [form, setForm] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
@@ -124,7 +123,6 @@ function EditMetadataDialog({ id, onClose }: { id: number; onClose: () => void }
     setError(null);
     try {
       await api.updateMetadata(id, patch);
-      toast.success("Informações salvas");
       onClose();
     } catch (e) {
       setError(errorMessage(e));
@@ -197,7 +195,6 @@ function EditMetadataDialog({ id, onClose }: { id: number; onClose: () => void }
 }
 
 function CollectionsDialog({ id, onClose }: { id: number; onClose: () => void }) {
-  const toast = useToast();
   const [all, setAll] = useState<CollectionInfo[] | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [title, setTitle] = useState("");
@@ -236,7 +233,6 @@ function CollectionsDialog({ id, onClose }: { id: number; onClose: () => void })
     setSaving(true);
     try {
       await api.setComicCollections(id, [...selected]);
-      toast.success("Coleções atualizadas");
       onClose();
     } catch (e) {
       setError(errorMessage(e));
@@ -376,7 +372,6 @@ export function ComicActionsProvider({ children }: { children: ReactNode }) {
     async (c: ComicSummary) => {
       try {
         await api.setFavorite(c.id, !c.favorite);
-        toast.success(c.favorite ? "Removida dos favoritos" : "Adicionada aos favoritos", c.title);
       } catch (e) {
         toast.error("Não foi possível atualizar os favoritos", errorMessage(e));
       }
@@ -388,7 +383,6 @@ export function ComicActionsProvider({ children }: { children: ReactNode }) {
     async (c: ComicSummary, status: "unread" | "completed") => {
       try {
         await api.setReadStatus(c.id, status);
-        toast.success(status === "completed" ? "Marcada como concluída" : "Marcada como não lida", c.title);
       } catch (e) {
         toast.error("Não foi possível alterar o estado de leitura", errorMessage(e));
       }
@@ -406,7 +400,7 @@ export function ComicActionsProvider({ children }: { children: ReactNode }) {
       }
       items.push({ label: c.favorite ? "Remover dos favoritos" : "Adicionar aos favoritos", icon: c.favorite ? StarOff : Star, onSelect: () => void toggleFavorite(c) });
       items.push({ label: "Editar informações", icon: Pencil, onSelect: () => setEditing(c.id) });
-      items.push({ label: "Coleções…", icon: FolderPlus, onSelect: () => setCollecting(c.id) });
+      items.push({ label: "Organizar em coleções…", icon: FolderPlus, onSelect: () => setCollecting(c.id) });
       if (opts?.collectionId !== undefined) {
         const cid = opts.collectionId;
         items.push({

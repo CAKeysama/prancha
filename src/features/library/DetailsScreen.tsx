@@ -27,7 +27,7 @@ function Row({ label, children, source }: { label: string; children: ReactNode; 
     <div className="grid grid-cols-[140px_1fr] gap-3 border-b border-border py-2 last:border-b-0 max-sm:grid-cols-1 max-sm:gap-0.5">
       <dt className="flex items-center gap-1.5 text-sm text-muted">
         {label}
-        <SourceBadge source={source} />
+        {source === "user" && <SourceBadge source={source} />}
       </dt>
       <dd className="min-w-0 text-base break-words">{children}</dd>
     </div>
@@ -114,14 +114,13 @@ export function DetailsScreen({ id }: { id: number }) {
     <div className="h-full overflow-y-auto">
       <PageHeader
         title={comic.title}
-        subtitle={comic.fileName}
         onBack={nav.back}
         actions={
           <Menu
             label="Mais ações"
             items={[
               ...(comic.status !== "unread" ? [{ label: "Reiniciar progresso", icon: RotateCcw, onSelect: () => setConfirmReset(true) }] : []),
-              ...actions.menuFor(comic, { inDetails: true }).filter((e) => e.kind === "separator" || !["Editar informações", "Coleções…", "Remover da biblioteca…", "Adicionar aos favoritos", "Remover dos favoritos"].includes(e.label)),
+              ...actions.menuFor(comic, { inDetails: true }).filter((e) => e.kind === "separator" || !["Editar informações", "Organizar em coleções…", "Remover da biblioteca…", "Adicionar aos favoritos", "Remover dos favoritos"].includes(e.label)),
             ]}
             trigger={(p) => <IconButton {...p} variant="secondary" icon={MoreHorizontal} label="Mais ações" />}
           />
@@ -132,13 +131,17 @@ export function DetailsScreen({ id }: { id: number }) {
         <div className="flex gap-8 max-md:flex-col">
           <div className="w-64 shrink-0 max-md:mx-auto max-md:w-48">
             <Cover comicId={comic.id} title={comic.title} kind={comic.coverKind} rev={comic.coverRev} error={comic.coverError} eager />
-            <p className="mt-2 text-xs text-muted">{COVER_KIND_TEXT[comic.coverKind]}</p>
-            {comic.coverKind === "placeholder" && comic.coverError && <p className="mt-1 text-xs text-muted">Motivo: {comic.coverError}</p>}
+            {(comic.coverKind === "placeholder" || comic.coverKind === "pending") && (
+              <p className="mt-2 text-xs text-muted">
+                {COVER_KIND_TEXT[comic.coverKind]}
+                {comic.coverKind === "placeholder" && comic.coverError && ` Motivo: ${comic.coverError}.`}
+              </p>
+            )}
           </div>
           <div className="min-w-0 flex-1">
             <div className="rounded-md border border-border bg-surface p-4">
-              <p className="text-sm text-muted">{STATUS_LABELS[comic.status]}</p>
-              <p className="mt-0.5 text-lg font-semibold">{progressLabel(comic)}</p>
+              {comic.status === "reading" && <p className="text-sm text-muted">{STATUS_LABELS.reading}</p>}
+              <p className="text-lg font-semibold">{progressLabel(comic)}</p>
               {ratio !== null && <ProgressBar value={ratio} label="Progresso da leitura" className="mt-2" tone={comic.status === "completed" ? "success" : "accent"} />}
               <div className="mt-4 flex flex-wrap gap-2">
                 <Button variant="primary" icon={BookOpen} onClick={() => actions.read(comic)} disabled={comic.missing}>
@@ -151,16 +154,13 @@ export function DetailsScreen({ id }: { id: number }) {
                   Editar informações
                 </Button>
                 <Button icon={FolderPlus} onClick={() => actions.collections(comic.id)}>
-                  Coleções
+                  Organizar em coleções
                 </Button>
               </div>
             </div>
 
             <h2 className="mt-6 mb-1 text-base font-semibold">Informações</h2>
             <dl>
-              <Row label="Título" source={src.title}>
-                {comic.title}
-              </Row>
               {comic.series && (
                 <Row label="Série" source={src.series}>
                   {comic.series}
@@ -247,10 +247,8 @@ export function DetailsScreen({ id }: { id: number }) {
               <Row label="Último acesso">{comic.lastOpenedAt ? formatDate(comic.lastOpenedAt) : "Nunca aberto"}</Row>
             </dl>
 
-            <div className="mt-8 rounded-md border border-border p-4">
-              <h2 className="text-base font-semibold">Remover da biblioteca</h2>
-              <p className="mt-1 text-sm text-muted">Tira a HQ do catálogo. O arquivo original só é afetado se você escolher isso no próximo passo.</p>
-              <Button variant="danger" icon={Trash2} className="mt-3" onClick={() => actions.remove(comic)}>
+            <div className="mt-8 border-t border-border pt-4">
+              <Button variant="danger" size="sm" icon={Trash2} onClick={() => actions.remove(comic)}>
                 Remover da biblioteca…
               </Button>
             </div>
