@@ -61,8 +61,8 @@ npm run tauri build
 
 Gera, em `<target>/release/bundle/`:
 
-- `nsis/Prancha_0.1.0_x64-setup.exe` — instalador por usuário (não exige administrador), em português;
-- `msi/Prancha_0.1.0_x64_pt-BR.msi` — pacote MSI.
+- `nsis/Prancha_0.1.1_x64-setup.exe` — instalador por usuário (não exige administrador), em português;
+- `msi/Prancha_0.1.1_x64_pt-BR.msi` — pacote MSI.
 
 O instalador baixa o WebView2 se ele não estiver presente. Os binários não são assinados
 digitalmente; o Windows SmartScreen pode pedir confirmação na primeira execução.

@@ -1,6 +1,6 @@
 [package]
 name = "prancha"
-version = "0.1.0"
+version = "0.1.1"
 description = "Prancha — leitor e organizador de quadrinhos"
 authors = ["Prancha"]
 edition = "2024"
