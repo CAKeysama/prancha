@@ -9,8 +9,6 @@
     "core:window:allow-is-fullscreen",
     "core:window:allow-set-theme",
     "core:window:allow-set-title",
-    "opener:allow-reveal-item-in-dir",
-    "dialog:allow-message",
-    "dialog:allow-ask"
+    "core:window:allow-destroy"
   ]
 }
