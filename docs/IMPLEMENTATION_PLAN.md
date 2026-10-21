@@ -44,21 +44,21 @@ Legenda: ✅ concluída · 🟡 parcial · ⛔ bloqueada · ⬜ pendente
 
 | # | Etapa | Depende de | Critério de conclusão | Estado |
 |---|---|---|---|---|
-| 1 | Ambiente: Rust + MSVC | — | `cargo build` de crate com código C compila | ⬜ |
-| 2 | Scaffold Tauri 2 + React + Vite + Tailwind + lint/typecheck | 1 | `npm run build` e `cargo check` passam | ⬜ |
-| 3 | Banco + migrações + repositórios | 2 | testes Rust de repositório passam | ⬜ |
-| 4 | Adaptadores de formato + ordenação natural + ComicInfo | 2 | testes com arquivos gerados (CBZ, CBR, CB7, CBT, pasta, PDF) passam | ⬜ |
-| 5 | Capas (metadados → nome de capa → primeira página → substituta) | 4 | testes de capa real e substituta passam | ⬜ |
-| 6 | Importação em fila (duplicatas, corrompidos, permissões, pastas vazias) | 3,4,5 | testes de importação passam | ⬜ |
-| 7 | Protocolo de páginas + cache de extração | 4 | leitor carrega páginas de todos os formatos | ⬜ |
-| 8 | Shell da UI, temas, tokens, tipografia | 2 | temas claro/escuro/sistema persistem sem flash | ⬜ |
-| 9 | Início, Biblioteca (grade/lista, busca, filtros, ordenação), Detalhes, Favoritos, Recentes, Coleções | 3,8 | fluxos exercitados no app real | ⬜ |
-| 10 | Leitor (página única/dupla/vertical, ajustes, zoom, RTL, tela cheia, atalhos, progresso) | 7,8 | progresso sobrevive a reinício | ⬜ |
-| 11 | Tutorial de primeira execução | 9,10 | E2E: exibir, importar de verdade, pular, persistir, reabrir | ⬜ |
-| 12 | Configurações (aparência, leitura, biblioteca, armazenamento, geral, licenças) | 8 | todas as opções exibidas funcionam | ⬜ |
-| 13 | Testes unitários/integração/E2E + relatório | todos | `docs/TEST_REPORT.md` com resultados reais | ⬜ |
-| 14 | Validação visual com capturas | 9–12 | `artifacts/screenshots/` revisado | ⬜ |
-| 15 | Instalador Windows (NSIS/MSI) + README/ARCHITECTURE | todos | instalador gerado e verificado | ⬜ |
+| 1 | Ambiente: Rust + MSVC | — | `cargo build` de crate com código C compila | ✅ (UnRAR exige `advapi32`, adicionado em `build.rs`) |
+| 2 | Scaffold Tauri 2 + React + Vite + Tailwind + lint/typecheck | 1 | `npm run build` e `cargo check` passam | ✅ |
+| 3 | Banco + migrações + repositórios | 2 | testes Rust de repositório passam | ✅ |
+| 4 | Adaptadores de formato + ordenação natural + ComicInfo | 2 | testes com arquivos gerados (CBZ, CBR, CB7, CBT, pasta, PDF) passam | ✅ |
+| 5 | Capas (metadados → nome de capa → primeira página → substituta) | 4 | testes de capa real e substituta passam | ✅ |
+| 6 | Importação em fila (duplicatas, corrompidos, permissões, pastas vazias) | 3,4,5 | testes de importação passam | ✅ |
+| 7 | Protocolo de páginas + cache de extração | 4 | leitor carrega páginas de todos os formatos | ✅ (deadlock encontrado e corrigido) |
+| 8 | Shell da UI, temas, tokens, tipografia | 2 | temas claro/escuro/sistema persistem sem flash | ✅ (ver limitação 3) |
+| 9 | Início, Biblioteca (grade/lista, busca, filtros, ordenação), Detalhes, Favoritos, Recentes, Coleções | 3,8 | fluxos exercitados no app real | ✅ |
+| 10 | Leitor (página única/dupla/vertical, ajustes, zoom, RTL, tela cheia, atalhos, progresso) | 7,8 | progresso sobrevive a reinício | ✅ |
+| 11 | Tutorial de primeira execução | 9,10 | E2E: exibir, importar de verdade, pular, persistir, reabrir | ✅ |
+| 12 | Configurações (aparência, leitura, biblioteca, armazenamento, geral, licenças) | 8 | todas as opções exibidas funcionam | ✅ (pastas monitoradas não implementadas e não exibidas) |
+| 13 | Testes unitários/integração/E2E + relatório | todos | `docs/TEST_REPORT.md` com resultados reais | ✅ |
+| 14 | Validação visual com capturas | 9–12 | `artifacts/screenshots/` revisado | ✅ (inclui revisão pelas diretrizes da Apple) |
+| 15 | Instalador Windows (NSIS/MSI) + README/ARCHITECTURE | todos | instalador gerado e verificado | ✅ NSIS instalado/executado/desinstalado em modo silencioso; MSI gerado, não instalado |
 
 ## 4. Riscos
 
@@ -70,3 +70,11 @@ Legenda: ✅ concluída · 🟡 parcial · ⛔ bloqueada · ⬜ pendente
 | Arquivos maliciosos (zip bomb, entradas gigantes) | limites por entrada, por arquivo e de dimensão de imagem; leitura limitada com `take()` |
 | Diálogo nativo não é automatizável no E2E | em builds de depuração, `PRANCHA_E2E_PICK` substitui apenas a escolha do caminho; a importação continua real |
 | Fechamento inesperado | SQLite WAL + transações; progresso gravado com debounce e no fechamento |
+
+## 5. Limitações conhecidas
+
+1. EPUB e outros formatos de livro digital não são suportados (são relatados como "Formato não suportado").
+2. Pastas monitoradas não foram implementadas; a opção não aparece nas configurações.
+3. Na primeira pintura, a janela nativa usa fundo escuro; quem escolheu o tema claro pode ver um instante de fundo escuro antes do conteúdo (o conteúdo em si já nasce no tema certo).
+4. Binários e instaladores não são assinados digitalmente.
+5. Ver também "Não verificado / limitações" em `TEST_REPORT.md`.

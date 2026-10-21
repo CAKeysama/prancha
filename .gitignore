@@ -9,3 +9,4 @@ tests/.tmp/
 .DS_Store
 .vscode/
 public/pdfjs/
+artifacts/installer/
