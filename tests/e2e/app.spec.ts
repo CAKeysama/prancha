@@ -1,10 +1,10 @@
 // Testes E2E no executável real (backend Rust + WebView2). Apenas a escolha de caminho do
 // diálogo nativo é substituída (PRANCHA_E2E_PICK_FILE, só em builds de depuração); a importação,
 // o banco, as capas e a leitura são reais.
-import { existsSync, renameSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { FIXTURES, copyDir, freshDataDir, launchApp, shot, type AppSession } from "./harness";
+import { FIXTURES, ROOT, copyDir, freshDataDir, launchApp, shot, type AppSession } from "./harness";
 
 function copyFixtures(dataDir: string): { lib: string; errors: string } {
   const dest = join(dataDir, "..", `${dataDir.split(/[\\/]/).pop()}-arquivos`);
@@ -385,5 +385,356 @@ test.describe.serial("biblioteca, formatos e leitor", () => {
     await page.getByRole("button", { name: "Localizar arquivo…" }).click();
     await expect(page.getByText("Arquivo original não encontrado")).toHaveCount(0);
     await expect(page.getByText("Tiras (movido).cbt").first()).toBeVisible();
+  });
+});
+
+// Roda só com páginas reais: os quadrinhos e o gabarito ficam em tests/real, fora do git.
+test.describe.serial("Leitura Guiada em páginas reais", () => {
+  const manifest = JSON.parse(readFileSync(join(ROOT, "tests", "real", "manifest.json"), "utf8")) as {
+    comics: Array<{ title: string; path: string; pageCount: number }>;
+    pdf: { title: string; path: string; pageCount: number };
+    guided: { comic: number; dense: number; denseCount: number; nextCount: number; empty: number; afterEmptyCount: number; last: number; doubtful: number; doubtfulCount: number };
+  };
+  const plan = manifest.guided;
+  const comic = manifest.comics[plan.comic]!;
+  const of = (n: number) => `Página ${n + 1} de ${comic.pageCount}`;
+  let app: AppSession;
+  const dir = freshDataDir("guiada");
+
+  const stage = (page: Page) => page.getByTestId("guided-reader");
+  const progress = (page: Page) => page.getByTestId("guided-progress");
+  const pill = (page: Page) => page.getByRole("toolbar", { name: "Leitura Guiada" });
+  const balloonX = async (page: Page) => {
+    await page.waitForTimeout(420);
+    const box = (await page.getByTestId("guided-spot").boundingBox())!;
+    return box.x + box.width / 2;
+  };
+  const shotOutsideGit = async (page: Page, name: string) => {
+    await page.waitForTimeout(420);
+    await page.screenshot({ path: join(ROOT, "tests", "real", "screenshots", `${name}.png`) });
+  };
+  const goTo = async (page: Page, index: number) => {
+    await page.mouse.move(400, 300);
+    const slider = page.locator("#reader-progress");
+    await slider.fill(String(index + 1));
+    await waitPageLoaded(page, index + 1);
+    // Com o foco no controle deslizante, os atalhos do leitor ficariam desligados.
+    await slider.blur();
+  };
+  const enter = async (page: Page) => {
+    await page.mouse.move(400, 300);
+    await page.getByRole("button", { name: "Leitura Guiada" }).first().click();
+    await expect(stage(page)).toBeVisible();
+  };
+  const leave = async (page: Page) => {
+    await page.keyboard.press("Escape");
+    await expect(stage(page)).toHaveCount(0);
+    // Os controles do leitor somem sozinhos: sem mover o mouse, "Biblioteca" fica fora da tela e o clique espera para sempre.
+    await page.mouse.move(410, 310);
+  };
+  const editor = (page: Page) => page.getByRole("button", { name: /^Corrigir regiões/ }).click();
+  // A barra de progresso continua na tela por baixo do editor: só o editor fechado prova que a gravação terminou.
+  const editorClosed = (page: Page) => expect(page.getByTestId("guided-editor-page")).toHaveCount(0);
+
+  test.beforeAll(async () => {
+    app = await launchApp(dir);
+    await app.page.getByRole("button", { name: "Pular tutorial" }).click();
+    // A importação só lê os originais; banco e cache ficam numa pasta de dados descartável.
+    app.nextPick([comic.path, join(ROOT, manifest.pdf.path)]);
+    await app.page.getByRole("button", { name: "Selecionar uma pasta" }).click();
+    const panel = app.page.getByRole("region", { name: "Importação de quadrinhos" });
+    await expect(panel.getByText("Importação concluída")).toBeVisible({ timeout: 120_000 });
+    await panel.getByRole("button", { name: "Fechar resumo da importação" }).click();
+  });
+  test.afterAll(async () => app?.close());
+
+  test("destaca cada balão sem mexer na página, navega e respeita os limites", async () => {
+    const page = app.page;
+    await openReader(page, comic.title);
+    await goTo(page, plan.dense);
+    await enter(page);
+    await expect(progress(page)).toHaveText(`1 de ${plan.denseCount}`, { timeout: 60_000 });
+    await expect(pill(page).getByRole("button", { name: "Anterior" })).toBeDisabled();
+    await page.waitForTimeout(420);
+    // O balão ativo fica inteiro na tela e a página inteira continua à vista, acima dos controles.
+    const spot = (await page.getByTestId("guided-spot").boundingBox())!;
+    const view = await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }));
+    const sheet = (await page.getByTestId("guided-page").boundingBox())!;
+    expect(spot.x).toBeGreaterThanOrEqual(0);
+    expect(spot.y).toBeGreaterThanOrEqual(0);
+    expect(spot.x + spot.width).toBeLessThanOrEqual(view.width);
+    expect(spot.y + spot.height).toBeLessThanOrEqual(view.height - 60);
+    expect(sheet.y).toBeGreaterThanOrEqual(0);
+    expect(sheet.y + sheet.height).toBeLessThanOrEqual((await pill(page).boundingBox())!.y);
+    expect(sheet.height / view.height).toBeGreaterThan(0.6);
+
+    await page.keyboard.press("ArrowRight");
+    await expect(progress(page)).toHaveText(`2 de ${plan.denseCount}`);
+    await page.waitForTimeout(420);
+    // A página não mudou de lugar nem de tamanho: quem se moveu foi o balão.
+    expect(await page.getByTestId("guided-page").boundingBox()).toEqual(sheet);
+    expect(await page.getByTestId("guided-spot").boundingBox()).not.toEqual(spot);
+    await page.keyboard.press("Space");
+    await expect(progress(page)).toHaveText(`3 de ${plan.denseCount}`);
+    await page.keyboard.press("Enter");
+    await expect(progress(page)).toHaveText(`4 de ${plan.denseCount}`);
+    await page.keyboard.press("ArrowLeft");
+    await expect(progress(page)).toHaveText(`3 de ${plan.denseCount}`);
+    await pill(page).getByRole("button", { name: "Próximo" }).click();
+    await expect(progress(page)).toHaveText(`4 de ${plan.denseCount}`);
+    // Toques em sequência, sem esperar a tela: nenhum se perde.
+    for (let i = 4; i <= plan.denseCount; i++) await page.keyboard.press("ArrowRight");
+    await expect(stage(page).getByText("Página concluída")).toBeVisible();
+    await stage(page).getByRole("button", { name: "Rever último balão" }).click();
+    await expect(progress(page)).toHaveText(`${plan.denseCount} de ${plan.denseCount}`);
+    await page.keyboard.press("ArrowRight");
+    await stage(page).getByRole("button", { name: "Próxima página" }).click();
+    await expect(progress(page)).toHaveText(`1 de ${plan.nextCount}`, { timeout: 60_000 });
+
+    // Ao sair, o leitor comum está na mesma página e responde como antes.
+    await leave(page);
+    await expect(await indicator(page)).toHaveText(of(plan.dense + 1));
+    await page.keyboard.press("ArrowLeft");
+    await expect(await indicator(page)).toHaveText(of(plan.dense));
+    await page.keyboard.press("ArrowRight");
+    await expect(await indicator(page)).toHaveText(of(plan.dense + 1));
+  });
+
+  test("página real sem balões não inventa regiões", async () => {
+    const page = app.page;
+    await goTo(page, plan.empty);
+    await enter(page);
+    await expect(stage(page).getByText("Nenhum balão identificado nesta página")).toBeVisible({ timeout: 60_000 });
+    await shotOutsideGit(page, "sem-baloes");
+    await page.keyboard.press("ArrowRight");
+    await expect(progress(page)).toHaveText(`1 de ${plan.afterEmptyCount}`, { timeout: 60_000 });
+    await leave(page);
+    // Última página da HQ: não há próxima para oferecer.
+    await goTo(page, plan.last);
+    await enter(page);
+    await expect(stage(page).getByText("Nenhum balão identificado nesta página")).toBeVisible({ timeout: 60_000 });
+    await expect(stage(page).getByRole("button", { name: "Próxima página" })).toHaveCount(0);
+    await leave(page);
+  });
+
+  test("OLÁ e RAHHH! aparecem, e o balão duvidoso fica marcado", async () => {
+    const page = app.page;
+    await goTo(page, plan.doubtful);
+    await enter(page);
+    await expect(progress(page)).toHaveText(`1 de ${plan.doubtfulCount}`, { timeout: 60_000 });
+    await expect(page.getByTestId("guided-spot-doubtful")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Corrigir regiões (há regiões duvidosas)" })).toBeVisible();
+    await shotOutsideGit(page, "ola-duvidoso");
+    for (let i = 1; i < plan.doubtfulCount; i++) await page.keyboard.press("ArrowRight");
+    await expect(progress(page)).toHaveText(`${plan.doubtfulCount} de ${plan.doubtfulCount}`);
+    await shotOutsideGit(page, "rahhh");
+    await page.keyboard.press("ArrowRight");
+    await expect(stage(page).getByText("Página concluída")).toBeVisible();
+    // O cartão de fim fica abaixo da página, como os controles: a arte continua inteira.
+    const card = (await page.getByRole("status").filter({ hasText: "Página concluída" }).boundingBox())!;
+    const sheet = (await page.getByTestId("guided-page").boundingBox())!;
+    expect(card.y).toBeGreaterThanOrEqual(sheet.y + sheet.height - 1);
+    await shotOutsideGit(page, "pagina-concluida");
+    await leave(page);
+  });
+
+  test("os controles acompanham o tema claro", async () => {
+    const page = app.page;
+    await page.evaluate(() => document.documentElement.setAttribute("data-theme", "light"));
+    await enter(page);
+    await expect(progress(page)).toHaveText(`1 de ${plan.doubtfulCount}`);
+    await shotOutsideGit(page, "tema-claro");
+    await leave(page);
+    await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
+  });
+
+  test("a transição mantém os quadros da animação", async () => {
+    const page = app.page;
+    await goTo(page, plan.dense);
+    await page.keyboard.press("g");
+    await expect(progress(page)).toHaveText(`1 de ${plan.denseCount}`);
+    await page.waitForTimeout(420);
+    const sample = page.evaluate(
+      () =>
+        new Promise<number[]>((resolve) => {
+          const deltas: number[] = [];
+          let last = performance.now();
+          const start = last;
+          const tick = (now: number) => {
+            deltas.push(now - last);
+            last = now;
+            if (now - start < 450) requestAnimationFrame(tick);
+            else resolve(deltas);
+          };
+          requestAnimationFrame(tick);
+        }),
+    );
+    await page.keyboard.press("ArrowRight");
+    const deltas = (await sample).sort((a, b) => a - b);
+    const p95 = deltas[Math.floor(deltas.length * 0.95)]!;
+    console.log(`Leitura Guiada: ${deltas.length} quadros, p95 ${p95.toFixed(1)} ms`);
+    expect(p95).toBeLessThan(50);
+    await shotOutsideGit(page, "balao-destacado");
+    await leave(page);
+  });
+
+  test("a ordem segue a direção de leitura", async () => {
+    const page = app.page;
+    await enter(page);
+    await expect(progress(page)).toHaveText(`1 de ${plan.denseCount}`);
+    const first = await balloonX(page);
+    await page.keyboard.press("ArrowRight");
+    await expect(progress(page)).toHaveText(`2 de ${plan.denseCount}`);
+    // Esquerda para a direita: o segundo balão está à direita do primeiro.
+    expect(await balloonX(page)).toBeGreaterThan(first);
+    await leave(page);
+
+    await page.keyboard.press("d");
+    await enter(page);
+    await expect(progress(page)).toHaveText(`1 de ${plan.denseCount}`);
+    const firstRtl = await balloonX(page);
+    await page.keyboard.press("ArrowLeft");
+    await expect(progress(page)).toHaveText(`2 de ${plan.denseCount}`);
+    expect(await balloonX(page)).toBeLessThan(firstRtl);
+    await page.keyboard.press("ArrowRight");
+    await expect(progress(page)).toHaveText(`1 de ${plan.denseCount}`);
+    await leave(page);
+    await page.keyboard.press("d");
+  });
+
+  test("funciona nos modos duplo e vertical, sem mudar o modo", async () => {
+    const page = app.page;
+    await page.keyboard.press("m");
+    await enter(page);
+    await expect(progress(page)).toHaveText(`1 de ${plan.denseCount}`);
+    await leave(page);
+    await expect(page.getByRole("button", { name: /atual: Página dupla/ })).toBeVisible();
+    await page.keyboard.press("m");
+    await expect(page.getByRole("button", { name: /atual: Rolagem vertical/ })).toBeVisible();
+    await waitPageLoaded(page, plan.dense + 1);
+    await enter(page);
+    await expect(progress(page)).toHaveText(`1 de ${plan.denseCount}`);
+    await leave(page);
+    await expect(page.getByRole("button", { name: /atual: Rolagem vertical/ })).toBeVisible();
+    await expect(await indicator(page)).toHaveText(of(plan.dense));
+    await page.keyboard.press("m");
+    await expect(await indicator(page)).toHaveText(of(plan.dense));
+  });
+
+  test("acompanha a janela redimensionada", async () => {
+    const page = app.page;
+    await enter(page);
+    await page.waitForTimeout(420);
+    await page.setViewportSize({ width: 760, height: 560 });
+    await page.waitForTimeout(150);
+    const spot = (await page.getByTestId("guided-spot").boundingBox())!;
+    expect(spot.x).toBeGreaterThanOrEqual(0);
+    expect(spot.x + spot.width).toBeLessThanOrEqual(760);
+    expect(spot.y + spot.height).toBeLessThanOrEqual(560 - 60);
+    await expect(pill(page)).toBeInViewport({ ratio: 1 });
+    await shotOutsideGit(page, "janela-pequena");
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await leave(page);
+  });
+
+  test("correções sobrevivem ao reinício e podem ser desfeitas", async () => {
+    let page = app.page;
+    await enter(page);
+    await expect(progress(page)).toHaveText(`1 de ${plan.denseCount}`);
+    await editor(page);
+    const rows = page.getByTestId("guided-editor-row");
+    await expect(rows).toHaveCount(plan.denseCount);
+    await shotOutsideGit(page, "editor");
+    const originalKind = await page.getByLabel("Tipo da região 2", { exact: true }).inputValue();
+
+    await page.getByRole("button", { name: `Excluir a região ${plan.denseCount}` }).click();
+    await expect(rows).toHaveCount(plan.denseCount - 1);
+    // Desenha uma região nova arrastando numa parte da página sem regiões.
+    const sheet = (await page.getByTestId("guided-editor-page").boundingBox())!;
+    await page.mouse.move(sheet.x + sheet.width * 0.15, sheet.y + sheet.height * 0.55);
+    await page.mouse.down();
+    await page.mouse.move(sheet.x + sheet.width * 0.3, sheet.y + sheet.height * 0.65, { steps: 4 });
+    await page.mouse.up();
+    await expect(rows).toHaveCount(plan.denseCount);
+    // Arrasta a região 1 e redimensiona pela alça.
+    const region = page.getByRole("button", { name: /^Região 1:/ });
+    const before = (await region.boundingBox())!;
+    await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(before.x + before.width / 2 + 20, before.y + before.height / 2 + 30, { steps: 3 });
+    await page.mouse.up();
+    const moved = (await region.boundingBox())!;
+    expect(moved.x).toBeGreaterThan(before.x + 10);
+    await page.mouse.move(moved.x + moved.width, moved.y + moved.height);
+    await page.mouse.down();
+    await page.mouse.move(moved.x + moved.width + 15, moved.y + moved.height + 15, { steps: 3 });
+    await page.mouse.up();
+    expect((await region.boundingBox())!.width).toBeGreaterThan(moved.width + 5);
+    // Muda o tipo e a ordem: a região 1 vira "Pensamento" e passa a ser a segunda.
+    await page.getByLabel("Tipo da região 1", { exact: true }).selectOption({ label: "Pensamento" });
+    await page.getByRole("button", { name: "Ler a região 1 depois" }).click();
+    await expect(page.getByLabel("Tipo da região 2", { exact: true })).toHaveValue("thought");
+    await page.getByRole("button", { name: "Confirmar sequência" }).click();
+    await editorClosed(page);
+    await expect(progress(page)).toHaveText(`1 de ${plan.denseCount}`);
+    await leave(page);
+    await page.getByRole("button", { name: "Biblioteca" }).click();
+
+    // Reinício real do aplicativo com os mesmos dados.
+    await app.close();
+    app = await launchApp(dir);
+    page = app.page;
+    await openReader(page, comic.title);
+    await goTo(page, plan.dense);
+    await enter(page);
+    await expect(progress(page)).toHaveText(`1 de ${plan.denseCount}`);
+    await editor(page);
+    await expect(page.getByLabel("Tipo da região 2", { exact: true })).toHaveValue("thought");
+
+    // Cancelar com mudanças pendentes pergunta antes de descartar.
+    await page.getByRole("button", { name: "Excluir a região 3" }).click();
+    await page.getByRole("button", { name: "Fechar corrigir regiões" }).click();
+    const confirm = page.getByRole("dialog", { name: "Descartar as correções?" });
+    await confirm.getByRole("button", { name: "Descartar" }).click();
+    await editorClosed(page);
+    await expect(progress(page)).toHaveText(`1 de ${plan.denseCount}`);
+
+    await editor(page);
+    await page.getByRole("button", { name: "Restaurar detecção automática" }).click();
+    await editorClosed(page);
+    await expect(progress(page)).toHaveText(`1 de ${plan.denseCount}`);
+    await editor(page);
+    await expect(page.getByLabel("Tipo da região 2", { exact: true })).toHaveValue(originalKind);
+    await expect(page.getByRole("button", { name: "Restaurar detecção automática" })).toHaveCount(0);
+    await page.getByRole("button", { name: "Fechar corrigir regiões" }).click();
+    await editorClosed(page);
+    await leave(page);
+  });
+
+  test("página real sem balões pode receber regiões à mão", async () => {
+    const page = app.page;
+    await goTo(page, plan.empty);
+    await enter(page);
+    await stage(page).getByRole("button", { name: "Marcar balões" }).click();
+    await page.getByRole("button", { name: "Adicionar região" }).click();
+    await page.getByRole("button", { name: "Confirmar sequência" }).click();
+    await editorClosed(page);
+    await expect(progress(page)).toHaveText("1 de 1");
+    await leave(page);
+    await page.getByRole("button", { name: "Biblioteca" }).click();
+  });
+
+  test("páginas reais em PDF são analisadas a partir do PDF.js", async () => {
+    const page = app.page;
+
+    await openReader(page, manifest.pdf.title);
+    await waitPageLoaded(page);
+    await enter(page);
+    await expect(progress(page)).toHaveText(`1 de ${plan.denseCount}`, { timeout: 60_000 });
+    await expect(page.getByTestId("guided-spot").locator("img")).toHaveJSProperty("complete", true);
+    await shotOutsideGit(page, "pdf");
+    await leave(page);
+    await expect(await indicator(page)).toHaveText(`Página 1 de ${manifest.pdf.pageCount}`);
+    await page.getByRole("button", { name: "Biblioteca" }).click();
   });
 });

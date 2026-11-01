@@ -8,6 +8,7 @@ import {
   Columns2,
   Eye,
   LayoutList,
+  MessagesSquare,
   Maximize,
   Minimize,
   MoveHorizontal,
@@ -43,6 +44,7 @@ import { useSettings } from "../../app/settings-context";
 import { useNav } from "../../app/navigation";
 import { useOnboarding } from "../onboarding/onboarding-context";
 import { ReaderTip } from "../onboarding/ReaderTip";
+import { GuidedReader } from "./GuidedReader";
 import { PageIndexPanel, ReaderSettingsPanel, ShortcutsDialog } from "./ReaderPanels";
 import { PagedView, VerticalView, type VerticalHandle, type ViewHandle } from "./Views";
 import { usePreload } from "./PageView";
@@ -154,6 +156,7 @@ function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount
   const [controlsVisible, setControlsVisible] = useState(true);
   const [pinnedHidden, setPinnedHidden] = useState(false);
   const [endReached, setEndReached] = useState(false);
+  const [guided, setGuided] = useState(false);
   const verticalRef = useRef<VerticalHandle>(null);
   const pagedRef = useRef<ViewHandle>(null);
   const hideTimer = useRef<number | undefined>(undefined);
@@ -317,6 +320,9 @@ function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount
           return toggleControls();
         case "pageIndex":
           return setPanel((p) => (p === "index" ? null : "index"));
+        case "guided":
+          setPanel(null);
+          return setGuided(true);
         case "help":
           return setHelp(true);
         case "back":
@@ -328,6 +334,7 @@ function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount
   );
 
   useEffect(() => {
+    if (guided) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || isTyping(e.target) || document.querySelector('[aria-modal="true"]')) return;
       if (e.key === "Escape") {
@@ -349,10 +356,11 @@ function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [shortcuts, rtl, mode, panel, fullscreen, run, toggleFullscreen, showControls]);
+  }, [guided, shortcuts, rtl, mode, panel, fullscreen, run, toggleFullscreen, showControls]);
 
   // Ctrl + roda do mouse: zoom.
   useEffect(() => {
+    if (guided) return;
     const onWheel = (e: WheelEvent) => {
       if (!e.ctrlKey) return;
       e.preventDefault();
@@ -360,7 +368,7 @@ function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount
     };
     window.addEventListener("wheel", onWheel, { passive: false });
     return () => window.removeEventListener("wheel", onWheel);
-  }, []);
+  }, [guided]);
 
   const wheelLock = useRef(0);
   const onWheelEdge = useCallback(
@@ -443,6 +451,7 @@ function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount
     <div className="relative flex h-full flex-col overflow-hidden bg-reader text-fg" onMouseMove={showControls} aria-label={`Leitor: ${comic.title}`}>
       {/* Barra superior */}
       <header
+        inert={guided}
         className={cn(
           "absolute inset-x-0 top-0 z-20 flex items-center gap-2 border-b border-border bg-elevated/95 px-3 py-1.5 backdrop-blur transition-transform duration-200",
           visible ? "translate-y-0" : "-translate-y-full",
@@ -479,6 +488,15 @@ function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount
           <IconButton icon={ZoomIn} label="Aumentar zoom" shortcut={k("zoomIn")} onClick={() => setZoom(zoomIn)} size="sm" />
         </div>
         <span className="mx-1 h-5 w-px bg-border" aria-hidden />
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={MessagesSquare}
+          title={`Ler balão por balão (${k("guided") ?? ""})`}
+          onClick={() => run("guided")}
+        >
+          <span className="max-lg:sr-only">Leitura Guiada</span>
+        </Button>
         <IconButton icon={ModeIcon} label={`Alternar modo de exibição (atual: ${MODE_LABELS[mode]})`} shortcut={k("cycleMode")} onClick={() => setMode(nextMode(mode))} size="sm" />
         <IconButton icon={ListOrdered} label="Abrir índice de páginas" shortcut={k("pageIndex")} pressed={panel === "index"} onClick={() => setPanel((p) => (p === "index" ? null : "index"))} size="sm" />
         <IconButton icon={Settings2} label="Configurações de leitura" pressed={panel === "settings"} onClick={() => setPanel((p) => (p === "settings" ? null : "settings"))} size="sm" />
@@ -486,7 +504,7 @@ function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount
       </header>
 
       {/* Área de leitura (com controles fixos, reserva espaço para não cobrir a página) */}
-      <div className={cn("relative flex-1 overflow-hidden", (mode !== "vertical" || settings["reader.controls"] === "always") && "pt-[45px] pb-[49px]")}>
+      <div inert={guided} className={cn("relative flex-1 overflow-hidden", (mode !== "vertical" || settings["reader.controls"] === "always") && "pt-[45px] pb-[49px]")}>
         {mode === "vertical" ? (
           <VerticalView
             ref={verticalRef}
@@ -563,6 +581,7 @@ function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount
 
       {/* Barra inferior */}
       <footer
+        inert={guided}
         className={cn(
           "absolute inset-x-0 bottom-0 z-20 flex items-center gap-3 border-t border-border bg-elevated/95 px-4 py-2 backdrop-blur transition-transform duration-200",
           visible ? "translate-y-0" : "translate-y-full",
@@ -593,6 +612,20 @@ function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount
         </div>
       </footer>
 
+      {guided && (
+        <GuidedReader
+          comicId={comic.id}
+          page={page}
+          pageCount={pageCount}
+          pdf={pdf}
+          rtl={rtl}
+          shortcuts={shortcuts}
+          natural={sizes.get(page)}
+          onSize={onSize}
+          onPage={goToPage}
+          onExit={() => setGuided(false)}
+        />
+      )}
       {tipActive && <ReaderTip shortcuts={shortcuts} />}
       <ShortcutsDialog open={help} onClose={() => setHelp(false)} shortcuts={shortcuts} />
     </div>

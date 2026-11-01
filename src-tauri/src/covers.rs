@@ -55,6 +55,11 @@ pub struct CoverOutcome {
 
 /// Decodifica uma imagem com limites e gera a miniatura JPEG.
 pub fn make_thumbnail(bytes: &[u8]) -> Result<Vec<u8>, String> {
+    thumbnail_from_image(decode_limited(bytes)?)
+}
+
+/// Decodifica uma imagem vinda de arquivo ou da interface, recusando dimensões absurdas.
+pub fn decode_limited(bytes: &[u8]) -> Result<DynamicImage, String> {
     let mut reader = ImageReader::new(Cursor::new(bytes))
         .with_guessed_format()
         .map_err(|e| format!("não foi possível identificar a imagem ({e})"))?;
@@ -66,8 +71,7 @@ pub fn make_thumbnail(bytes: &[u8]) -> Result<Vec<u8>, String> {
     limits.max_image_height = Some(MAX_DIMENSION);
     limits.max_alloc = Some(1024 * 1024 * 1024);
     reader.limits(limits);
-    let img = reader.decode().map_err(|e| format!("imagem inválida ({e})"))?;
-    thumbnail_from_image(img)
+    reader.decode().map_err(|e| format!("imagem inválida ({e})"))
 }
 
 pub fn thumbnail_from_image(img: DynamicImage) -> Result<Vec<u8>, String> {

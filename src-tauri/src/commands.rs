@@ -14,6 +14,7 @@ use crate::core::Core;
 use crate::covers::{self, COVER_PARAMS_VERSION};
 use crate::error::{AppError, AppResult};
 use crate::formats::{self, COMIC_EXTENSIONS, ComicFormat};
+use crate::guided::{self, store::{self, GuidedPage, GuidedRegion}};
 use crate::import::{self, EVENT_LIBRARY};
 use crate::library::{
     self, CollectionInfo, ComicDetails, ComicSummary, HomeData, LibraryQuery, MetadataPatch, Progress,
@@ -470,6 +471,66 @@ pub async fn report_pdf_cover_failure(state: S<'_>, id: i64, message: String) ->
         Ok(())
     })
     .await
+}
+
+// ---------------------------------------------------------------------------
+// Leitura Guiada
+// ---------------------------------------------------------------------------
+
+/// Analisa os bytes de uma página e grava o resultado. Uma análise por vez, para não repetir
+/// o trabalho quando a pré-carga e a leitura pedem a mesma página.
+fn analyze_page(c: &Core, info: &library::ComicFileInfo, page: i64, rtl: bool, image: &[u8]) -> AppResult<GuidedPage> {
+    let decoded = covers::decode_limited(image)
+        .map_err(|e| AppError::user("undecodable", format!("Não foi possível analisar esta página ({e}).")))?;
+    let analysis = guided::analyze(&decoded);
+    let mut db = c.db();
+    store::save_analysis(&mut db, info.id, page, &info.fingerprint, &analysis)?;
+    store::read_page(&db, info.id, page, &info.fingerprint, rtl)?
+        .ok_or_else(|| AppError::user("internal", "A análise não foi gravada."))
+}
+
+/// Regiões da página: correções do usuário ou análise automática (feita agora, se faltar).
+/// PDFs são desenhados pela interface: sem análise guardada, devolve `None` e ela envia a imagem.
+#[tauri::command]
+pub async fn guided_page(state: S<'_>, comic_id: i64, page_index: i64, rtl: bool) -> AppResult<Option<GuidedPage>> {
+    blocking(&state, move |c| {
+        let info = library::file_info(&c.db(), comic_id)?;
+        let _one_at_a_time = c.guided_lock.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(page) = store::read_page(&c.db(), comic_id, page_index, &info.fingerprint, rtl)? {
+            return Ok(Some(page));
+        }
+        if info.format == "pdf" {
+            return Ok(None);
+        }
+        let (bytes, _) = c.pages.read_page(&info, page_index as usize)?;
+        analyze_page(c, &info, page_index, rtl, &bytes).map(Some)
+    })
+    .await
+}
+
+/// Recebe uma página de PDF desenhada pelo PDF.js.
+#[tauri::command]
+pub async fn guided_analyze_image(state: S<'_>, comic_id: i64, page_index: i64, rtl: bool, image: Vec<u8>) -> AppResult<GuidedPage> {
+    blocking(&state, move |c| {
+        let info = library::file_info(&c.db(), comic_id)?;
+        let _one_at_a_time = c.guided_lock.lock().unwrap_or_else(|e| e.into_inner());
+        analyze_page(c, &info, page_index, rtl, &image)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn guided_save_corrections(state: S<'_>, comic_id: i64, page_index: i64, regions: Vec<GuidedRegion>) -> AppResult<()> {
+    blocking(&state, move |c| {
+        let info = library::file_info(&c.db(), comic_id)?;
+        store::save_corrections(&mut c.db(), comic_id, page_index, &info.fingerprint, &regions)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn guided_clear_corrections(state: S<'_>, comic_id: i64, page_index: i64) -> AppResult<()> {
+    blocking(&state, move |c| store::clear_corrections(&mut c.db(), comic_id, page_index)).await
 }
 
 // ---------------------------------------------------------------------------

@@ -6,6 +6,7 @@ pub mod covers;
 pub mod db;
 pub mod error;
 pub mod formats;
+pub mod guided;
 pub mod import;
 pub mod library;
 pub mod natural;
@@ -97,6 +98,10 @@ pub fn run() {
             commands::pending_pdf_covers,
             commands::save_pdf_cover,
             commands::report_pdf_cover_failure,
+            commands::guided_page,
+            commands::guided_analyze_image,
+            commands::guided_save_corrections,
+            commands::guided_clear_corrections,
             commands::list_collections,
             commands::create_collection,
             commands::rename_collection,

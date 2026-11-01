@@ -14,6 +14,7 @@ import type {
   ReaderSession,
   StorageInfo,
 } from "../domain/types";
+import type { GuidedPage, GuidedRegion } from "../domain/guided";
 
 export class ApiError extends Error {
   code: string;
@@ -80,6 +81,13 @@ export const api = {
   savePdfCover: (id: number, image: Uint8Array, pageCount: number | null) =>
     call<void>("save_pdf_cover", { id, image: Array.from(image), pageCount }),
   reportPdfCoverFailure: (id: number, message: string) => call<void>("report_pdf_cover_failure", { id, message }),
+
+  guidedPage: (comicId: number, pageIndex: number, rtl: boolean) => call<GuidedPage | null>("guided_page", { comicId, pageIndex, rtl }),
+  guidedAnalyzeImage: (comicId: number, pageIndex: number, rtl: boolean, image: Uint8Array) =>
+    call<GuidedPage>("guided_analyze_image", { comicId, pageIndex, rtl, image: Array.from(image) }),
+  guidedSaveCorrections: (comicId: number, pageIndex: number, regions: GuidedRegion[]) =>
+    call<void>("guided_save_corrections", { comicId, pageIndex, regions }),
+  guidedClearCorrections: (comicId: number, pageIndex: number) => call<void>("guided_clear_corrections", { comicId, pageIndex }),
 
   collections: () => call<CollectionInfo[]>("list_collections"),
   createCollection: (name: string) => call<number>("create_collection", { name }),

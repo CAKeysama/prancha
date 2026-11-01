@@ -63,6 +63,17 @@ export async function renderPdfPage(
   return { width: base.width, height: base.height };
 }
 
+/** Desenha uma página como JPEG para a análise da Leitura Guiada, no tamanho que o detector usa. */
+export async function renderPdfPageImage(doc: PDFDocumentProxy, pageIndex: number): Promise<Uint8Array> {
+  const base = (await doc.getPage(pageIndex + 1)).getViewport({ scale: 1 });
+  const canvas = document.createElement("canvas");
+  const cssWidth = ((1600 / Math.max(base.width, base.height)) * base.width) / (window.devicePixelRatio || 1);
+  await renderPdfPage(doc, pageIndex, canvas, cssWidth);
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
+  if (!blob) throw new Error("falha ao codificar a página");
+  return new Uint8Array(await blob.arrayBuffer());
+}
+
 /** Gera a miniatura da primeira página válida (JPEG) e o total de páginas. */
 export async function renderPdfCover(id: number): Promise<{ image: Uint8Array; pageCount: number }> {
   const doc = await openPdf(id);

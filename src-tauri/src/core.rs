@@ -40,6 +40,7 @@ pub struct Core {
     pub pages: PageService,
     pub importer: Importer,
     pub emit: Emit,
+    pub guided_lock: Mutex<()>,
 }
 
 impl Core {
@@ -51,7 +52,7 @@ impl Core {
         let importer = Importer::spawn(move || db::open(&db_path), paths.covers.clone(), emit.clone())?;
         // Capas pendentes ou geradas com parâmetros antigos são refeitas em segundo plano.
         importer.enqueue_covers();
-        Ok(Core { pages: PageService::new(paths.pages_cache.clone()), paths, db: Mutex::new(conn), importer, emit })
+        Ok(Core { pages: PageService::new(paths.pages_cache.clone()), paths, db: Mutex::new(conn), importer, emit, guided_lock: Mutex::new(()) })
     }
 
     pub fn db(&self) -> MutexGuard<'_, Connection> {

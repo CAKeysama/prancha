@@ -6,6 +6,7 @@ Funciona sem conta, sem internet e sem assinatura. Interface em português do Br
 - **Formatos testados:** CBZ, CBR (RAR4/RAR5 via UnRAR), CB7, CBT, PDF e pastas com imagens (JPEG, PNG, WebP, GIF, BMP; AVIF exibido no leitor).
 - **Biblioteca:** capas automáticas (metadados → imagem de capa → primeira página válida → capa substituta identificada), pesquisa sem acentos, filtros, ordenação, grade/lista, favoritos e coleções.
 - **Leitor:** página única, dupla e rolagem vertical; ajustar à página/largura/altura; zoom; direita→esquerda; tela cheia; índice de páginas; atalhos configuráveis; progresso salvo automaticamente.
+- **Leitura Guiada:** a página fica inteira e cada balão salta para fora, maior, na ordem de leitura. A detecção roda no próprio computador, e o que estiver errado pode ser corrigido à mão.
 - **Tutorial** de primeira execução com importação real.
 
 Capturas de tela: [`artifacts/screenshots/`](artifacts/screenshots/).
@@ -53,6 +54,10 @@ npm run test:e2e       # Playwright no executável real (WebView2 via CDP) + cap
 Os arquivos de teste são gerados por `src-tauri/examples/make_fixtures.rs` (desenhos geométricos
 próprios; nenhum quadrinho comercial no repositório). Resultados: [`docs/TEST_REPORT.md`](docs/TEST_REPORT.md).
 
+Os testes da Leitura Guiada só rodam com páginas reais: os quadrinhos ficam no seu disco e o gabarito em
+`tests/real/manifest.json`, fora do git. Sem esse arquivo esses testes falham de propósito, para ninguém
+achar que a detecção foi conferida. As capturas deles vão para `tests/real/screenshots/`, também fora do git.
+
 ## Compilação e instalador
 
 ```bash
@@ -61,8 +66,8 @@ npm run tauri build
 
 Gera, em `<target>/release/bundle/`:
 
-- `nsis/Prancha_0.1.1_x64-setup.exe` — instalador por usuário (não exige administrador), em português;
-- `msi/Prancha_0.1.1_x64_pt-BR.msi` — pacote MSI.
+- `nsis/Prancha_0.1.2_x64-setup.exe` — instalador por usuário (não exige administrador), em português;
+- `msi/Prancha_0.1.2_x64_pt-BR.msi` — pacote MSI.
 
 O instalador baixa o WebView2 se ele não estiver presente. Os binários não são assinados
 digitalmente; o Windows SmartScreen pode pedir confirmação na primeira execução.

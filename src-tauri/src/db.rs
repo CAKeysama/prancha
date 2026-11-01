@@ -10,7 +10,7 @@ use crate::natural::natural_cmp;
 
 /// Migrações em ordem. A posição + 1 é a versão do esquema após aplicá-la.
 /// Nunca altere uma migração publicada: acrescente uma nova.
-const MIGRATIONS: &[&str] = &[include_str!("../migrations/0001_initial.sql")];
+const MIGRATIONS: &[&str] = &[include_str!("../migrations/0001_initial.sql"), include_str!("../migrations/0002_guided_reading.sql")];
 
 pub fn schema_version() -> i64 {
     MIGRATIONS.len() as i64

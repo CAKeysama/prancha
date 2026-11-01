@@ -16,6 +16,7 @@ export type ShortcutAction =
   | "fullscreen"
   | "toggleControls"
   | "pageIndex"
+  | "guided"
   | "help"
   | "back";
 
@@ -37,6 +38,7 @@ export const SHORTCUT_LABELS: Record<ShortcutAction, string> = {
   fullscreen: "Entrar ou sair da tela cheia",
   toggleControls: "Mostrar ou ocultar controles",
   pageIndex: "Abrir índice de páginas",
+  guided: "Entrar ou sair da Leitura Guiada",
   help: "Mostrar atalhos",
   back: "Voltar à biblioteca",
 };
@@ -61,6 +63,7 @@ export const DEFAULT_SHORTCUTS: ShortcutMap = {
   fullscreen: ["F", "F11"],
   toggleControls: ["H"],
   pageIndex: ["I"],
+  guided: ["G"],
   help: ["?"],
   back: ["Backspace"],
 };

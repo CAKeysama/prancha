@@ -68,6 +68,22 @@ Ordem: `ComicInfo.xml` (`Page Type="FrontCover"`) → imagem nomeada como capa (
 
 `reading_progress(comic_id, page_index, page_count, scroll_ratio)`. A interface agrupa gravações (700 ms nos modos paginados, 1 s na rolagem) e força a gravação ao sair do leitor, trocar de HQ, ocultar a janela e no fechamento (`onCloseRequested`). Chegar à última página marca "Concluído"; HQs concluídas recomeçam da página 1 mantendo o estado. Na rolagem vertical, `scroll_ratio` guarda a posição dentro da página.
 
+## Leitura Guiada
+
+Roda inteira no computador, sem OCR, rede ou dependência nova. Fica dentro do leitor: ao sair, a página e o estado de leitura continuam como estavam.
+
+**Detecção (`src-tauri/src/guided/`).** A página é reduzida a 1600 px no lado maior. `panels` encontra os quadros pelas calhas (XY-cut, mais ilhas). `balloons` procura áreas de cor contínua cujas letras aparecem como buracos alinhados, o que vale para qualquer idioma e para papel branco, colorido ou escuro. Dois balões colados são separados no pescoço entre eles; texto solto sobre um fundo vira uma região em volta das letras. `classify` escolhe o tipo pela forma e pela cor. Letras muito maiores que as da página são onomatopeias e ficam de fora, a não ser que estejam num balão de verdade ("RAHHH!").
+
+**Ordem (`order.rs`).** XY-cut recursivo sobre quadros e balões, invertendo os dois em direita→esquerda. A direção só entra na leitura do resultado, então a mesma análise vale para os dois sentidos.
+
+**Persistência (`store.rs`, migração `0002`).** `guided_pages` guarda os quadros e a validade da análise (impressão digital do arquivo e `DETECTOR_VERSION`); `guided_regions` guarda as regiões separadas por `source` (`auto` ou `user`); `guided_corrections` diz quais páginas têm correção. Refazer a análise nunca toca no que o usuário corrigiu. Cada região tem id, página, retângulo normalizado, tipo, ordem, confiança, estado de revisão e o contorno do balão.
+
+**Tela (`GuidedReader.tsx`, `domain/guided.ts`).** A página fica parada, inteira e acima dos controles, sem escurecer. Cada balão é uma cópia recortada no próprio contorno e posicionada sobre o original: `computePop` calcula o tamanho (o suficiente para ler, sem cobrir a página toda) e mantém o balão inteiro na tela. A cópia é montada já no tamanho final, para não perder nitidez, e só `transform`, `opacity` e `filter` animam, por isso entra e volta sem emenda e qualquer gesto pode interromper. Sem contorno conhecido (região desenhada à mão, movida ou de texto solto), o recorte é um retângulo arredondado. Em PDF, o recorte vem de uma imagem desenhada uma vez pelo PDF.js.
+
+**Correção (`RegionEditor.tsx`).** Adicionar, mover, redimensionar, excluir, trocar o tipo e reordenar sobre a própria página. Mover ou redimensionar descarta o contorno, porque a região deixa de coincidir com o balão detectado.
+
+**Limites conhecidos.** Texto branco direto sobre o céu passa despercebido; dois balões unidos por um pescoço largo viram uma região só; o tipo é aproximado (legenda pode virar sussurro); logotipos de capa podem aparecer como "Outro texto"; o contorno guarda só o extremo esquerdo e o direito de cada faixa, então o vão entre dois lóbulos sobrepostos vem junto no recorte. Nenhum mangá real foi testado.
+
 ## Limites de segurança (`formats/mod.rs`)
 
 Até 20 000 entradas por arquivo, 150 MB por página, 2 MB para `ComicInfo.xml`, imagens de até 30 000 px e 1 GB de alocação na decodificação. Leituras usam `take(limite + 1)` para não confiar no tamanho declarado.
