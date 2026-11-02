@@ -13,6 +13,7 @@ pub mod natural;
 pub mod pages;
 pub mod protocol;
 pub mod text;
+pub mod updates;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -36,6 +37,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(updates::Session::default())
         .register_asynchronous_uri_scheme_protocol("prancha", |ctx, request, responder| {
             let app = ctx.app_handle().clone();
             std::thread::spawn(move || {
@@ -52,6 +55,9 @@ pub fn run() {
             match Core::init(data_dir.clone(), emit) {
                 Ok(core) => {
                     let core = Arc::new(core);
+                    if let Err(e) = updates::reconcile(&core.db(), &app.package_info().version) {
+                        updates::log(&core.paths.data_dir, &format!("conciliação: {e}"));
+                    }
                     app.manage(core.clone());
                     std::thread::spawn(move || {
                         if let Err(e) = core.verify_files() {
@@ -114,6 +120,14 @@ pub fn run() {
             commands::clear_page_cache,
             commands::regenerate_covers,
             commands::verify_library,
+            commands::updates_snapshot,
+            commands::updates_check,
+            commands::updates_decline,
+            commands::updates_notes_shown,
+            commands::updates_install,
+            commands::updates_cancel,
+            commands::updates_history,
+            commands::updates_open_release,
         ])
         .run(tauri::generate_context!())
         .expect("erro ao executar o Prancha");

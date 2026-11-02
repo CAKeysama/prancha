@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Prancha",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "identifier": "app.prancha.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -39,6 +39,7 @@
   "bundle": {
     "active": true,
     "targets": ["nsis", "msi"],
+    "createUpdaterArtifacts": true,
     "publisher": "Prancha",
     "shortDescription": "Leitor e organizador de quadrinhos",
     "longDescription": "Prancha organiza sua biblioteca local de quadrinhos, mangás e graphic novels (CBZ, CBR, CB7, CBT, PDF e pastas de imagens) e guarda o progresso de leitura.",
@@ -48,6 +49,14 @@
     "windows": {
       "nsis": { "languages": ["PortugueseBR"], "installMode": "currentUser" },
       "wix": { "language": "pt-BR" }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDUxRjkyMzNCRkZCNUI0QkEKUldTNnRMWC9PeVA1VVpJRkZvL1hQM1RGdmRNd2RWWUh2YlJvLzNzMy8wUThIU1pWQVA4Yy9lNHoK",
+      "endpoints": ["https://github.com/CAKeysama/prancha/releases/latest/download/latest.json"],
+      "requireSignedVersion": true,
+      "windows": { "installMode": "passive" }
     }
   }
 }

@@ -6,9 +6,12 @@ use std::sync::Arc;
 
 use serde::Serialize;
 use serde_json::{Value, json};
+use tauri::ipc::Channel;
+use tauri::utils::config::BundleType;
 use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
+use tauri_plugin_updater::{Error as UpdaterError, Update, UpdaterExt};
 
 use crate::core::Core;
 use crate::covers::{self, COVER_PARAMS_VERSION};
@@ -20,6 +23,7 @@ use crate::library::{
     self, CollectionInfo, ComicDetails, ComicSummary, HomeData, LibraryQuery, MetadataPatch, Progress,
 };
 use crate::pages::dir_size;
+use crate::updates;
 
 type S<'a> = State<'a, Arc<Core>>;
 
@@ -677,4 +681,213 @@ pub async fn verify_library(state: S<'_>) -> AppResult<VerifyResult> {
         Ok(VerifyResult { missing, restored })
     })
     .await
+}
+
+// ---------------------------------------------------------------------------
+// Atualizações
+// ---------------------------------------------------------------------------
+
+type Updates<'a> = State<'a, updates::Session>;
+
+/// A cada quanto o download avisa a interface.
+const PROGRESS_STEP: u64 = 128 * 1024;
+/// Tempo para o aviso aparecer: quando o instalador abre, o aplicativo fecha na hora.
+const INSTALL_NOTICE: std::time::Duration = std::time::Duration::from_millis(800);
+
+/// A origem oficial é a que veio configurada no próprio aplicativo.
+fn release_endpoint(app: &AppHandle) -> String {
+    let updater = app.config().plugins.0.get("updater");
+    updater.and_then(|u| u["endpoints"][0].as_str()).unwrap_or_default().to_string()
+}
+
+async fn update_snapshot(app: &AppHandle, core: &Arc<Core>) -> AppResult<updates::Snapshot> {
+    let current = app.package_info().version.clone();
+    // Só o pacote MSI instala para todos os usuários e pede a confirmação do Windows.
+    let needs_admin = matches!(tauri::utils::platform::bundle_type(), Some(BundleType::Msi));
+    blocking(core, move |c| updates::snapshot(&c.db(), &current, needs_admin)).await
+}
+
+/// Procura a versão estável mais recente e descarta o que não vier das releases oficiais.
+async fn find_update(app: &AppHandle, core: &Core) -> AppResult<Option<Update>> {
+    let builder = app
+        .updater_builder()
+        .timeout(updates::CHECK_TIMEOUT)
+        .version_comparator(|current, remote| updates::is_newer(&current, &remote.version));
+    let result = match builder.build() {
+        Ok(updater) => updater.check().await,
+        Err(e) => Err(e),
+    };
+    let found = match result {
+        Ok(found) => found,
+        // A release não tem pacote para este sistema: não há o que oferecer.
+        Err(UpdaterError::TargetNotFound(_) | UpdaterError::TargetsNotFound(_)) => None,
+        Err(e) => {
+            updates::log(&core.paths.data_dir, &format!("consulta: {e}"));
+            return Err(updates::describe(&e));
+        }
+    };
+    let endpoint = release_endpoint(app);
+    Ok(found.filter(|u| {
+        let official = updates::is_official_package(&endpoint, &u.version, u.download_url.as_str());
+        if !official {
+            updates::log(&core.paths.data_dir, &format!("pacote fora das releases oficiais: {}", u.download_url));
+        }
+        official
+    }))
+}
+
+async fn record_check(app: &AppHandle, core: &Arc<Core>, found: Option<updates::ReleaseInfo>) -> AppResult<()> {
+    let current = app.package_info().version.clone();
+    blocking(core, move |c| updates::record_check(&c.db(), &current, found)).await
+}
+
+#[tauri::command]
+pub async fn updates_snapshot(app: AppHandle, state: S<'_>) -> AppResult<updates::Snapshot> {
+    update_snapshot(&app, &state).await
+}
+
+#[tauri::command]
+pub async fn updates_check(app: AppHandle, state: S<'_>, session: Updates<'_>) -> AppResult<updates::Snapshot> {
+    if updates::ENABLED {
+        let update = find_update(&app, &state).await?;
+        let found = update.as_ref().map(|u| updates::release_from_update(u, &release_endpoint(&app)));
+        *session.update.lock().unwrap() = update;
+        record_check(&app, &state, found).await?;
+    }
+    update_snapshot(&app, &state).await
+}
+
+#[tauri::command]
+pub async fn updates_decline(state: S<'_>, version: String) -> AppResult<()> {
+    blocking(&state, move |c| updates::decline(&c.db(), &version)).await
+}
+
+#[tauri::command]
+pub async fn updates_notes_shown(state: S<'_>, version: String) -> AppResult<()> {
+    blocking(&state, move |c| updates::notes_shown(&c.db(), &version)).await
+}
+
+/// Baixa, confere e abre o instalador. Se der certo, o instalador fecha o aplicativo e o abre de
+/// novo; só a próxima execução confirma a atualização, em `updates::reconcile`.
+async fn download_and_install(app: &AppHandle, core: &Arc<Core>, session: &updates::Session, on_progress: &Channel<updates::Progress>) -> AppResult<()> {
+    let data_dir = core.paths.data_dir.clone();
+    if core.importer.is_busy() {
+        return Err(AppError::user("busy", "Aguarde a importação terminar para atualizar o Prancha."));
+    }
+    let known = session.update.lock().unwrap().clone();
+    let mut update = match known {
+        Some(update) => update,
+        None => match find_update(app, core).await? {
+            Some(update) => update,
+            None => {
+                record_check(app, core, None).await?;
+                return Err(AppError::user("up_to_date", "O Prancha já está na versão mais recente."));
+            }
+        },
+    };
+    let release = updates::release_from_update(&update, &release_endpoint(app));
+    let version = release.version.clone();
+    blocking(core, move |c| updates::remember_release(&c.db(), &release)).await?;
+    update.timeout = Some(updates::DOWNLOAD_TIMEOUT);
+
+    // Tarefa própria para poder cancelar. O plugin confere a assinatura antes de devolver os bytes.
+    let (task, chunks, finished) = (update.clone(), on_progress.clone(), on_progress.clone());
+    let download = tauri::async_runtime::spawn(async move {
+        let (mut downloaded, mut reported) = (0u64, 0u64);
+        task.download(
+            move |chunk, total| {
+                downloaded += chunk as u64;
+                if downloaded - reported >= PROGRESS_STEP || Some(downloaded) == total {
+                    reported = downloaded;
+                    let _ = chunks.send(updates::Progress::Downloading { downloaded, total });
+                }
+            },
+            move || {
+                let _ = finished.send(updates::Progress::Verifying);
+            },
+        )
+        .await
+    });
+    let abort = download.inner().abort_handle();
+    *session.abort_download.lock().unwrap() = Some(Box::new(move || abort.abort()));
+    let outcome = download.await;
+    *session.abort_download.lock().unwrap() = None;
+    let bytes = match outcome {
+        Ok(Ok(bytes)) => bytes,
+        Ok(Err(e)) => {
+            updates::log(&data_dir, &format!("download de {version}: {e}"));
+            return Err(updates::describe(&e));
+        }
+        Err(_) => return Err(AppError::user("cancelled", "Download cancelado.")),
+    };
+    if let Some(expected) = updates::expected_sha256(&update.raw_json, update.download_url.as_str()) {
+        if !updates::sha256_matches(&bytes, &expected) {
+            updates::log(&data_dir, &format!("SHA-256 diferente do anunciado em {version}"));
+            return Err(AppError::user("hash", "O arquivo baixado não confere com o publicado e foi descartado. Nada foi alterado."));
+        }
+    }
+
+    let ready = version.clone();
+    blocking(core, move |c| updates::mark_ready_to_install(&c.db(), &ready)).await?;
+    let _ = on_progress.send(updates::Progress::Installing);
+    let installed = tauri::async_runtime::spawn_blocking(move || {
+        std::thread::sleep(INSTALL_NOTICE);
+        update.install(bytes)
+    })
+    .await
+    .map_err(|e| AppError::user("internal", format!("Falha interna: {e}")))?;
+    if let Err(e) = installed {
+        updates::log(&data_dir, &format!("instalador de {version}: {e}"));
+        blocking(core, |c| updates::install_not_started(&c.db())).await?;
+        return Err(updates::describe(&e));
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn updates_install(app: AppHandle, state: S<'_>, session: Updates<'_>, on_progress: Channel<updates::Progress>) -> AppResult<()> {
+    if !updates::ENABLED {
+        return Err(AppError::user("unavailable", "Atualizações não estão disponíveis nesta compilação."));
+    }
+    download_and_install(&app, &state, &session, &on_progress).await
+}
+
+#[tauri::command]
+pub fn updates_cancel(session: Updates<'_>) {
+    if let Some(abort) = session.abort_download.lock().unwrap().take() {
+        abort();
+    }
+}
+
+/// As notas vêm das releases do GitHub e ficam guardadas: uma consulta por hora, ou quando a pessoa pedir.
+#[tauri::command]
+pub async fn updates_history(app: AppHandle, state: S<'_>, force: bool) -> AppResult<updates::History> {
+    let fresh = blocking(&state, |c| updates::history_is_fresh(&c.db())).await?;
+    let url = updates::releases_api(&release_endpoint(&app));
+    let stale = match url.filter(|_| updates::ENABLED && (force || !fresh)) {
+        None => false,
+        Some(url) => match updates::fetch_releases(&url).await {
+            Ok(releases) => {
+                let saved = releases.clone();
+                blocking(&state, move |c| updates::store_history(&c.db(), &saved)).await?;
+                return Ok(updates::History { releases, stale: false });
+            }
+            Err(e) => {
+                updates::log(&state.paths.data_dir, &format!("histórico: {e}"));
+                true
+            }
+        },
+    };
+    let releases = blocking(&state, |c| updates::load_releases(&c.db())).await?;
+    Ok(updates::History { releases, stale })
+}
+
+#[tauri::command]
+pub async fn updates_open_release(app: AppHandle, version: String) -> AppResult<()> {
+    let invalid = || AppError::user("not_found", "Versão desconhecida.");
+    semver::Version::parse(&version).map_err(|_| invalid())?;
+    let url = updates::release_page(&release_endpoint(&app), &version).ok_or_else(invalid)?;
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|e| AppError::user("opener", format!("Não foi possível abrir o navegador ({e}).")))
 }

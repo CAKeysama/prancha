@@ -512,6 +512,11 @@ impl Importer {
         }
     }
 
+    /// Há importação na fila ou em andamento.
+    pub fn is_busy(&self) -> bool {
+        !self.cancels.lock().unwrap().is_empty()
+    }
+
     pub fn enqueue_covers(&self) {
         let _ = self.tx.lock().unwrap().send(Task::Covers);
     }

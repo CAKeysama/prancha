@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-10-21T00:29:04.272Z",
+ "generatedAt": "2026-11-02T02:01:47.820Z",
  "rust": [
   {
    "name": "adler2",
@@ -45,6 +45,11 @@
    "name": "arrayvec",
    "version": "0.7.8",
    "license": "MIT OR Apache-2.0"
+  },
+  {
+   "name": "atomic-waker",
+   "version": "1.1.2",
+   "license": "Apache-2.0 OR MIT"
   },
   {
    "name": "base64",
@@ -412,6 +417,36 @@
    "license": "MIT OR Apache-2.0"
   },
   {
+   "name": "futures-channel",
+   "version": "0.3.34",
+   "license": "MIT OR Apache-2.0"
+  },
+  {
+   "name": "futures-core",
+   "version": "0.3.34",
+   "license": "MIT OR Apache-2.0"
+  },
+  {
+   "name": "futures-macro",
+   "version": "0.3.34",
+   "license": "MIT OR Apache-2.0"
+  },
+  {
+   "name": "futures-sink",
+   "version": "0.3.34",
+   "license": "MIT OR Apache-2.0"
+  },
+  {
+   "name": "futures-task",
+   "version": "0.3.34",
+   "license": "MIT OR Apache-2.0"
+  },
+  {
+   "name": "futures-util",
+   "version": "0.3.34",
+   "license": "MIT OR Apache-2.0"
+  },
+  {
    "name": "generic-array",
    "version": "0.14.7",
    "license": "MIT"
@@ -419,6 +454,11 @@
   {
    "name": "getrandom",
    "version": "0.4.3",
+   "license": "MIT OR Apache-2.0"
+  },
+  {
+   "name": "getrandom",
+   "version": "0.2.17",
    "license": "MIT OR Apache-2.0"
   },
   {
@@ -467,9 +507,39 @@
    "license": "MIT OR Apache-2.0"
   },
   {
+   "name": "http-body",
+   "version": "1.1.0",
+   "license": "MIT"
+  },
+  {
+   "name": "http-body-util",
+   "version": "0.1.5",
+   "license": "MIT"
+  },
+  {
+   "name": "httparse",
+   "version": "1.10.1",
+   "license": "MIT OR Apache-2.0"
+  },
+  {
    "name": "hybrid-array",
    "version": "0.4.15",
    "license": "MIT OR Apache-2.0"
+  },
+  {
+   "name": "hyper",
+   "version": "1.12.0",
+   "license": "MIT"
+  },
+  {
+   "name": "hyper-rustls",
+   "version": "0.27.10",
+   "license": "Apache-2.0 OR ISC OR MIT"
+  },
+  {
+   "name": "hyper-util",
+   "version": "0.1.21",
+   "license": "MIT"
   },
   {
    "name": "ico",
@@ -554,6 +624,11 @@
   {
    "name": "inout",
    "version": "0.2.5",
+   "license": "MIT OR Apache-2.0"
+  },
+  {
+   "name": "ipnet",
+   "version": "2.12.2",
    "license": "MIT OR Apache-2.0"
   },
   {
@@ -642,6 +717,11 @@
    "license": "MIT OR Apache-2.0"
   },
   {
+   "name": "minisign-verify",
+   "version": "0.3.0",
+   "license": "MIT"
+  },
+  {
    "name": "miniz_oxide",
    "version": "0.9.1",
    "license": "MIT OR Zlib OR Apache-2.0"
@@ -650,6 +730,11 @@
    "name": "miniz_oxide",
    "version": "0.8.9",
    "license": "MIT OR Zlib OR Apache-2.0"
+  },
+  {
+   "name": "mio",
+   "version": "1.2.4",
+   "license": "MIT"
   },
   {
    "name": "moxcms",
@@ -832,9 +917,19 @@
    "license": "MIT OR Apache-2.0"
   },
   {
+   "name": "reqwest",
+   "version": "0.13.5",
+   "license": "MIT OR Apache-2.0"
+  },
+  {
    "name": "rfd",
    "version": "0.16.0",
    "license": "MIT"
+  },
+  {
+   "name": "ring",
+   "version": "0.17.14",
+   "license": "Apache-2.0 AND ISC"
   },
   {
    "name": "roxmltree",
@@ -850,6 +945,26 @@
    "name": "rustc-hash",
    "version": "2.1.3",
    "license": "Apache-2.0 OR MIT"
+  },
+  {
+   "name": "rustls",
+   "version": "0.23.46",
+   "license": "Apache-2.0 OR ISC OR MIT"
+  },
+  {
+   "name": "rustls-pki-types",
+   "version": "1.15.1",
+   "license": "MIT OR Apache-2.0"
+  },
+  {
+   "name": "rustls-platform-verifier",
+   "version": "0.7.1",
+   "license": "MIT OR Apache-2.0"
+  },
+  {
+   "name": "rustls-webpki",
+   "version": "0.103.16",
+   "license": "ISC"
   },
   {
    "name": "same-file",
@@ -972,8 +1087,18 @@
    "license": "MIT OR Apache-2.0"
   },
   {
+   "name": "slab",
+   "version": "0.4.12",
+   "license": "MIT"
+  },
+  {
    "name": "smallvec",
    "version": "1.16.3",
+   "license": "MIT OR Apache-2.0"
+  },
+  {
+   "name": "socket2",
+   "version": "0.6.5",
    "license": "MIT OR Apache-2.0"
   },
   {
@@ -1002,6 +1127,11 @@
    "license": "MIT"
   },
   {
+   "name": "subtle",
+   "version": "2.6.1",
+   "license": "BSD-3-Clause"
+  },
+  {
    "name": "syn",
    "version": "3.0.9",
    "license": "MIT OR Apache-2.0"
@@ -1010,6 +1140,11 @@
    "name": "syn",
    "version": "2.0.119",
    "license": "MIT OR Apache-2.0"
+  },
+  {
+   "name": "sync_wrapper",
+   "version": "1.0.2",
+   "license": "Apache-2.0"
   },
   {
    "name": "synstructure",
@@ -1057,6 +1192,11 @@
    "license": "Apache-2.0 OR MIT"
   },
   {
+   "name": "tauri-plugin-updater",
+   "version": "2.14.1",
+   "license": "Apache-2.0 OR MIT"
+  },
+  {
    "name": "tauri-runtime",
    "version": "2.12.2",
    "license": "Apache-2.0 OR MIT"
@@ -1070,6 +1210,11 @@
    "name": "tauri-utils",
    "version": "2.10.2",
    "license": "Apache-2.0 OR MIT"
+  },
+  {
+   "name": "tempfile",
+   "version": "3.27.0",
+   "license": "MIT OR Apache-2.0"
   },
   {
    "name": "tendril",
@@ -1117,6 +1262,16 @@
    "license": "MIT"
   },
   {
+   "name": "tokio-rustls",
+   "version": "0.26.6",
+   "license": "MIT OR Apache-2.0"
+  },
+  {
+   "name": "tokio-util",
+   "version": "0.7.20",
+   "license": "MIT"
+  },
+  {
    "name": "toml",
    "version": "1.1.8+spec-1.1.0",
    "license": "MIT OR Apache-2.0"
@@ -1137,6 +1292,26 @@
    "license": "MIT OR Apache-2.0"
   },
   {
+   "name": "tower",
+   "version": "0.5.3",
+   "license": "MIT"
+  },
+  {
+   "name": "tower-http",
+   "version": "0.6.11",
+   "license": "MIT"
+  },
+  {
+   "name": "tower-layer",
+   "version": "0.3.3",
+   "license": "MIT"
+  },
+  {
+   "name": "tower-service",
+   "version": "0.3.3",
+   "license": "MIT"
+  },
+  {
    "name": "tracing",
    "version": "0.1.44",
    "license": "MIT"
@@ -1149,6 +1324,11 @@
   {
    "name": "trash",
    "version": "5.2.9",
+   "license": "MIT"
+  },
+  {
+   "name": "try-lock",
+   "version": "0.2.5",
    "license": "MIT"
   },
   {
@@ -1202,6 +1382,11 @@
    "license": "MIT OR Apache-2.0"
   },
   {
+   "name": "untrusted",
+   "version": "0.9.0",
+   "license": "ISC"
+  },
+  {
    "name": "url",
    "version": "2.5.8",
    "license": "MIT OR Apache-2.0"
@@ -1225,6 +1410,11 @@
    "name": "walkdir",
    "version": "2.5.0",
    "license": "Unlicense/MIT"
+  },
+  {
+   "name": "want",
+   "version": "0.3.2",
+   "license": "MIT"
   },
   {
    "name": "web_atoms",
@@ -1327,6 +1517,11 @@
    "license": "MIT OR Apache-2.0"
   },
   {
+   "name": "windows-registry",
+   "version": "0.6.1",
+   "license": "MIT OR Apache-2.0"
+  },
+  {
    "name": "windows-result",
    "version": "0.4.1",
    "license": "MIT OR Apache-2.0"
@@ -1397,6 +1592,11 @@
    "license": "Unicode-3.0"
   },
   {
+   "name": "zeroize",
+   "version": "1.9.1",
+   "license": "Apache-2.0 OR MIT"
+  },
+  {
    "name": "zerotrie",
    "version": "0.2.5",
    "license": "Unicode-3.0"
@@ -1459,56 +1659,6 @@
    "license": "MIT"
   },
   {
-   "name": "@napi-rs/canvas-android-arm64",
-   "version": "1.0.12",
-   "license": "MIT"
-  },
-  {
-   "name": "@napi-rs/canvas-darwin-arm64",
-   "version": "1.0.12",
-   "license": "MIT"
-  },
-  {
-   "name": "@napi-rs/canvas-darwin-x64",
-   "version": "1.0.12",
-   "license": "MIT"
-  },
-  {
-   "name": "@napi-rs/canvas-linux-arm-gnueabihf",
-   "version": "1.0.12",
-   "license": "MIT"
-  },
-  {
-   "name": "@napi-rs/canvas-linux-arm64-gnu",
-   "version": "1.0.12",
-   "license": "MIT"
-  },
-  {
-   "name": "@napi-rs/canvas-linux-arm64-musl",
-   "version": "1.0.12",
-   "license": "MIT"
-  },
-  {
-   "name": "@napi-rs/canvas-linux-riscv64-gnu",
-   "version": "1.0.12",
-   "license": "MIT"
-  },
-  {
-   "name": "@napi-rs/canvas-linux-x64-gnu",
-   "version": "1.0.12",
-   "license": "MIT"
-  },
-  {
-   "name": "@napi-rs/canvas-linux-x64-musl",
-   "version": "1.0.12",
-   "license": "MIT"
-  },
-  {
-   "name": "@napi-rs/canvas-win32-arm64-msvc",
-   "version": "1.0.12",
-   "license": "MIT"
-  },
-  {
    "name": "@napi-rs/canvas-win32-x64-msvc",
    "version": "1.0.12",
    "license": "MIT"
@@ -1527,16 +1677,6 @@
    "name": "@tauri-apps/api",
    "version": "2.12.4",
    "license": "Apache-2.0 OR MIT"
-  },
-  {
-   "name": "@tauri-apps/plugin-dialog",
-   "version": "2.8.3",
-   "license": "MIT OR Apache-2.0"
-  },
-  {
-   "name": "@tauri-apps/plugin-opener",
-   "version": "2.7.2",
-   "license": "MIT OR Apache-2.0"
   },
   {
    "name": "@types/react",

@@ -1,7 +1,7 @@
 {
   "name": "prancha",
   "private": true,
-  "version": "0.1.2",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "predev": "node scripts/copy-pdfjs-assets.mjs",
@@ -15,6 +15,7 @@
     "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
     "e2e:build": "node scripts/build-e2e.mjs",
     "test:e2e": "playwright test",
+    "test:update": "node tests/update/run.mjs",
     "licenses": "node scripts/generate-licenses.mjs",
     "site:build": "node scripts/build-site.mjs",
     "site:preview": "vite site --port 4321 --strictPort",
