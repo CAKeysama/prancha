@@ -354,6 +354,27 @@ test.describe.serial("biblioteca, formatos e leitor", () => {
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   });
 
+  test("o menu das configurações acompanha a rolagem", async () => {
+    const page = app.page;
+    const nav = page.getByRole("navigation", { name: "Seções das configurações" });
+    const expectCurrent = (name: string) => expect(nav.getByRole("link", { name })).toHaveAttribute("aria-current", "true");
+    const scrollTo = (id: string, block: ScrollLogicalPosition = "start") => page.locator(`#settings-${id}`).evaluate((el, b) => el.scrollIntoView({ block: b }), block);
+
+    await scrollTo("biblioteca");
+    await expectCurrent("Biblioteca");
+    await scrollTo("geral", "end");
+    await expectCurrent("Geral");
+    await scrollTo("aparencia");
+    await expectCurrent("Aparência");
+
+    // O clique vale até o fim da rolagem, mesmo que a seção não chegue ao topo.
+    await nav.getByRole("link", { name: "Atualizações" }).click();
+    await page.waitForTimeout(1500);
+    await expectCurrent("Atualizações");
+    await scrollTo("aparencia");
+    await expectCurrent("Aparência");
+  });
+
   test("limpar miniaturas não apaga o progresso", async () => {
     const page = app.page;
     await page.getByRole("button", { name: "Limpar miniaturas" }).click();

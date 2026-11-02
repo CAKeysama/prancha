@@ -1,29 +1,33 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { ImportEvent } from "../domain/types";
 
-export const EVENTS = {
+const EVENTS = {
   import: "import:progress",
   library: "library:changed",
   covers: "covers:progress",
 } as const;
 
-/** Assina um evento do backend; devolve a função de cancelamento (segura em StrictMode). */
-export function subscribe<T>(event: string, handler: (payload: T) => void): () => void {
-  let unlisten: UnlistenFn | null = null;
+/** Liga um ouvinte do Tauri; devolve a função que o desliga, mesmo antes de ele ficar pronto (segura em StrictMode). */
+export function cancellable(start: () => Promise<UnlistenFn>): () => void {
+  let off: UnlistenFn | undefined;
   let cancelled = false;
-  listen<T>(event, (e) => handler(e.payload))
-    .then((fn) => {
-      if (cancelled) fn();
-      else unlisten = fn;
-    })
-    .catch(() => {
-      /* fora do Tauri (testes): sem eventos */
-    });
+  try {
+    start()
+      .then((fn) => {
+        if (cancelled) fn();
+        else off = fn;
+      })
+      .catch(() => undefined);
+  } catch {
+    /* fora do Tauri (testes): sem eventos */
+  }
   return () => {
     cancelled = true;
-    unlisten?.();
+    off?.();
   };
 }
+
+const subscribe = <T,>(event: string, handler: (payload: T) => void) => cancellable(() => listen<T>(event, (e) => handler(e.payload)));
 
 export const onImportProgress = (h: (e: ImportEvent) => void) => subscribe<ImportEvent>(EVENTS.import, h);
 export const onLibraryChanged = (h: () => void) => subscribe<unknown>(EVENTS.library, () => h());

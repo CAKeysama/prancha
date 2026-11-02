@@ -22,7 +22,7 @@ function ItemIcon({ status }: { status: ImportItem["status"] }) {
   return <CircleMinus size={16} className="shrink-0 text-attention" aria-hidden />;
 }
 
-export function ImportResults({ items }: { items: ImportItem[] }) {
+function ImportResults({ items }: { items: ImportItem[] }) {
   const ordered = [...items].sort((a, b) => Number(b.status === "failed") - Number(a.status === "failed"));
   return (
     <ul className="divide-y divide-border rounded-md border border-border">

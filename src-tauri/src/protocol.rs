@@ -6,11 +6,11 @@
 //! - `/file/<id>`         o PDF original, com suporte a `Range` para o PDF.js
 
 use std::io::{Read, Seek, SeekFrom};
-use std::path::Path;
 
 use tauri::http::{Request, Response, StatusCode, header};
 
 use crate::core::Core;
+use crate::error::{AppError, AppResult};
 use crate::library;
 
 type Resp = Response<Vec<u8>>;
@@ -49,60 +49,50 @@ pub fn handle(core: &Core, req: &Request<Vec<u8>>) -> Resp {
             .unwrap();
     }
     let segments: Vec<&str> = req.uri().path().trim_matches('/').split('/').collect();
-    let parse_id = |s: Option<&&str>| s.and_then(|v| v.parse::<i64>().ok());
-    match segments.first().copied() {
-        Some("cover") => match parse_id(segments.get(1)) {
-            Some(id) => cover(core, id),
-            None => error(StatusCode::BAD_REQUEST, "bad_request", "Requisição inválida."),
-        },
-        Some("page") => match (parse_id(segments.get(1)), segments.get(2).and_then(|v| v.parse::<usize>().ok())) {
-            (Some(id), Some(index)) => page(core, id, index),
-            _ => error(StatusCode::BAD_REQUEST, "bad_request", "Requisição inválida."),
-        },
-        Some("file") => match parse_id(segments.get(1)) {
-            Some(id) => pdf_file(core, id, req),
-            None => error(StatusCode::BAD_REQUEST, "bad_request", "Requisição inválida."),
-        },
-        _ => error(StatusCode::NOT_FOUND, "not_found", "Recurso não encontrado."),
-    }
+    let id = segments.get(1).and_then(|v| v.parse::<i64>().ok());
+    let index = segments.get(2).and_then(|v| v.parse::<usize>().ok());
+    let served = match (segments[0], id, index) {
+        ("cover", Some(id), _) => cover(core, id),
+        ("page", Some(id), Some(index)) => page(core, id, index),
+        ("file", Some(id), _) => pdf_file(core, id, req),
+        ("cover" | "page" | "file", ..) => return error(StatusCode::BAD_REQUEST, "bad_request", "Requisição inválida."),
+        _ => return error(StatusCode::NOT_FOUND, "not_found", "Recurso não encontrado."),
+    };
+    served.unwrap_or_else(|e| error(status_for(e.code()), e.code(), &e.to_string()))
 }
 
-fn cover(core: &Core, id: i64) -> Resp {
-    let info = match library::file_info(&core.db(), id) {
-        Ok(i) => i,
-        Err(e) => return error(status_for(e.code()), e.code(), &e.to_string()),
-    };
+/// O arquivo sumiu do disco: a HQ passa a aparecer como ausente.
+fn note_missing(core: &Core, id: i64, e: impl Into<AppError>) -> AppError {
+    let e = e.into();
+    if e.code() == "file_missing" {
+        let _ = library::set_missing(&core.db(), id, true);
+    }
+    e
+}
+
+fn cover(core: &Core, id: i64) -> AppResult<Resp> {
+    let info = library::file_info(&core.db(), id)?;
     let Some(file) = info.cover_file.filter(|f| !f.is_empty() && !f.contains(['/', '\\']) && !f.contains("..")) else {
-        return error(StatusCode::NOT_FOUND, "no_cover", "Esta HQ não possui miniatura em cache.");
+        return Ok(error(StatusCode::NOT_FOUND, "no_cover", "Esta HQ não possui miniatura em cache."));
     };
-    match std::fs::read(core.paths.covers.join(file)) {
+    Ok(match std::fs::read(core.paths.covers.join(file)) {
         Ok(bytes) => base(StatusCode::OK)
             .header(header::CONTENT_TYPE, "image/jpeg")
             .header(header::CACHE_CONTROL, "public, max-age=31536000, immutable")
             .body(bytes)
             .unwrap(),
         Err(_) => error(StatusCode::NOT_FOUND, "no_cover", "A miniatura não está mais no cache."),
-    }
+    })
 }
 
-fn page(core: &Core, id: i64, index: usize) -> Resp {
-    let info = match library::file_info(&core.db(), id) {
-        Ok(i) => i,
-        Err(e) => return error(status_for(e.code()), e.code(), &e.to_string()),
-    };
-    match core.pages.read_page(&info, index) {
-        Ok((bytes, mime)) => base(StatusCode::OK)
-            .header(header::CONTENT_TYPE, mime)
-            .header(header::CACHE_CONTROL, "private, max-age=3600")
-            .body(bytes)
-            .unwrap(),
-        Err(e) => {
-            if e.code() == "file_missing" {
-                let _ = library::set_missing(&core.db(), id, true);
-            }
-            error(status_for(e.code()), e.code(), &e.to_string())
-        }
-    }
+fn page(core: &Core, id: i64, index: usize) -> AppResult<Resp> {
+    let info = library::file_info(&core.db(), id)?;
+    let (bytes, mime) = core.pages.read_page(&info, index).map_err(|e| note_missing(core, id, e))?;
+    Ok(base(StatusCode::OK)
+        .header(header::CONTENT_TYPE, mime)
+        .header(header::CACHE_CONTROL, "private, max-age=3600")
+        .body(bytes)
+        .unwrap())
 }
 
 /// Interpreta `Range: bytes=a-b` (um único intervalo).
@@ -126,40 +116,28 @@ fn parse_range(value: &str, len: u64) -> Option<(u64, u64)> {
 /// Limite por resposta para não carregar PDFs enormes inteiros na memória.
 const MAX_RANGE_CHUNK: u64 = 32 * 1024 * 1024;
 
-fn pdf_file(core: &Core, id: i64, req: &Request<Vec<u8>>) -> Resp {
-    let info = match library::file_info(&core.db(), id) {
-        Ok(i) => i,
-        Err(e) => return error(status_for(e.code()), e.code(), &e.to_string()),
-    };
+fn pdf_file(core: &Core, id: i64, req: &Request<Vec<u8>>) -> AppResult<Resp> {
+    let info = library::file_info(&core.db(), id)?;
     if info.format != "pdf" {
-        return error(StatusCode::NOT_FOUND, "not_found", "Recurso não encontrado.");
+        return Ok(error(StatusCode::NOT_FOUND, "not_found", "Recurso não encontrado."));
     }
-    let path = Path::new(&info.path);
-    let mut file = match std::fs::File::open(path) {
-        Ok(f) => f,
-        Err(e) => {
-            let err = crate::error::AppError::Io(e);
-            if err.code() == "file_missing" {
-                let _ = library::set_missing(&core.db(), id, true);
-            }
-            return error(status_for(err.code()), err.code(), &err.to_string());
-        }
-    };
+    let mut file = std::fs::File::open(&info.path).map_err(|e| note_missing(core, id, e))?;
     let len = file.metadata().map(|m| m.len()).unwrap_or(0);
     let range = req.headers().get(header::RANGE).and_then(|v| v.to_str().ok()).map(|v| parse_range(v, len));
     let (status, start, end) = match range {
         Some(Some((s, e))) => (StatusCode::PARTIAL_CONTENT, s, e.min(s + MAX_RANGE_CHUNK - 1)),
         Some(None) => {
-            return base(StatusCode::RANGE_NOT_SATISFIABLE)
+            return Ok(base(StatusCode::RANGE_NOT_SATISFIABLE)
                 .header(header::CONTENT_RANGE, format!("bytes */{len}"))
                 .body(Vec::new())
-                .unwrap();
+                .unwrap());
         }
+        // shortcut: sem Range o arquivo inteiro vai para a memória, e é assim o primeiro pedido do PDF.js; para PDFs de vários GB, abrir com PDFDataRangeTransport.
         None => (StatusCode::OK, 0, len.saturating_sub(1)),
     };
     let mut buf = vec![0u8; if len == 0 { 0 } else { (end - start + 1) as usize }];
     if file.seek(SeekFrom::Start(start)).and_then(|_| file.read_exact(&mut buf)).is_err() {
-        return error(StatusCode::UNPROCESSABLE_ENTITY, "io", "Falha ao ler o PDF.");
+        return Ok(error(StatusCode::UNPROCESSABLE_ENTITY, "io", "Falha ao ler o PDF."));
     }
     let mut b = base(status)
         .header(header::CONTENT_TYPE, "application/pdf")
@@ -169,7 +147,7 @@ fn pdf_file(core: &Core, id: i64, req: &Request<Vec<u8>>) -> Resp {
     if status == StatusCode::PARTIAL_CONTENT {
         b = b.header(header::CONTENT_RANGE, format!("bytes {start}-{end}/{len}"));
     }
-    b.body(buf).unwrap()
+    Ok(b.body(buf).unwrap())
 }
 
 #[cfg(test)]

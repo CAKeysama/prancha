@@ -8,7 +8,7 @@ import { Menu } from "../../components/Menu";
 import { PageHeader } from "../../components/PageHeader";
 import { useToast } from "../../components/Toast";
 import { STATUS_LABELS, formatBytes, formatDate, progressLabel, progressRatio, readActionLabel } from "../../domain/progress";
-import { FORMAT_LABELS, type ComicDetails } from "../../domain/types";
+import { FORMAT_LABELS, type ComicDetails, type FieldSource } from "../../domain/types";
 import { api, errorMessage } from "../../services/api";
 import { useLibraryData, useLibraryVersion } from "../../app/library-events";
 import { useNav } from "../../app/navigation";
@@ -22,7 +22,7 @@ const COVER_KIND_TEXT: Record<string, string> = {
   pending: "A capa está sendo preparada.",
 };
 
-function Row({ label, children, source }: { label: string; children: ReactNode; source?: ComicDetails["fieldSources"][string] }) {
+function Row({ label, children, source }: { label: string; children: ReactNode; source?: FieldSource }) {
   return (
     <div className="grid grid-cols-[140px_1fr] gap-3 border-b border-border py-2 last:border-b-0 max-sm:grid-cols-1 max-sm:gap-0.5">
       <dt className="flex items-center gap-1.5 text-sm text-muted">
@@ -120,7 +120,7 @@ export function DetailsScreen({ id }: { id: number }) {
             label="Mais ações"
             items={[
               ...(comic.status !== "unread" ? [{ label: "Reiniciar progresso", icon: RotateCcw, onSelect: () => setConfirmReset(true) }] : []),
-              ...actions.menuFor(comic, { inDetails: true }).filter((e) => e.kind === "separator" || !["Editar informações", "Organizar em coleções…", "Remover da biblioteca…", "Adicionar aos favoritos", "Remover dos favoritos"].includes(e.label)),
+              ...actions.menuFor(comic, { inDetails: true }),
             ]}
             trigger={(p) => <IconButton {...p} variant="secondary" icon={MoreHorizontal} label="Mais ações" />}
           />

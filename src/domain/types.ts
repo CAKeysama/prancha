@@ -109,7 +109,7 @@ export interface ReaderSession {
   start: Progress;
 }
 
-export type ImportItemStatus = "added" | "relinked" | "duplicate" | "skipped" | "failed";
+type ImportItemStatus = "added" | "relinked" | "duplicate" | "skipped" | "failed";
 
 export interface ImportItem {
   path: string;
@@ -136,12 +136,9 @@ export interface ImportEvent {
 }
 
 export interface AppInfo {
-  name: string;
   version: string;
   tauriVersion: string;
-  dataDir: string;
   schemaVersion: number;
-  supportedExtensions: string[];
 }
 
 export interface StorageInfo {
@@ -149,8 +146,6 @@ export interface StorageInfo {
   databaseBytes: number;
   coversBytes: number;
   pagesBytes: number;
-  comicCount: number;
-  missingCount: number;
 }
 
 export interface AppErrorInfo {

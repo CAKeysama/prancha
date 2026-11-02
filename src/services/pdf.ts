@@ -1,8 +1,9 @@
-// Integração com o PDF.js: o PDF é lido pelo protocolo `prancha://file/<id>` com requisições
-// de intervalo, então apenas as partes necessárias de arquivos grandes são carregadas.
+// Integração com o PDF.js: o PDF é lido pelo protocolo `prancha://file/<id>`. O primeiro pedido
+// não tem intervalo e traz o arquivo inteiro; os seguintes pedem só as partes necessárias.
 
 import { GlobalWorkerOptions, getDocument, type PDFDocumentProxy, type RenderTask } from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import type { Size } from "../domain/reader";
 import { fileUrl } from "./urls";
 
 GlobalWorkerOptions.workerSrc = workerUrl;
@@ -26,17 +27,6 @@ export function openPdf(id: number): Promise<PDFDocumentProxy> {
   }).promise;
 }
 
-export interface PageSize {
-  width: number;
-  height: number;
-}
-
-export async function pdfPageSize(doc: PDFDocumentProxy, pageIndex: number): Promise<PageSize> {
-  const page = await doc.getPage(pageIndex + 1);
-  const vp = page.getViewport({ scale: 1 });
-  return { width: vp.width, height: vp.height };
-}
-
 /**
  * Renderiza a página na largura CSS pedida (multiplicada pela densidade de pixels).
  * Devolve a tarefa para permitir cancelamento quando o usuário muda de página.
@@ -47,7 +37,7 @@ export async function renderPdfPage(
   canvas: HTMLCanvasElement,
   cssWidth: number,
   onTask?: (t: RenderTask) => void,
-): Promise<PageSize> {
+): Promise<Size> {
   const page = await doc.getPage(pageIndex + 1);
   const base = page.getViewport({ scale: 1 });
   const dpr = window.devicePixelRatio || 1;
@@ -63,15 +53,18 @@ export async function renderPdfPage(
   return { width: base.width, height: base.height };
 }
 
+async function pageToJpeg(doc: PDFDocumentProxy, pageIndex: number, pixelWidth: number, quality: number): Promise<Uint8Array> {
+  const canvas = document.createElement("canvas");
+  await renderPdfPage(doc, pageIndex, canvas, pixelWidth / (window.devicePixelRatio || 1));
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+  if (!blob) throw new Error("falha ao codificar a imagem");
+  return new Uint8Array(await blob.arrayBuffer());
+}
+
 /** Desenha uma página como JPEG para a análise da Leitura Guiada, no tamanho que o detector usa. */
 export async function renderPdfPageImage(doc: PDFDocumentProxy, pageIndex: number): Promise<Uint8Array> {
   const base = (await doc.getPage(pageIndex + 1)).getViewport({ scale: 1 });
-  const canvas = document.createElement("canvas");
-  const cssWidth = ((1600 / Math.max(base.width, base.height)) * base.width) / (window.devicePixelRatio || 1);
-  await renderPdfPage(doc, pageIndex, canvas, cssWidth);
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
-  if (!blob) throw new Error("falha ao codificar a página");
-  return new Uint8Array(await blob.arrayBuffer());
+  return pageToJpeg(doc, pageIndex, (1600 / Math.max(base.width, base.height)) * base.width, 0.92);
 }
 
 /** Gera a miniatura da primeira página válida (JPEG) e o total de páginas. */
@@ -81,11 +74,7 @@ export async function renderPdfCover(id: number): Promise<{ image: Uint8Array; p
     let lastError: unknown = null;
     for (let i = 0; i < Math.min(3, doc.numPages); i++) {
       try {
-        const canvas = document.createElement("canvas");
-        await renderPdfPage(doc, i, canvas, 600 / (window.devicePixelRatio || 1));
-        const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.9));
-        if (!blob) throw new Error("falha ao codificar a miniatura");
-        return { image: new Uint8Array(await blob.arrayBuffer()), pageCount: doc.numPages };
+        return { image: await pageToJpeg(doc, i, 600, 0.9), pageCount: doc.numPages };
       } catch (e) {
         lastError = e;
       }

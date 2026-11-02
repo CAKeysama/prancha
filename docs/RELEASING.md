@@ -46,9 +46,11 @@ Até a 1.0.0, mudanças maiores ainda podem sair em `PATCH` ou `MINOR`, como as 
 |---|---|---|
 | `ci.yml` | Push na `main` e pull requests | Tipos, lint, testes de interface e do backend |
 | `release.yml` | Tag `vX.Y.Z` | Repete as verificações, confere a tag com a versão do projeto, gera e assina os instaladores, calcula os SHA-256, gera o `latest.json` e publica a release com as notas do changelog |
-| `pages.yml` | Fim do `release.yml`, release editada à mão ou mudança no changelog e na página | Regenera e publica a página de downloads |
+| `pages.yml` | Fim do `release.yml` ou mudança no changelog e na página | Regenera e publica a página de downloads |
 
 Se qualquer verificação ou build falhar, a release não é criada.
+
+Depois de editar uma release à mão, atualize a página com `gh workflow run pages.yml --ref main`.
 
 Para ensaiar sem publicar nada, rode o `release.yml` à mão, na aba Actions ou com `gh workflow run release.yml --ref main`. Os instaladores ficam guardados como artefato da execução.
 

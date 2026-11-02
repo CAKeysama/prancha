@@ -1,19 +1,16 @@
 import { useCallback, useEffect, useRef } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { api } from "../../services/api";
+import { cancellable } from "../../services/events";
 
 /**
  * Persiste a posição de leitura sem gravar a cada evento: agrupa mudanças (debounce)
  * e força a gravação ao sair do leitor, trocar de HQ, ocultar ou fechar a janela.
  */
-export function useProgressSaver(comicId: number, pageCount: number, onSaved?: (status: string) => void) {
+export function useProgressSaver(comicId: number, pageCount: number) {
   const pending = useRef<{ page: number; ratio: number } | null>(null);
   const timer = useRef<number | undefined>(undefined);
   const lastSaved = useRef<string>("");
-  const onSavedRef = useRef(onSaved);
-  useEffect(() => {
-    onSavedRef.current = onSaved;
-  });
 
   const flush = useCallback(async () => {
     window.clearTimeout(timer.current);
@@ -24,8 +21,7 @@ export function useProgressSaver(comicId: number, pageCount: number, onSaved?: (
     if (key === lastSaved.current) return;
     lastSaved.current = key;
     try {
-      const status = await api.saveProgress(comicId, p.page, pageCount, p.ratio);
-      onSavedRef.current?.(status);
+      await api.saveProgress(comicId, p.page, pageCount, p.ratio);
     } catch {
       lastSaved.current = "";
     }
@@ -47,30 +43,19 @@ export function useProgressSaver(comicId: number, pageCount: number, onSaved?: (
     const onUnload = () => void flush();
     document.addEventListener("visibilitychange", onHide);
     window.addEventListener("beforeunload", onUnload);
-    let offClose: (() => void) | undefined;
-    let cancelled = false;
-    try {
-      getCurrentWindow()
-        .onCloseRequested(async () => {
-          try {
-            await flush();
-          } catch {
-            /* nunca impedir o fechamento */
-          }
-        })
-        .then((fn) => {
-          if (cancelled) fn();
-          else offClose = fn;
-        })
-        .catch(() => undefined);
-    } catch {
-      /* fora do Tauri */
-    }
+    const offClose = cancellable(() =>
+      getCurrentWindow().onCloseRequested(async () => {
+        try {
+          await flush();
+        } catch {
+          /* nunca impedir o fechamento */
+        }
+      }),
+    );
     return () => {
-      cancelled = true;
       document.removeEventListener("visibilitychange", onHide);
       window.removeEventListener("beforeunload", onUnload);
-      offClose?.();
+      offClose();
       void flush();
     };
   }, [flush]);

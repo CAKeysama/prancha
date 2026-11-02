@@ -10,9 +10,9 @@ export interface Size {
 /** Proporção padrão (largura/altura) enquanto o tamanho real da página não é conhecido. */
 export const DEFAULT_ASPECT = 2 / 3;
 
-export const ZOOM_STEPS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4];
-export const MIN_ZOOM = ZOOM_STEPS[0]!;
-export const MAX_ZOOM = ZOOM_STEPS[ZOOM_STEPS.length - 1]!;
+const ZOOM_STEPS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4];
+const MIN_ZOOM = ZOOM_STEPS[0]!;
+const MAX_ZOOM = ZOOM_STEPS[ZOOM_STEPS.length - 1]!;
 
 export function zoomIn(z: number): number {
   return ZOOM_STEPS.find((s) => s > z + 1e-6) ?? MAX_ZOOM;
@@ -22,7 +22,7 @@ export function zoomOut(z: number): number {
   return [...ZOOM_STEPS].reverse().find((s) => s < z - 1e-6) ?? MIN_ZOOM;
 }
 
-export function isWide(size: Size | undefined): boolean {
+function isWide(size: Size | undefined): boolean {
   return !!size && size.width > size.height * 1.05;
 }
 

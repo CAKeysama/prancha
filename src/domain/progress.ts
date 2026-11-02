@@ -7,7 +7,7 @@ export const STATUS_LABELS: Record<ReadStatus, string> = {
 };
 
 /** Total de páginas conhecido: o do progresso salvo tem prioridade (é o que o leitor confirmou). */
-export function knownPageCount(c: Pick<ComicSummary, "pageCount" | "progress">): number | null {
+function knownPageCount(c: Pick<ComicSummary, "pageCount" | "progress">): number | null {
   const fromProgress = c.progress?.pageCount ?? 0;
   if (fromProgress > 0) return fromProgress;
   return c.pageCount && c.pageCount > 0 ? c.pageCount : null;
@@ -47,6 +47,8 @@ export function subtitle(c: Pick<ComicSummary, "series" | "issueNumber" | "volum
   if (c.issueNumber) parts.push(`#${c.issueNumber}`);
   return parts.length ? parts.join(" · ") : null;
 }
+
+export const comicCountLabel = (n: number) => `${n} ${n === 1 ? "HQ" : "HQs"}`;
 
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";

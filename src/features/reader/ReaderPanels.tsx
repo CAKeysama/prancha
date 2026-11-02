@@ -160,14 +160,15 @@ export function PageIndexPanel({
   useEffect(() => {
     list.current?.querySelector(`[data-index="${initialPage}"]`)?.scrollIntoView({ block: "center" });
   }, [initialPage]);
+  const n = Number(go);
+  const valid = Number.isInteger(n) && n >= 1 && n <= count;
+  const invalid = go !== "" && !valid;
   const submit = () => {
-    const n = Number(go);
-    if (Number.isInteger(n) && n >= 1 && n <= count) {
+    if (valid) {
       onSelect(n - 1);
       setGo("");
     }
   };
-  const invalid = go !== "" && !(Number.isInteger(Number(go)) && Number(go) >= 1 && Number(go) <= count);
   return (
     <SidePanel title="Índice de páginas" onClose={onClose} side="left">
       <form

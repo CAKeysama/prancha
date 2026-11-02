@@ -31,7 +31,7 @@ export interface UpdatesHistory {
   stale: boolean;
 }
 
-export interface NoteSection {
+interface NoteSection {
   title: string;
   items: string[];
 }

@@ -71,7 +71,7 @@ const MAX_COVER_WIDTH = 0.85;
 const MAX_COVER_HEIGHT = 0.5;
 const POP_MARGIN = 8;
 
-export interface Pop {
+interface Pop {
   /** Posição e tamanho do balão destacado. */
   left: number;
   top: number;

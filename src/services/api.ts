@@ -60,7 +60,7 @@ export const api = {
   setReadStatus: (id: number, status: Exclude<ReadStatus, "reading">) => call<void>("set_read_status", { id, status }),
   resetProgress: (id: number) => call<void>("reset_progress", { id }),
   removeComic: (id: number, deleteOriginal: boolean) =>
-    call<{ removed: boolean; trashed: boolean }>("remove_comic", { id, deleteOriginal }),
+    call<{ trashed: boolean }>("remove_comic", { id, deleteOriginal }),
   relocateComic: (id: number, force: boolean, path?: string) =>
     call<{ picked: boolean; matched: boolean; updated: boolean; path: string | null }>("relocate_comic", {
       id,

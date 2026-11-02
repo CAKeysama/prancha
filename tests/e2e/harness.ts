@@ -82,7 +82,8 @@ export async function launchApp(dataDir: string): Promise<AppSession> {
     if (!page) await new Promise((r) => setTimeout(r, 250));
   }
   if (!page) throw new Error("Página do aplicativo não encontrada");
-  await page.waitForLoadState("domcontentloaded");
+  // A janela nasce em about:blank: um evaluate feito antes de ela navegar até o app é destruído.
+  await page.waitForURL((url) => url.protocol !== "about:", { waitUntil: "domcontentloaded" });
   const session: AppSession = {
     proc,
     browser,

@@ -19,7 +19,7 @@ import { Checkbox, TextArea, TextField } from "../../components/Form";
 import type { MenuEntry } from "../../components/Menu";
 import { Spinner } from "../../components/Feedback";
 import { useToast } from "../../components/Toast";
-import { readActionLabel } from "../../domain/progress";
+import { comicCountLabel, readActionLabel } from "../../domain/progress";
 import type { CollectionInfo, ComicDetails, ComicSummary, FieldSource, MetadataPatch } from "../../domain/types";
 import { api, errorMessage } from "../../services/api";
 import { useNav } from "../../app/navigation";
@@ -29,10 +29,10 @@ interface ComicActionsApi {
   read: (c: ComicSummary) => void;
   openDetails: (c: ComicSummary) => void;
   toggleFavorite: (c: ComicSummary) => Promise<void>;
-  setStatus: (c: ComicSummary, status: "unread" | "completed") => Promise<void>;
   edit: (id: number) => void;
   collections: (id: number) => void;
   remove: (c: ComicSummary) => void;
+  /** `inDetails` deixa de fora o que a tela de detalhes já mostra como botão. */
   menuFor: (c: ComicSummary, opts?: { collectionId?: number; inDetails?: boolean }) => MenuEntry[];
 }
 
@@ -274,7 +274,7 @@ function CollectionsDialog({ id, onClose }: { id: number; onClose: () => void })
                 <Checkbox
                   key={c.id}
                   label={c.name}
-                  description={`${c.comicCount} ${c.comicCount === 1 ? "HQ" : "HQs"}`}
+                  description={comicCountLabel(c.comicCount)}
                   checked={selected.has(c.id)}
                   onChange={(v) =>
                     setSelected((s) => {
@@ -397,10 +397,10 @@ export function ComicActionsProvider({ children }: { children: ReactNode }) {
         items.push({ label: readActionLabel(c), icon: BookOpen, onSelect: () => read(c), disabled: c.missing });
         items.push({ label: "Ver detalhes", icon: Info, onSelect: () => openDetails(c) });
         items.push({ kind: "separator" });
+        items.push({ label: c.favorite ? "Remover dos favoritos" : "Adicionar aos favoritos", icon: c.favorite ? StarOff : Star, onSelect: () => void toggleFavorite(c) });
+        items.push({ label: "Editar informações", icon: Pencil, onSelect: () => setEditing(c.id) });
+        items.push({ label: "Organizar em coleções…", icon: FolderPlus, onSelect: () => setCollecting(c.id) });
       }
-      items.push({ label: c.favorite ? "Remover dos favoritos" : "Adicionar aos favoritos", icon: c.favorite ? StarOff : Star, onSelect: () => void toggleFavorite(c) });
-      items.push({ label: "Editar informações", icon: Pencil, onSelect: () => setEditing(c.id) });
-      items.push({ label: "Organizar em coleções…", icon: FolderPlus, onSelect: () => setCollecting(c.id) });
       if (opts?.collectionId !== undefined) {
         const cid = opts.collectionId;
         items.push({
@@ -422,8 +422,10 @@ export function ComicActionsProvider({ children }: { children: ReactNode }) {
           icon: FolderOpen,
           onSelect: () => void api.revealComic(c.id).catch((e) => toast.error("Não foi possível abrir a pasta", errorMessage(e))),
         });
-      items.push({ kind: "separator" });
-      items.push({ label: "Remover da biblioteca…", icon: Trash2, danger: true, onSelect: () => setRemoving(c) });
+      if (!opts?.inDetails) {
+        items.push({ kind: "separator" });
+        items.push({ label: "Remover da biblioteca…", icon: Trash2, danger: true, onSelect: () => setRemoving(c) });
+      }
       return items;
     },
     [read, openDetails, toggleFavorite, setStatus, toast],
@@ -434,13 +436,12 @@ export function ComicActionsProvider({ children }: { children: ReactNode }) {
       read,
       openDetails,
       toggleFavorite,
-      setStatus,
       edit: setEditing,
       collections: setCollecting,
       remove: setRemoving,
       menuFor,
     }),
-    [read, openDetails, toggleFavorite, setStatus, menuFor],
+    [read, openDetails, toggleFavorite, menuFor],
   );
 
   return (
