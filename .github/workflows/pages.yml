@@ -12,8 +12,7 @@ on:
       - site/fonts/**
       - site/assets/favicon.svg
       - .github/workflows/pages.yml
-  release:
-    types: [published, edited, deleted]
+  # Sem o evento `release`: ele roda na tag, e o ambiente github-pages só aceita a main. O release.yml dispara esta página.
   workflow_dispatch:
 
 permissions:
