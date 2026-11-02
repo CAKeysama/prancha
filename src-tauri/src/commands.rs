@@ -223,7 +223,7 @@ pub async fn relocate_comic(app: AppHandle, state: S<'_>, id: i64, path: Option<
             let db = c.db();
             library::relink(&db, id, &path_str, &import::display_name(&path), size)?;
             if !matched {
-                library::set_content(&db, id, &fp, format.as_str(), Some(formats::page_count(format, &listing) as i64))?;
+                library::set_content(&db, id, &fp, format.as_str(), import::known_page_count(format, &listing))?;
                 import::apply_cover(&db, &c.paths.covers, id, format, &path, &listing)?;
             }
         }
