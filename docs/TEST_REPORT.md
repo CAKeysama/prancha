@@ -17,6 +17,7 @@ Executado em 2026-11-02, com as extensões ainda sem versão publicada, em Windo
 | Atualização instalada de verdade | `npm run test:update -- --build` | ✅ 23 verificações na 0.2.0; não repetida nas extensões, porque `updates.rs` e `tauri.conf.json` não mudaram |
 | Instalador da 0.2.0 | `npm run tauri build` | ✅ NSIS e MSI gerados, com 2 assinaturas; verificação abaixo |
 | Build de release com extensões | `npm run tauri build`, sem os artefatos do atualizador | ✅ NSIS e MSI gerados; tamanhos e conferência do executável abaixo |
+| Fluxo em HTTPS público | Executável de release, conferência avulsa | ✅ do repositório de demonstração à leitura, em 6,8 s; detalhes abaixo |
 
 ## Instaladores
 
@@ -181,11 +182,21 @@ Revisão do código, com o comportamento coberto pelos testes acima. Não há me
 | Limpeza | Temporários são limpos ao abrir, e obras não acompanhadas saem depois de 30 dias. | Testes de integração |
 
 ### Executável de release
-Os E2E usam o build de depuração, então o executável de release foi conferido uma vez, à mão, com dados isolados. Como não há repositório em HTTPS antes do merge, a extensão de demonstração assinada foi colocada direto na pasta e no banco.
+Os E2E usam o build de depuração. Depois do merge, o executável de release gerado do código final percorreu o fluxo em HTTPS público, uma vez, com dados isolados, no endereço `https://raw.githubusercontent.com/CAKeysama/prancha/main/extensions/demo-repo/prancha-repo.json`. Esse teste usa a internet, por isso não fica no repositório. O percurso inteiro levou 6,8 s.
 
-- Com `PRANCHA_E2E_ALLOW_LOOPBACK=1` definido, um endereço em `127.0.0.1` é recusado com "Endereço não permitido: só HTTPS é aceito.", e o servidor local não recebe nenhuma requisição.
-- O `repo.json` da Keiyoushi é buscado em HTTPS público e reconhecido como Mihon, em 261 ms.
-- Em Explorar, o componente compila e executa, e o host busca o catálogo em HTTPS. Como esse catálogo só existe depois do merge, a tela mostra o erro da própria fonte, "O acervo respondeu 404.", em cerca de 1 s.
+| Etapa | Tempo |
+|---|---|
+| Repositório validado e sincronizado, com a assinatura do índice | 623 ms |
+| Extensão baixada, verificada e instalada | 664 ms |
+| Populares em Explorar, contando a compilação do componente | 846 ms |
+| Primeira capa, contada desde a abertura de Explorar | 873 ms |
+| Capítulo de 6 páginas baixado e na biblioteca | 1352 ms |
+
+- **Confiança:** a impressão digital mostrada é a da chave publicada, e o acesso aparece como "Acessar: raw.githubusercontent.com".
+- **Fonte:** pesquisa com resultado e obra com os 3 capítulos.
+- **Leitura:** o CBZ abre no leitor de sempre e, depois de reabrir o app, a leitura continua na página 2. A falta de rede não foi repetida aqui: ela foi provada no E2E, com o servidor desligado.
+- **Rede local:** com `PRANCHA_E2E_ALLOW_LOOPBACK=1` definido, um endereço em `127.0.0.1` é recusado com "Endereço não permitido: só HTTPS é aceito.", e o servidor local não recebe nenhuma requisição.
+- **Mihon:** o `repo.json` da Keiyoushi é buscado em HTTPS público e reconhecido em 237 ms.
 
 ### Tamanho
 Mesmo perfil de release, antes e depois das extensões. O MSI "antes" é o publicado na v0.2.0, e os outros dois vêm de um build local da mesma versão.
@@ -245,7 +256,7 @@ As capturas das atualizações ficam em `tests/.tmp/update-shots/`, fora do git,
 Em uma execução do E2E, o leitor avançou páginas sozinho após as teclas (página 5 → 11 em alguns segundos). Repetições com captura de todos os eventos de teclado e roda do mouse não reproduziram o problema (três teclas → página 4, como esperado) e o cenário passou nas três execuções seguintes. A hipótese mais provável é a roda do mouse real sobre a janela visível durante o teste (a roda vira a página). Fica registrado como ponto a observar.
 
 ## Não verificado / limitações
-- **Fontes reais:** nenhuma extensão falou com um site de verdade. O fluxo foi provado com a demonstração, em servidor local, e o endereço público do repositório de demonstração só funciona depois de ir para a `main`. Em HTTPS público, a única conferência é `a_public_https_address_is_really_fetched`, que fica fora da execução normal: o Prancha busca o `repo.json` da Keiyoushi com TLS e DNS reais e reconhece o formato do Mihon. Assinatura, instalação e download nunca rodaram por HTTPS, e o executável de release só foi conferido até a chamada da fonte, como descrito acima.
+- **Fontes reais:** nenhuma extensão falou com um site de terceiros. Assinatura, instalação e download em HTTPS público foram provados só com a demonstração, hospedada no próprio repositório do projeto, em uma execução. Um site de verdade traz o que ela não traz, como limites de acesso, respostas lentas e páginas que mudam. Fora isso, `a_public_https_address_is_really_fetched`, que não roda na execução normal, busca o `repo.json` da Keiyoushi com TLS e DNS reais e reconhece o formato do Mihon.
 - **Compilação de extensão:** não pode ser cancelada. É curta (37 ms no build de release, para 24 KB) e o pacote tem tamanho limitado, mas conta como espera fora do limite de tempo da chamada.
 - **Permissões novas em uma atualização:** a comparação é feita na tela, antes de confirmar, e o backend não a repete.
 - **Download com falha:** uma nova tentativa recomeça do zero. Só a pausa e o reinício aproveitam as páginas já baixadas.
