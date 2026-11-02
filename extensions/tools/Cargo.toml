@@ -1,0 +1,15 @@
+[package]
+name = "prancha-ext"
+description = "Gera chaves, monta componentes e publica repositórios de extensões do Prancha"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[dependencies]
+base64 = "0.23.1"
+ed25519-dalek = { version = "3.0.0", default-features = false, features = ["fast", "zeroize"] }
+getrandom = "0.4.3"
+serde_json = "1.0.154"
+sha2 = "0.10.9"
+wit-component = "0.263.0"

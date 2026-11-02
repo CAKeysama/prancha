@@ -1,0 +1,147 @@
+// Contrato entre o Prancha e uma extensão de fontes de leitura. Versão 1 da API.
+// Mudanças compatíveis acrescentam funções em uma versão 1.x. Qualquer outra mudança vira a versão 2.
+package prancha:source@1.0.0;
+
+interface types {
+    enum content-kind { manga, manhwa, manhua, comic, other }
+
+    /// Conteúdo `adult` nunca aparece no Prancha. `unknown` deixa a fonte desabilitada.
+    enum content-rating { general, teen, adult, unknown }
+
+    enum publication-status { ongoing, completed, hiatus, cancelled }
+
+    enum reading-direction { left-to-right, right-to-left, vertical }
+
+    record source-info {
+        id: string,
+        name: string,
+        /// Etiqueta BCP 47, como `pt-BR`.
+        language: string,
+        description: option<string>,
+        kinds: list<content-kind>,
+        rating: content-rating,
+        direction: reading-direction,
+        supports-latest: bool,
+        supports-search: bool,
+        /// Menor intervalo entre requisições que a fonte aceita, em milissegundos.
+        min-interval-ms: u32,
+    }
+
+    /// Filtro de busca. O Prancha envia `kind` com o nome de um `content-kind`.
+    record filter {
+        name: string,
+        value: string,
+    }
+
+    record search-result {
+        id: string,
+        title: string,
+        cover-url: option<string>,
+        summary: option<string>,
+        author: option<string>,
+        status: option<publication-status>,
+        rating: option<content-rating>,
+    }
+
+    /// Uma página vazia, com `has-more` falso, significa que não há resultados.
+    record search-page {
+        results: list<search-result>,
+        has-more: bool,
+    }
+
+    record comic-details {
+        id: string,
+        title: string,
+        synopsis: option<string>,
+        cover-url: option<string>,
+        authors: list<string>,
+        genres: list<string>,
+        status: option<publication-status>,
+        language: option<string>,
+        rating: option<content-rating>,
+    }
+
+    record chapter {
+        id: string,
+        title: string,
+        /// Como a fonte numera o capítulo: `12`, `12.5`, `Extra`.
+        number: option<string>,
+        /// Milissegundos desde 1970 (UTC).
+        published-at: option<s64>,
+        /// Posição de leitura: quanto menor, mais cedo na obra.
+        order: u32,
+    }
+
+    record header {
+        name: string,
+        value: string,
+    }
+
+    record page {
+        /// Posição da página no capítulo, a partir de 0.
+        index: u32,
+        url: string,
+        /// Só `referer` e `accept` são aceitos.
+        headers: list<header>,
+    }
+
+    /// Erros separados por natureza. O texto aparece para a pessoa e vai em português.
+    variant source-error {
+        network(string),
+        source(string),
+        authentication(string),
+        data(string),
+        unsupported(string),
+    }
+}
+
+interface host {
+    use types.{header};
+
+    record http-request {
+        url: string,
+        /// Só `referer` e `accept` são aceitos.
+        headers: list<header>,
+    }
+
+    record http-response {
+        status: u16,
+        /// Endereço final, depois de redirecionamentos.
+        url: string,
+        content-type: option<string>,
+        body: list<u8>,
+    }
+
+    variant http-error {
+        /// Destino fora das regras: host não autorizado, HTTP, porta ou endereço bloqueado.
+        blocked(string),
+        network(string),
+        timeout,
+        too-large,
+        too-many-requests,
+    }
+
+    /// GET feito pelo Prancha. A extensão não abre conexões.
+    http-get: func(request: http-request) -> result<http-response, http-error>;
+
+    /// Armazenamento próprio da extensão. Exige a capacidade `storage`.
+    storage-get: func(key: string) -> option<list<u8>>;
+    storage-set: func(key: string, value: list<u8>) -> result<_, string>;
+    storage-delete: func(key: string);
+
+    log: func(message: string);
+}
+
+world extension {
+    import host;
+
+    use types.{source-info, filter, search-page, comic-details, chapter, page, source-error};
+
+    export list-sources: func() -> list<source-info>;
+    export popular: func(source: string, page: u32, filters: list<filter>) -> result<search-page, source-error>;
+    export latest: func(source: string, page: u32, filters: list<filter>) -> result<search-page, source-error>;
+    export search: func(source: string, query: string, page: u32, filters: list<filter>) -> result<search-page, source-error>;
+    export details: func(source: string, id: string) -> result<comic-details, source-error>;
+    export chapters: func(source: string, id: string) -> result<list<chapter>, source-error>;
+    export pages: func(source: string, chapter-id: string) -> result<list<page>, source-error>;
+}
