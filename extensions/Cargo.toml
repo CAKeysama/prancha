@@ -1,7 +1,7 @@
 # Fora do app: o SDK, a ferramenta de publicação e as extensões do projeto. As extensões compilam para WebAssembly.
 [workspace]
 resolver = "3"
-members = ["sdk", "tools", "template", "test-fixture"]
+members = ["sdk", "tools", "template", "test-fixture", "demo"]
 
 [workspace.package]
 edition = "2024"

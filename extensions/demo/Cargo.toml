@@ -1,0 +1,15 @@
+[package]
+name = "prancha-extension-demo"
+description = "Acervo de demonstração do Prancha, com obras originais do próprio projeto"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+prancha-extension-sdk = { path = "../sdk" }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"

@@ -1,0 +1,48 @@
+{
+  "extensions": [
+    {
+      "apiVersion": "1",
+      "artifactUrl": "https://raw.githubusercontent.com/CAKeysama/prancha/main/extensions/demo-repo/prancha.demonstracao.acervo-1.0.0.wasm",
+      "authors": [
+        "Projeto Prancha"
+      ],
+      "capabilities": {
+        "allowedHosts": [
+          "raw.githubusercontent.com"
+        ],
+        "authentication": false,
+        "network": true,
+        "storage": false
+      },
+      "contentRating": "general",
+      "description": "Obras curtas criadas pelo projeto Prancha. Não é uma fonte comercial.",
+      "icon": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAMAAACdt4HsAAAAElBMVEX28eUfKkTkVy7zpxJ2sKQpM1ynDZObAAAAcUlEQVR42u3WwQqAMAwD0Erw/395N0HsoDFWhyT3vsNgTWMXEwYMLA/gyC0Ap9AALuEAoCpEeX4iRH0+F4KYT4UOAGCEBgCgBAMJAHCCH7EF+P4zLbBQ9J2ob2W9F/Rm0rvxgXZ+7cDYxBgwYMDAj4ABky42CXts5sYAAAAASUVORK5CYII=",
+      "id": "prancha.demonstracao.acervo",
+      "languages": [
+        "pt-BR"
+      ],
+      "minAppVersion": "0.2.0",
+      "name": "Acervo de demonstração",
+      "runtime": "wasm-component",
+      "sha256": "b707349906f992e8e99f2f89739f71df3745760f90677125474e47bf9f09a043",
+      "signatureUrl": "https://raw.githubusercontent.com/CAKeysama/prancha/main/extensions/demo-repo/prancha.demonstracao.acervo-1.0.0.wasm.sig",
+      "size": 117243,
+      "sources": [
+        {
+          "contentRating": "general",
+          "id": "acervo",
+          "language": "pt-BR",
+          "name": "Acervo de demonstração"
+        }
+      ],
+      "supportedKinds": [
+        "comic",
+        "manga"
+      ],
+      "version": "1.0.0"
+    }
+  ],
+  "generatedAt": "2026-11-02T19:19:37Z",
+  "repositoryId": "prancha.demonstracao",
+  "schemaVersion": 1
+}

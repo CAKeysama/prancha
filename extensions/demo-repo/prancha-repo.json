@@ -1,0 +1,10 @@
+{
+  "description": "Repositório do próprio projeto, com obras originais criadas só para demonstrar as extensões.",
+  "id": "prancha.demonstracao",
+  "indexUrl": "https://raw.githubusercontent.com/CAKeysama/prancha/main/extensions/demo-repo/prancha-index.json",
+  "name": "Demonstração do Prancha",
+  "publicKey": "UMhYLbeR0WdNiQ0QquvTaGV5n6yAElwmLwEvsxzo11I=",
+  "schemaVersion": 1,
+  "updatedAt": "2026-11-02T19:19:37Z",
+  "website": "https://github.com/CAKeysama/prancha"
+}
