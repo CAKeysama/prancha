@@ -17,6 +17,7 @@ use crate::error::{AppError, AppResult};
 
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(120);
 const MAX_SIGNATURE_BYTES: u64 = 1024;
+const MAX_SOURCE_KINDS: usize = 8;
 
 fn refused(code: &'static str, message: impl Into<String>) -> AppError {
     AppError::user(code, message)
@@ -240,6 +241,14 @@ fn name_of_direction(direction: ReadingDirection) -> &'static str {
     }
 }
 
+/// O que o componente informa vai para o banco e para a tela: valem os mesmos limites do índice.
+fn source_is_presentable(source: &SourceInfo) -> bool {
+    repository::short_text(&source.name, 120)
+        && repository::short_text(&source.language, 20)
+        && source.description.as_deref().is_none_or(|text| text.is_empty() || repository::short_text(text, repository::MAX_TEXT_CHARS))
+        && source.kinds.len() <= MAX_SOURCE_KINDS
+}
+
 /// O que o componente diz ter precisa ser o que o índice assinado promete.
 fn check_declared_sources(entry: &ExtensionEntry, found: &[SourceInfo]) -> AppResult<()> {
     let mismatch = || refused("extension_mismatch", "O pacote não corresponde ao que o repositório declara.");
@@ -249,7 +258,7 @@ fn check_declared_sources(entry: &ExtensionEntry, found: &[SourceInfo]) -> AppRe
             return Err(mismatch());
         }
         let declared = entry.sources.iter().find(|d| d.id == source.id).ok_or_else(mismatch)?;
-        if declared.content_rating != name_of_rating(source.rating) || !repository::is_valid_id(&source.id) {
+        if declared.content_rating != name_of_rating(source.rating) || !repository::is_valid_id(&source.id) || !source_is_presentable(source) {
             return Err(mismatch());
         }
     }
@@ -379,11 +388,11 @@ pub fn install(core: &Core, repository_id: &str, extension_id: &str) -> AppResul
 pub fn update(core: &Core, extension_id: &str) -> AppResult<InstalledExtension> {
     let current = core
         .db()
-        .query_row("SELECT repository_id, public_key, version, file_name FROM installed_extensions WHERE id = ?1", [extension_id], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?))
+        .query_row("SELECT repository_id, public_key, version, file_name, sha256 FROM installed_extensions WHERE id = ?1", [extension_id], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?, r.get::<_, String>(4)?))
         })
         .optional()?;
-    let Some((repository_id, public_key, version, old_file)) = current else {
+    let Some((repository_id, public_key, version, old_file, old_sha256)) = current else {
         return Err(refused("extension_not_found", "Essa extensão não está mais instalada."));
     };
     let row = catalog_row(&core.db(), &repository_id, extension_id)?;
@@ -415,6 +424,9 @@ pub fn update(core: &Core, extension_id: &str) -> AppResult<InstalledExtension> 
     }
     if file_name != old_file {
         remove_package_if_unused(core, &old_file);
+        if let Ok(engine) = core.engine() {
+            engine.forget(&old_sha256);
+        }
     }
     get(&core.db(), extension_id)
 }
@@ -443,4 +455,32 @@ pub fn remove(core: &Core, id: &str) -> AppResult<()> {
 pub fn set_enabled(conn: &Connection, id: &str, enabled: bool) -> AppResult<InstalledExtension> {
     conn.execute("UPDATE installed_extensions SET enabled = ?2 WHERE id = ?1", params![id, enabled])?;
     get(conn, id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_source_with_endless_text_is_not_presentable() {
+        let source = |name: &str, language: &str, description: Option<&str>, kinds: usize| SourceInfo {
+            id: "fonte".into(),
+            name: name.into(),
+            language: language.into(),
+            description: description.map(str::to_string),
+            kinds: vec![ContentKind::Comic; kinds],
+            rating: ContentRating::General,
+            direction: ReadingDirection::LeftToRight,
+            supports_latest: false,
+            supports_search: false,
+            min_interval_ms: 0,
+        };
+        assert!(source_is_presentable(&source("Fonte", "pt-BR", None, 1)));
+        assert!(source_is_presentable(&source("Fonte", "pt-BR", Some(""), MAX_SOURCE_KINDS)));
+        assert!(!source_is_presentable(&source(&"n".repeat(121), "pt-BR", None, 1)));
+        assert!(!source_is_presentable(&source("", "pt-BR", None, 1)));
+        assert!(!source_is_presentable(&source("Fonte", &"l".repeat(21), None, 1)));
+        assert!(!source_is_presentable(&source("Fonte", "pt-BR", Some(&"d".repeat(2001)), 1)));
+        assert!(!source_is_presentable(&source("Fonte", "pt-BR", None, MAX_SOURCE_KINDS + 1)));
+    }
 }

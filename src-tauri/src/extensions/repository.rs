@@ -27,7 +27,7 @@ const MAX_MANIFEST_BYTES: u64 = 64 * 1024;
 const MAX_INDEX_BYTES: u64 = 8 * 1024 * 1024;
 const MAX_SIGNATURE_BYTES: u64 = 1024;
 const MAX_ICON_CHARS: usize = 44 * 1024; // 32 KB em base64
-const MAX_TEXT_CHARS: usize = 2000;
+pub const MAX_TEXT_CHARS: usize = 2000;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 /// Repositórios sincronizados ao mesmo tempo.
 const SYNC_CONCURRENCY: usize = 4;
@@ -138,7 +138,7 @@ pub fn is_valid_id(id: &str) -> bool {
         && id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '.' | '-' | '_'))
 }
 
-fn short_text(text: &str, limit: usize) -> bool {
+pub fn short_text(text: &str, limit: usize) -> bool {
     !text.trim().is_empty() && text.chars().count() <= limit && !text.chars().any(char::is_control)
 }
 
@@ -212,6 +212,13 @@ fn validate_entry(net: &Net, entry: &ExtensionEntry) -> Result<(), String> {
     if capabilities.network && capabilities.allowed_hosts.is_empty() {
         return Err(format!("{name}: acesso à rede sem hosts autorizados"));
     }
+    // A tela diria "sem rede", e o Prancha ainda baixaria capas e páginas desses hosts.
+    if !capabilities.network && !capabilities.allowed_hosts.is_empty() {
+        return Err(format!("{name}: hosts autorizados sem acesso à rede"));
+    }
+    if !short_text(&entry.runtime, 40) || !short_text(&entry.api_version, 20) || entry.supported_kinds.iter().any(|kind| !short_text(kind, 40)) {
+        return Err(format!("{name}: runtime, API ou tipos de conteúdo inválidos"));
+    }
     Ok(())
 }
 
@@ -246,7 +253,7 @@ fn parse_utc(text: &str) -> Option<i64> {
     let (time, fraction) = time.split_once('.').unwrap_or((time, ""));
     let mut time = time.splitn(3, ':').map(|p| p.parse::<i64>().ok());
     let (hh, mm, ss) = (time.next()??, time.next()??, time.next()??);
-    if !(1..=12).contains(&m) || !(1..=31).contains(&d) || hh > 23 || mm > 59 || ss > 60 || hh < 0 || mm < 0 || ss < 0 {
+    if !(0..=9999).contains(&y) || !(1..=12).contains(&m) || !(1..=31).contains(&d) || hh > 23 || mm > 59 || ss > 60 || hh < 0 || mm < 0 || ss < 0 || !fraction.bytes().all(|b| b.is_ascii_digit()) {
         return None;
     }
     let millis = if fraction.is_empty() { 0 } else { format!("{fraction:0<3}")[..3].parse::<i64>().ok()? };
@@ -702,7 +709,7 @@ mod tests {
         assert_eq!(parse_utc("1970-01-01T00:00:00Z"), Some(0));
         assert_eq!(parse_utc("2026-11-01T12:00:00Z"), Some(1_793_534_400_000));
         assert_eq!(parse_utc("2024-02-29T00:00:01.5Z"), Some(1_709_164_801_500));
-        for bad in ["2026-11-01", "2026-13-01T00:00:00Z", "2026-11-01T25:00:00Z", "2026-11-01T12:00:00+03:00", "ontem"] {
+        for bad in ["2026-11-01", "2026-13-01T00:00:00Z", "2026-11-01T25:00:00Z", "2026-11-01T12:00:00+03:00", "ontem", "2026-11-01T12:00:00.12éZ", "2026-11-01T12:00:00.-1Z", "99999999999999-01-01T00:00:00Z"] {
             assert_eq!(parse_utc(bad), None, "{bad}");
         }
     }

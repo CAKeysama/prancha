@@ -61,11 +61,12 @@ pub fn run() {
                     }
                     app.manage(core.clone());
                     std::thread::spawn(move || {
-                        if let Err(e) = core.verify_files() {
-                            log::warn!("verificação de arquivos falhou: {e}");
-                        }
+                        // Antes da verificação, que pode demorar: com a tela aberta, um download novo já estaria correndo.
                         if let Err(e) = extensions::downloads::on_startup(&core) {
                             log::warn!("downloads não retomados: {e}");
+                        }
+                        if let Err(e) = core.verify_files() {
+                            log::warn!("verificação de arquivos falhou: {e}");
                         }
                         if let Err(e) = extensions::sources::prune_stale(&core, &core.db()) {
                             log::warn!("limpeza de obras antigas falhou: {e}");

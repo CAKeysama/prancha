@@ -121,15 +121,8 @@ fn ipv6_is_public(ip: Ipv6Addr) -> bool {
     if s[0] == 0x2002 {
         return ipv4_is_public(Ipv4Addr::new((s[1] >> 8) as u8, s[1] as u8, (s[2] >> 8) as u8, s[2] as u8));
     }
-    !(ip.is_unspecified()
-        || ip.is_loopback()
-        || ip.is_multicast()
-        || ip.is_unique_local()
-        || ip.is_unicast_link_local()
-        || (s[0] & 0xffc0) == 0xfec0 // site-local, obsoleto
-        || (s[0] == 0x2001 && s[1] == 0) // Teredo
-        || (s[0] == 0x2001 && s[1] == 0xdb8)
-        || s[..6] == [0, 0, 0, 0, 0, 0]) // compatível com IPv4, obsoleto
+    // Só 2000::/3 é roteável na internet. Dentro dele ficam de fora o Teredo e a faixa de documentação.
+    (s[0] & 0xe000) == 0x2000 && !(s[0] == 0x2001 && (s[1] == 0 || s[1] == 0xdb8))
 }
 
 fn is_local_name(host: &str) -> bool {
@@ -368,6 +361,7 @@ mod tests {
         for bad in [
             "::", "::1", "fe80::1", "fec0::1", "fc00::1", "fd12:3456::1", "ff02::1", "2001:db8::1", "2001:0:4136:e378:8000:63bf:3fff:fdd2",
             "::ffff:127.0.0.1", "::ffff:10.0.0.1", "::ffff:169.254.169.254", "64:ff9b::7f00:1", "64:ff9b::a9fe:a9fe", "2002:7f00:1::", "2002:c0a8:1::", "::127.0.0.1",
+            "64:ff9b:1::a00:1", "::ffff:0:a00:1", "100::1",
         ] {
             assert!(!is_public_ip(ip(bad)), "{bad}");
         }

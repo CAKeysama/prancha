@@ -708,7 +708,12 @@ fn a_signed_index_with_a_bad_entry_is_refused_whole() {
     };
     let bad_capabilities = json!({ "network": true, "storage": false, "authentication": false, "allowedHosts": ["*"] });
     let no_hosts = json!({ "network": true, "storage": false, "authentication": false, "allowedHosts": [] });
+    let hosts_without_network = json!({ "network": false, "storage": false, "authentication": false, "allowedHosts": ["exemplo.com"] });
     for bad in [
+        with("capabilities", hosts_without_network),
+        with("runtime", json!("x".repeat(41))),
+        with("apiVersion", json!("1".repeat(21))),
+        with("supportedKinds", json!(["x".repeat(41)])),
         with("id", json!("Identificador Ruim")),
         with("version", json!("um")),
         with("sha256", json!("abc")),

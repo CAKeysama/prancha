@@ -37,6 +37,8 @@ const MAX_PAGE_BYTES: u64 = 32 * 1024 * 1024;
 const MAX_CHAPTER_BYTES: u64 = 3 * 1024 * 1024 * 1024;
 const PAGE_TIMEOUT: Duration = Duration::from_secs(60);
 const WAIT_STEP: Duration = Duration::from_millis(50);
+/// Uma fonte não pode prender um dos downloads por dias pedindo um intervalo enorme.
+const MAX_SOURCE_INTERVAL: Duration = Duration::from_secs(60);
 
 // ---------------------------------------------------------------------------
 // Consulta
@@ -233,20 +235,21 @@ fn temp_dir(core: &Core, id: i64) -> PathBuf {
 
 fn finish(core: &Core, job: &Job, outcome: AppResult<()>, intent: Intent) {
     let temp = temp_dir(core, job.id);
+    // A limpeza vem antes do estado final: com ele à vista, um "tentar de novo" já pode usar a mesma pasta.
     match (outcome, intent) {
         (Ok(()), _) => {
-            set_status(core, job.id, "completed", None);
             let _ = std::fs::remove_dir_all(&temp);
+            set_status(core, job.id, "completed", None);
             (core.emit)(EVENT_LIBRARY, json!({}));
         }
         (Err(_), Intent::Pause) => set_status(core, job.id, "paused", None),
         (Err(_), Intent::Cancel) => {
-            set_status(core, job.id, "cancelled", None);
             let _ = std::fs::remove_dir_all(&temp);
+            set_status(core, job.id, "cancelled", None);
         }
         (Err(error), Intent::Run) => {
-            set_status(core, job.id, "failed", Some(&error.to_string()));
             let _ = std::fs::remove_dir_all(&temp);
+            set_status(core, job.id, "failed", Some(&error.to_string()));
         }
     }
     notify(core, job.id);
@@ -328,8 +331,8 @@ pub fn resume(core: &Arc<Core>, id: i64) -> AppResult<()> {
 
 pub fn cancel(core: &Core, id: i64) -> AppResult<()> {
     if !interrupt(core, id, Intent::Cancel) && matches!(status_of(core, id)?.as_str(), "queued" | "paused") {
-        set_status(core, id, "cancelled", None);
         let _ = std::fs::remove_dir_all(temp_dir(core, id));
+        set_status(core, id, "cancelled", None);
         notify(core, id);
     }
     Ok(())
@@ -499,7 +502,7 @@ fn download(core: &Arc<Core>, job: &Job) -> AppResult<()> {
     core.db().execute("UPDATE chapter_downloads SET pages_total = ?2, pages_done = ?3, bytes = ?4, updated_at = ?5 WHERE id = ?1", params![id, total, done, bytes as i64, now_ms()])?;
     notify(core, id);
 
-    let interval = Duration::from_millis(source.min_interval_ms);
+    let interval = Duration::from_millis(source.min_interval_ms).min(MAX_SOURCE_INTERVAL);
     let mut pages_done = done;
     for (position, page) in pages.iter().enumerate() {
         if stored.contains_key(&(position + 1)) {

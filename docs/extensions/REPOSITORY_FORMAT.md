@@ -77,15 +77,16 @@ Até 8 MB. O índice é validado por inteiro: uma entrada errada recusa o arquiv
 | `name`, `authors[]` | Até 120 caracteres cada. |
 | `description` | Até 2000 caracteres. |
 | `version`, `minAppVersion`, `maxAppVersion` | Versão semântica. `maxAppVersion` é opcional. |
-| `runtime` | Só `wasm-component`. Outro valor aparece no catálogo como incompatível. |
-| `apiVersion` | Só `1`. Outro valor aparece no catálogo como incompatível. |
+| `runtime` | Só `wasm-component`. Outro valor, de até 40 caracteres, aparece no catálogo como incompatível. |
+| `apiVersion` | Só `1`. Outro valor, de até 20 caracteres, aparece no catálogo como incompatível. |
 | `artifactUrl`, `signatureUrl` | HTTPS na porta 443, em host público. |
 | `size` | De 1 byte a 32 MB, e o tamanho real é conferido no download. |
 | `sha256` | 64 caracteres hexadecimais minúsculos. |
 | `icon` | Opcional: `data:image/png`, `jpeg` ou `webp` em base64, até 32 KB. |
 | `contentRating` | `general`, `teen`, `adult` ou `unknown`. Entradas `adult` são descartadas ao sincronizar. |
 | `sources` | Ao menos uma. Na instalação, os identificadores e as classificações precisam bater com o que o componente declara. |
-| `capabilities.network` | Com `true`, `allowedHosts` não pode ser vazio. |
+| `supportedKinds` | Até 40 caracteres cada. |
+| `capabilities.network` | Com `true`, `allowedHosts` não pode ser vazio. Com `false`, precisa ser vazio. |
 | `capabilities.allowedHosts` | Nomes exatos ou `*.dominio.com`. Endereços IP e nomes locais são recusados. |
 | `capabilities.authentication` | Reservado. Nenhum recurso de login existe nesta versão. |
 

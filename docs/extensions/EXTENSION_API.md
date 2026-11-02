@@ -62,7 +62,7 @@ Exige `capabilities.storage`. Sem ela, `storage-get` não retorna nada e `storag
 
 O que a fonte não souber vai como `none`. O Prancha não inventa valor e deixa o campo fora da tela.
 
-`min-interval-ms` é o menor intervalo entre requisições de página que a fonte aceita. O gerenciador de downloads respeita esse valor, com um capítulo por vez em cada fonte.
+`min-interval-ms` é o menor intervalo entre requisições de página que a fonte aceita. O gerenciador de downloads respeita esse valor até 60 segundos, com um capítulo por vez em cada fonte.
 
 ## Erros
 
@@ -110,6 +110,7 @@ O Prancha também limita o que aceita de volta:
 
 | Dado | Limite |
 |---|---|
+| Fonte em `list-sources`, recusada na instalação se passar | Nome com 120 caracteres, idioma com 20, descrição com 2000 e 8 tipos de conteúdo |
 | Resultados por página | 200 |
 | Capítulos por obra | 5000 |
 | Título | 300 caracteres |

@@ -8,9 +8,9 @@ Executado em 2026-11-02, com as extensões ainda sem versão publicada, em Windo
 |---|---|---|
 | TypeScript estrito | `npm run typecheck` | ✅ sem erros |
 | ESLint (+ React Compiler) | `npm run lint` | ✅ 0 erros, 1 aviso conhecido (`useVirtualizer` não memoizável — limitação da biblioteca) |
-| Rust — unitários | `cargo test --lib` | ✅ 80/80 |
+| Rust — unitários | `cargo test --lib` | ✅ 81/81 |
 | Rust — integração | `cargo test --test backend` | ✅ 28/28 |
-| Rust — extensões | `cargo test --test extensions` | ✅ 89/89, em 5 execuções seguidas; mais 1 fora da execução normal, que usa a internet, também aprovado |
+| Rust — extensões | `cargo test --test extensions` | ✅ 89/89, com os 15 testes de download repetidos 10 vezes depois da última correção; mais 1 fora da execução normal, que usa a internet, também aprovado |
 | Rust — páginas reais | `npm run test:rust`, que roda todas as suítes de Rust | ✅ 6/6, com as páginas reais locais |
 | Frontend — Vitest | `npm test` | ✅ 95/95 |
 | E2E no executável real | `npm run test:e2e` | ✅ 49/49 |
@@ -228,6 +228,14 @@ As capturas das atualizações ficam em `tests/.tmp/update-shots/`, fora do git,
 - Alternador Grade/Lista quebrava em duas linhas em janelas estreitas — agora mostra só ícones.
 - O teste E2E de PDF falhava por tempo em cerca de 1 a cada 6 execuções. A causa era o próprio teste: ele clicava em "Biblioteca" depois que os controles do leitor já tinham se escondido. Agora o teste move o ponteiro antes de sair do leitor.
 - O teste de cancelamento de um laço infinito falhou uma vez com todos os testes em paralelo. A causa era o próprio teste: o relógio incluía a compilação do componente, e o cancelamento podia chegar antes de o laço começar. Agora o componente é aquecido antes.
+- O teste de página inválida falhou uma vez. A causa estava no código: o download publicava o estado final antes de apagar a pasta temporária, e um "tentar de novo" imediato podia ter a pasta nova apagada. Agora a limpeza vem antes.
+- Na revisão antes do merge, um índice assinado com fração de segundo não numérica, como `.12é`, derrubava a consulta com um pânico. Agora a data é recusada, e o ano passa a ter limite.
+- Na mesma revisão, uma extensão com `network: false` e hosts declarados aparecia como "sem rede", mas o Prancha baixaria capas e páginas desses hosts. Agora o índice é recusado.
+- `runtime`, `apiVersion` e `supportedKinds` no índice, e nome, idioma, descrição e tipos declarados pelo componente, não tinham limite de tamanho. Agora têm.
+- A regra de IPv6 listava o que bloquear e deixava passar o NAT64 local (`64:ff9b:1::/48`) e o IPv4 traduzido (`::ffff:0:0/96`). Agora só a faixa global `2000::/3` é aceita.
+- Uma fonte podia pedir até 49 dias de intervalo e ocupar um download por todo esse tempo. O intervalo agora vai até 60 s.
+- Um download novo podia ser marcado de volta como "na fila" se começasse enquanto a verificação de arquivos da abertura ainda rodava. A retomada agora vem antes dessa verificação.
+- Atualizar uma extensão deixava o componente antigo na memória até fechar o app. Agora ele sai na atualização.
 - Atualizar uma extensão pulava a revisão: agora mostra as duas versões e o acesso novo antes de confirmar.
 - O catálogo de extensões parava em 200 itens, sem aviso: agora tem "Carregar mais".
 - O filtro de tipo em Explorar cortava "Todos os tipos".
