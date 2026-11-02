@@ -1,4 +1,4 @@
-# Relatório de testes — Prancha 0.1.2
+# Relatório de testes — Prancha 0.2.0
 
 Executado em 2026-11-01, Windows 11 Pro 10.0.26200, WebView2 156, Rust 1.99.1, Node 22.23.
 
@@ -8,16 +8,17 @@ Executado em 2026-11-01, Windows 11 Pro 10.0.26200, WebView2 156, Rust 1.99.1, N
 |---|---|---|
 | TypeScript estrito | `npm run typecheck` | ✅ sem erros |
 | ESLint (+ React Compiler) | `npm run lint` | ✅ 0 erros, 1 aviso conhecido (`useVirtualizer` não memoizável — limitação da biblioteca) |
-| Rust — unitários | `cargo test --lib` | ✅ 40/40 |
+| Rust — unitários | `cargo test --lib` | ✅ 55/55 |
 | Rust — integração | `cargo test --test backend` | ✅ 28/28 |
-| Rust — páginas reais | `cargo test --release --test guided -- --test-threads=1` | ✅ 6/6 |
-| Frontend — Vitest | `npm test` | ✅ 48/48 |
-| E2E no executável real | `npm run test:e2e` | ✅ 30/30 |
-| Instalador | `npm run tauri build` | ✅ NSIS e MSI gerados; verificação abaixo |
+| Rust — páginas reais | `cargo test --release --test guided -- --test-threads=1` | ✅ 6/6 na 0.1.2; não repetida na 0.2.0, porque a detecção não mudou |
+| Frontend — Vitest | `npm test` | ✅ 76/76 |
+| E2E no executável real | `npm run test:e2e` | ✅ 40/40 |
+| Atualização instalada de verdade | `npm run test:update -- --build` | ✅ 23 verificações; servidor local e chave descartável, detalhes abaixo |
+| Instalador | `npm run tauri build` | ✅ NSIS e MSI gerados, com 2 assinaturas; verificação abaixo |
 
 ## Instaladores
 
-Os arquivos são os das [releases](https://github.com/CAKeysama/prancha/releases), com estes SHA-256:
+Os instaladores da 0.2.0 saem da automação do GitHub, e os SHA-256 deles ficam na própria release. Os das versões anteriores são os das [releases](https://github.com/CAKeysama/prancha/releases), com estes SHA-256:
 
 | Arquivo | Tamanho | SHA-256 |
 |---|---|---|
@@ -97,6 +98,31 @@ Leitura Guiada, sobre as mesmas páginas reais da suíte em Rust:
 28. As correções sobrevivem ao reinício e podem ser desfeitas.
 29. Páginas reais em PDF são analisadas a partir do PDF.js.
 
+Atualizações, nos temas escuro e claro. Builds de depuração não acessam a rede, então o estado é gravado direto:
+
+30. Janela de nova versão com as duas versões, "Depois", indicador e reabertura pelo indicador.
+31. A versão recusada fica gravada, e a janela não volta sozinha depois de reabrir o app.
+32. Seção Atualizações nas configurações.
+33. Novidades depois de atualizar, sem repetir na abertura seguinte.
+34. Histórico e menor janela (720×520), sem rolagem horizontal.
+
+### Atualização instalada de verdade (`tests/update/run.mjs`)
+Instala um pacote NSIS assinado e atualiza da 9.8.0 para a 9.8.1. O pacote, a assinatura e o instalador são reais. O servidor é local, a chave é descartável e o produto tem outro nome, para não tocar no Prancha instalado. O GitHub não participa.
+
+- **Consulta:** sem versão nova, nada aparece. Servidor travado não segura a abertura nem mostra erro. Sem conexão e com erro do servidor, o app abre normalmente e sem alerta. Release sem pacote para o sistema, ou com pacote fora das releases oficiais, não é oferecida.
+- **Janela e indicador:** mostra as versões e as notas. "Depois" deixa só o indicador, navegar não reabre a janela, o indicador reabre, e a versão recusada continua só no indicador depois de reabrir o app.
+- **Integridade:** pacote adulterado ou incompleto é recusado pela assinatura, download interrompido dá mensagem clara, SHA-256 errado é recusado.
+- **Download:** progresso real em porcentagem. Cancelar, ou fechar o app durante o download, não instala nada.
+- **Instalação:** o app fecha para o instalador, o executável é trocado pela 9.8.1, e a versão nova abre sozinha.
+- **Depois de atualizar:** a janela de novidades agradece e usa as notas locais sem internet, volta se for fechada sem ser vista e não se repete. O indicador some.
+- **Dados:** biblioteca, progresso, favorito e preferências preservados.
+- **Falha:** instalação que não terminou é informada na abertura seguinte.
+
+### Build de produção e GitHub real
+O build com a chave de produção gerou os 2 pacotes e as 2 assinaturas. O `latest.json` traz `windows-x86_64`, `windows-x86_64-nsis` e `windows-x86_64-msi`. Nas três entradas, o SHA-256 confere, a chave é a mesma da configuração e a assinatura declara `version:0.2.0`.
+
+Esse executável também rodou contra o GitHub real, com dados isolados. O histórico veio da API com as notas de v0.1.0, v0.1.1 e v0.1.2. O `latest.json` ainda não existe nas releases publicadas: a consulta falhou como previsto, nenhuma janela abriu, e a verificação manual disse que não conseguiu falar com o GitHub.
+
 ## Validação visual
 
 Capturas em `artifacts/screenshots/`, geradas pelos testes E2E e revisadas manualmente:
@@ -114,6 +140,8 @@ Capturas em `artifacts/screenshots/`, geradas pelos testes E2E e revisadas manua
 | Janela pequena | `12-biblioteca-janela-pequena.png` |
 | Arquivo ausente | `13-detalhes-arquivo-ausente.png` |
 
+As capturas das atualizações ficam em `tests/.tmp/update-shots/`, fora do git, e foram revisadas nos temas escuro e claro e na menor janela.
+
 ### Defeitos encontrados e corrigidos durante a validação
 - *Deadlock* no cache de páginas RAR/7z (trava reentrante) — corrigido, coberto por teste.
 - Palavra reservada `NATURAL` do SQLite usada como *collation* — renomeada para `NATSORT`.
@@ -130,6 +158,10 @@ Capturas em `artifacts/screenshots/`, geradas pelos testes E2E e revisadas manua
 Em uma execução do E2E, o leitor avançou páginas sozinho após as teclas (página 5 → 11 em alguns segundos). Repetições com captura de todos os eventos de teclado e roda do mouse não reproduziram o problema (três teclas → página 4, como esperado) e o cenário passou nas três execuções seguintes. A hipótese mais provável é a roda do mouse real sobre a janela visível durante o teste (a roda vira a página). Fica registrado como ponto a observar.
 
 ## Não verificado / limitações
+- **Atualização pelo GitHub:** nenhum app instalado baixou uma atualização das releases, porque isso exige duas versões publicadas com o atualizador. A etapa de publicação com o `latest.json` também ainda não rodou. Até a 0.2.0 sair, a verificação manual diz que não conseguiu falar com o GitHub, já que o arquivo ainda não existe.
+- **Atualização por MSI:** nunca executada, porque exige administrador. O caminho testado é o do NSIS. Com o MSI, a confirmação do Windows vem depois que o app fechou, e uma recusa só aparece na abertura seguinte.
+- **Sem espaço em disco e sem permissão:** só a tradução das mensagens de erro foi testada. Falha ao reiniciar foi simulada a partir do estado pendente salvo.
+- **Assinatura do Windows:** os instaladores não têm Authenticode, então o SmartScreen pode pedir confirmação.
 - **Mangá real:** a leitura da direita para a esquerda da Leitura Guiada só foi conferida em páginas ocidentais espelhadas.
 - **Automação do GitHub:** roda typecheck, lint, Vitest, os testes de Rust sem páginas reais e o build. O E2E e a suíte de páginas reais dependem de arquivos que só existem localmente.
 - **RAR comprimido:** não existe compressor RAR livre para gerar testes; os testes usam RAR5 "stored" lido pela biblioteca UnRAR oficial (a descompressão em si é responsabilidade dela). RAR4 e volumes múltiplos não foram testados com arquivos reais.

@@ -22,6 +22,7 @@ Até a 1.0.0, mudanças maiores ainda podem sair em `PATCH` ou `MINOR`, como as 
    npm run e2e:build
    npm run test:e2e
    cargo test --release --manifest-path src-tauri/Cargo.toml --test guided -- --test-threads=1
+   npm run test:update -- --build
    ```
 
 4. **Faça o commit na `main`, crie a tag e envie:**
@@ -44,17 +45,27 @@ Até a 1.0.0, mudanças maiores ainda podem sair em `PATCH` ou `MINOR`, como as 
 | Workflow | Quando roda | O que faz |
 |---|---|---|
 | `ci.yml` | Push na `main` e pull requests | Tipos, lint, testes de interface e do backend |
-| `release.yml` | Tag `vX.Y.Z` | Repete as verificações, confere a tag com a versão do projeto, gera os instaladores, calcula os SHA-256 e publica a release com as notas do changelog |
+| `release.yml` | Tag `vX.Y.Z` | Repete as verificações, confere a tag com a versão do projeto, gera e assina os instaladores, calcula os SHA-256, gera o `latest.json` e publica a release com as notas do changelog |
 | `pages.yml` | Fim do `release.yml`, release editada à mão ou mudança no changelog e na página | Regenera e publica a página de downloads |
 
 Se qualquer verificação ou build falhar, a release não é criada.
 
 Para ensaiar sem publicar nada, rode o `release.yml` à mão, na aba Actions ou com `gh workflow run release.yml --ref main`. Os instaladores ficam guardados como artefato da execução.
 
+Uma versão com sufixo, como `1.3.0-beta.1`, sai como pré-lançamento. O GitHub não a considera a mais recente, então ela não chega aos aplicativos instalados.
+
+## Chave de assinatura das atualizações
+
+O aplicativo só instala um pacote assinado com esta chave. A parte pública está em `src-tauri/tauri.conf.json`. A parte privada e a senha ficam fora do repositório, em `%USERPROFILE%\.tauri\`, e no GitHub como os segredos `TAURI_SIGNING_PRIVATE_KEY` e `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
+
+Guarde uma cópia da chave e da senha em lugar seguro. **Sem elas, quem já instalou o Prancha nunca mais recebe atualizações** e precisa instalar a versão nova à mão, porque o aplicativo recusa qualquer outra chave.
+
+Sem os segredos, o `release.yml` falha na compilação e nada é publicado. Para gerar os instaladores no seu computador, defina as duas variáveis no terminal antes de `npm run tauri build`.
+
 ## O que não roda no GitHub
 
-- **E2E e detecção em páginas reais:** usam quadrinhos do seu disco e o gabarito em `tests/real/`, que não vão para o git. Por isso o passo 3 é local.
-- **Assinatura digital:** os instaladores não são assinados, então o Windows SmartScreen pode pedir confirmação.
+- **E2E, detecção em páginas reais e atualização real:** usam quadrinhos do seu disco e o gabarito em `tests/real/`, que não vão para o git, e instalam o aplicativo de verdade. Por isso o passo 3 é local.
+- **Assinatura digital do Windows:** é outra assinatura, diferente da chave acima. Os instaladores não têm essa, então o Windows SmartScreen pode pedir confirmação.
 
 ## Página de downloads
 

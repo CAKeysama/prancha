@@ -84,6 +84,20 @@ Roda inteira no computador, sem OCR, rede ou dependência nova. Fica dentro do l
 
 **Limites conhecidos.** Texto branco direto sobre o céu passa despercebido; dois balões unidos por um pescoço largo viram uma região só; o tipo é aproximado (legenda pode virar sussurro); logotipos de capa podem aparecer como "Outro texto"; o contorno guarda só o extremo esquerdo e o direito de cada faixa, então o vão entre dois lóbulos sobrepostos vem junto no recorte. Nenhum mangá real foi testado.
 
+## Atualizações
+
+Usa o `tauri-plugin-updater` e as GitHub Releases, sem servidor próprio. Toda a rede e toda a conferência ficam no backend (`updates.rs`, `commands.rs`): a CSP da interface continua sem endereços externos, e os comandos JS do plugin não são liberados.
+
+**Origem.** O aplicativo lê `releases/latest/download/latest.json`, gerado por `scripts/updater-manifest.mjs` em cada release. O "latest" do GitHub não inclui pré-lançamentos nem rascunhos, e esse endereço não gasta o limite da API. A API só é usada para o histórico nas configurações, no máximo uma vez por hora, salvo pedido da pessoa. Builds de depuração não acessam a rede.
+
+**Conferências antes de instalar.** A versão é comparada por semver e precisa ser estável e maior que a instalada. O pacote precisa estar na pasta da versão anunciada, nas releases configuradas no próprio aplicativo. O plugin escolhe o pacote pelo sistema, pela arquitetura e pelo tipo de instalação (NSIS ou MSI) e confere a assinatura minisign, que também declara a versão (`requireSignedVersion`). Depois vem o SHA-256 do manifesto. O download fica em memória: nada toca a instalação até o instalador abrir. O instalador é o oficial do Tauri, em modo passivo, e reabre o aplicativo. Ele não mexe na pasta de dados.
+
+**Estado (`updates.state`, tabela `settings`).** Sobrevive a um fechamento inesperado. `reconcile`, a cada início, é o único lugar que dá uma atualização por concluída, porque a prova é a versão nova estar rodando: compara a versão em execução com `installedVersion` e abre as novidades. Se `pendingVersion` ficou maior que a versão em execução, o instalador não terminou, e a próxima abertura avisa. As notas ficam em `updates.releases`, copiadas das releases: as da versão baixada são gravadas antes do download, para a janela de novidades funcionar sem internet.
+
+**Tela (`features/updates/`).** `updates-context.tsx` faz uma verificação por abertura, sem segurar a interface, e não abre nada sobre o leitor ou o tutorial. Recusar grava a versão: ela só fica no indicador do menu lateral até surgir outra mais nova. Erros de verificação automática ficam em `updates.log`, na pasta de dados, sem aparecer para a pessoa.
+
+**Limites conhecidos.** Com o MSI, o Windows pede a confirmação depois que o aplicativo já fechou: se a pessoa recusar, ele não reabre sozinho, e o aviso aparece na próxima abertura. Falta de disco durante a escrita do instalador e falta de permissão têm mensagem própria, mas só foram testadas por mapeamento de erro.
+
 ## Limites de segurança (`formats/mod.rs`)
 
 Até 20 000 entradas por arquivo, 150 MB por página, 2 MB para `ComicInfo.xml`, imagens de até 30 000 px e 1 GB de alocação na decodificação. Leituras usam `take(limite + 1)` para não confiar no tamanho declarado.

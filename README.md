@@ -52,7 +52,11 @@ Baixe a versão mais recente na [página de downloads](https://cakeysama.github.
 
 Os instaladores não têm assinatura digital, então o Windows SmartScreen pode pedir confirmação na primeira execução. Cada release traz os SHA-256 para conferir o download.
 
-Para atualizar, instale a nova versão por cima: a biblioteca e o progresso são mantidos.
+### Atualizações
+
+A partir da 0.2.0, o Prancha procura versões novas ao abrir e pergunta antes de instalar. A biblioteca e o progresso são mantidos. Quem está na 0.1.x precisa instalar a 0.2.0 por cima uma vez.
+
+Para isso, ele lê o arquivo `latest.json` da release mais recente no GitHub e, nas configurações, o histórico de versões. Nenhum dado da sua biblioteca é enviado. Sem internet, ele abre e funciona normalmente.
 
 ### Requisitos
 
@@ -67,7 +71,7 @@ Para atualizar, instale a nova versão por cima: a biblioteca e o progresso são
 |---|---|---|
 | Windows | 10/11 x64 | WebView2 já vem no Windows 11 |
 | Node.js | 22.13+ | npm 10+ |
-| Rust | stable (1.85+) | via [rustup](https://rustup.rs) |
+| Rust | stable (1.90+) | via [rustup](https://rustup.rs) |
 | Visual Studio Build Tools | 2022 | workload "Desenvolvimento para desktop com C++" + Windows 11 SDK (o UnRAR e o SQLite são compilados em C/C++) |
 
 > **Caminhos longos:** se a pasta do projeto tiver um caminho muito longo, o linker do Windows
@@ -94,6 +98,13 @@ npm test               # Vitest: regras de domínio e componentes (IPC simulado)
 npm run test:rust      # cargo test: formatos, importação, capas, catálogo, progresso, detecção
 npm run e2e:build      # compila o app de depuração e gera os arquivos de teste
 npm run test:e2e       # Playwright no executável real (WebView2 via CDP) + capturas de tela
+npm run test:update    # atualização real entre duas versões instaladas, com servidor local
+```
+
+Gerar os instaladores pede a chave de assinatura das atualizações ([`docs/RELEASING.md`](docs/RELEASING.md)). Para compilar sem ela:
+
+```bash
+npm run tauri build -- --config "{\"bundle\":{\"createUpdaterArtifacts\":false}}"
 ```
 
 Os arquivos de teste são gerados por `src-tauri/examples/make_fixtures.rs` (desenhos geométricos
