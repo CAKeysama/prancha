@@ -1,0 +1,61 @@
+name: Página de downloads
+
+# Gera a página a partir do CHANGELOG.md e das releases publicadas. Nada é commitado de volta, então não há repetição.
+on:
+  push:
+    branches: [main]
+    paths:
+      - CHANGELOG.md
+      - scripts/build-downloads.mjs
+      - scripts/changelog.mjs
+      - scripts/downloads.template.html
+      - site/fonts/**
+      - site/assets/favicon.svg
+      - .github/workflows/pages.yml
+  release:
+    types: [published, edited, deleted]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Gerar e publicar
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Gera a página e o manifesto
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/build-downloads.mjs
+
+      - name: Monta o que vai para o ar
+        run: |
+          mkdir -p _site/assets _site/fonts
+          cp site/downloads.html _site/index.html
+          cp site/releases.json _site/releases.json
+          cp site/fonts/*.woff2 _site/fonts/
+          cp site/assets/favicon.svg _site/assets/favicon.svg
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+      - id: deployment
+        uses: actions/deploy-pages@v5

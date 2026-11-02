@@ -1,0 +1,51 @@
+name: Verificações
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  checks:
+    name: Tipos, lint, testes e backend
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Prepara o Rust
+        run: rustup toolchain install stable --profile minimal
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: rust-test-${{ runner.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: rust-test-${{ runner.os }}-
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+
+      # O Tauri embute o frontend ao compilar: o backend precisa dele pronto.
+      - run: npm run build
+
+      # Os testes de detecção (--test guided) e o E2E usam páginas reais, que não vão para o git: rodam localmente, antes de cada versão.
+      - name: Testes do backend
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib --test backend
