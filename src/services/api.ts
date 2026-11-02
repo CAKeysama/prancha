@@ -15,6 +15,19 @@ import type {
   StorageInfo,
 } from "../domain/types";
 import type { GuidedPage, GuidedRegion } from "../domain/guided";
+import type {
+  BrowsePage,
+  CatalogItem,
+  CatalogQuery,
+  ComicOrigin,
+  DownloadView,
+  InstalledExtension,
+  RepositoryInfo,
+  RepositoryPreview,
+  SeriesCard,
+  SeriesView,
+  SourceSummary,
+} from "../domain/online";
 import type { UpdateProgress, UpdatesHistory, UpdatesSnapshot } from "../domain/updates";
 
 export class ApiError extends Error {
@@ -115,4 +128,45 @@ export const api = {
   updatesCancel: () => call<void>("updates_cancel"),
   updatesHistory: (force: boolean) => call<UpdatesHistory>("updates_history", { force }),
   updatesOpenRelease: (version: string) => call<void>("updates_open_release", { version }),
+
+  repositories: () => call<RepositoryInfo[]>("repositories_list"),
+  repositoryPreview: (address: string) => call<RepositoryPreview>("repository_preview", { address }),
+  repositoryAdd: (address: string, fingerprint: string) => call<RepositoryInfo>("repository_add", { address, fingerprint }),
+  repositoryAcceptKey: (id: string, fingerprint: string) => call<RepositoryInfo>("repository_accept_key", { id, fingerprint }),
+  repositoryRemove: (id: string) => call<void>("repository_remove", { id }),
+  repositorySetEnabled: (id: string, enabled: boolean) => call<RepositoryInfo>("repository_set_enabled", { id, enabled }),
+  repositorySync: (id: string) => call<RepositoryInfo>("repository_sync", { id }),
+  repositoriesSyncAll: () => call<RepositoryInfo[]>("repositories_sync_all"),
+
+  extensionCatalog: (query: CatalogQuery) => call<CatalogItem[]>("extension_catalog", { query }),
+  extensionCatalogLanguages: () => call<string[]>("extension_catalog_languages"),
+  extensions: () => call<InstalledExtension[]>("extensions_list"),
+  extensionInstall: (repositoryId: string, extensionId: string) => call<InstalledExtension>("extension_install", { repositoryId, extensionId }),
+  extensionUpdate: (id: string) => call<InstalledExtension>("extension_update", { id }),
+  extensionRemove: (id: string) => call<void>("extension_remove", { id }),
+  extensionSetEnabled: (id: string, enabled: boolean) => call<InstalledExtension>("extension_set_enabled", { id, enabled }),
+
+  sources: () => call<SourceSummary[]>("sources_list"),
+  sourcePopular: (requestId: string, source: SourceSummary, page: number, kind: string | null) =>
+    call<BrowsePage>("source_popular", { requestId, extensionId: source.extensionId, sourceId: source.sourceId, page, kind }),
+  sourceLatest: (requestId: string, source: SourceSummary, page: number, kind: string | null) =>
+    call<BrowsePage>("source_latest", { requestId, extensionId: source.extensionId, sourceId: source.sourceId, page, kind }),
+  sourceSearch: (requestId: string, source: SourceSummary, query: string, page: number, kind: string | null) =>
+    call<BrowsePage>("source_search", { requestId, extensionId: source.extensionId, sourceId: source.sourceId, query, page, kind }),
+  sourceCancel: (requestId: string) => call<void>("source_cancel", { requestId }),
+
+  seriesStored: (id: number) => call<SeriesView>("series_stored", { id }),
+  seriesOpen: (requestId: string, id: number) => call<SeriesView>("series_open", { requestId, id }),
+  seriesSetFollowing: (id: number, following: boolean) => call<SeriesCard>("series_set_following", { id, following }),
+  seriesSetChapterSort: (id: number, sort: "asc" | "desc") => call<SeriesCard>("series_set_chapter_sort", { id, sort }),
+  seriesFollowing: () => call<SeriesCard[]>("series_following"),
+  comicOrigin: (id: number) => call<ComicOrigin | null>("comic_origin", { id }),
+
+  downloads: (limit: number) => call<DownloadView[]>("downloads_list", { limit }),
+  downloadsEnqueue: (chapterIds: number[]) => call<number[]>("downloads_enqueue", { chapterIds }),
+  downloadPause: (id: number) => call<void>("download_pause", { id }),
+  downloadResume: (id: number) => call<void>("download_resume", { id }),
+  downloadCancel: (id: number) => call<void>("download_cancel", { id }),
+  downloadRetry: (id: number) => call<void>("download_retry", { id }),
+  downloadsClearFinished: () => call<number>("downloads_clear_finished"),
 };

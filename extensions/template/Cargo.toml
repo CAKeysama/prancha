@@ -1,0 +1,13 @@
+[package]
+name = "prancha-extension-template"
+description = "Ponto de partida para uma extensão do Prancha"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+prancha-extension-sdk = { path = "../sdk" }

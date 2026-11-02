@@ -5,6 +5,7 @@ pub mod core;
 pub mod covers;
 pub mod db;
 pub mod error;
+pub mod extensions;
 pub mod formats;
 pub mod guided;
 pub mod import;
@@ -60,8 +61,15 @@ pub fn run() {
                     }
                     app.manage(core.clone());
                     std::thread::spawn(move || {
+                        // Antes da verificação, que pode demorar: com a tela aberta, um download novo já estaria correndo.
+                        if let Err(e) = extensions::downloads::on_startup(&core) {
+                            log::warn!("downloads não retomados: {e}");
+                        }
                         if let Err(e) = core.verify_files() {
                             log::warn!("verificação de arquivos falhou: {e}");
+                        }
+                        if let Err(e) = extensions::sources::prune_stale(&core, &core.db()) {
+                            log::warn!("limpeza de obras antigas falhou: {e}");
                         }
                     });
                     Ok(())
@@ -128,6 +136,39 @@ pub fn run() {
             commands::updates_cancel,
             commands::updates_history,
             commands::updates_open_release,
+            commands::repositories_list,
+            commands::repository_preview,
+            commands::repository_add,
+            commands::repository_accept_key,
+            commands::repository_remove,
+            commands::repository_set_enabled,
+            commands::repository_sync,
+            commands::repositories_sync_all,
+            commands::extension_catalog,
+            commands::extension_catalog_languages,
+            commands::extensions_list,
+            commands::extension_install,
+            commands::extension_update,
+            commands::extension_remove,
+            commands::extension_set_enabled,
+            commands::sources_list,
+            commands::source_popular,
+            commands::source_latest,
+            commands::source_search,
+            commands::source_cancel,
+            commands::series_stored,
+            commands::series_open,
+            commands::series_set_following,
+            commands::series_set_chapter_sort,
+            commands::series_following,
+            commands::comic_origin,
+            commands::downloads_list,
+            commands::downloads_enqueue,
+            commands::download_pause,
+            commands::download_resume,
+            commands::download_cancel,
+            commands::download_retry,
+            commands::downloads_clear_finished,
         ])
         .run(tauri::generate_context!())
         .expect("erro ao executar o Prancha");

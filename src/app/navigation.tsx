@@ -10,6 +10,11 @@ export type Route =
   | { name: "collection"; id: number }
   | { name: "comic"; id: number }
   | { name: "reader"; id: number }
+  | { name: "explore" }
+  | { name: "series"; id: number }
+  | { name: "downloads" }
+  | { name: "extensions" }
+  | { name: "repositories" }
   | { name: "settings"; section?: string };
 
 interface Nav {
@@ -29,7 +34,7 @@ export function useNav(): Nav {
 }
 
 /** Rotas de primeiro nível (barra lateral) zeram o histórico. */
-const TOP_LEVEL = new Set(["home", "library", "continue", "recent", "favorites", "collections", "settings"]);
+const TOP_LEVEL = new Set(["home", "library", "continue", "recent", "favorites", "collections", "explore", "downloads", "extensions", "repositories", "settings"]);
 
 export function NavigationProvider({ children, initial = { name: "home" } }: { children: ReactNode; initial?: Route }) {
   const [stack, setStack] = useState<Route[]>([initial]);
@@ -53,6 +58,7 @@ export function sectionOf(stack: Route[]): Route["name"] {
   for (let i = stack.length - 1; i >= 0; i--) {
     const r = stack[i]!;
     if (r.name === "collection") return "collections";
+    if (r.name === "series") return "explore";
     if (r.name !== "comic" && r.name !== "reader") return r.name;
   }
   return "library";

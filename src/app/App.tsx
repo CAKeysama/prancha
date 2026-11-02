@@ -12,6 +12,11 @@ import { AddComicsButtons } from "../features/library/AddComicsButtons";
 import { ComicActionsProvider } from "../features/library/comic-actions";
 import { OnboardingProvider } from "../features/onboarding/onboarding-context";
 import { OnboardingWizard } from "../features/onboarding/OnboardingWizard";
+import { DownloadsScreen } from "../features/online/DownloadsScreen";
+import { ExploreScreen } from "../features/online/ExploreScreen";
+import { ExtensionsScreen } from "../features/online/ExtensionsScreen";
+import { RepositoriesScreen } from "../features/online/RepositoriesScreen";
+import { SeriesScreen } from "../features/online/SeriesScreen";
 import { ReaderScreen } from "../features/reader/ReaderScreen";
 import { SettingsScreen } from "../features/settings/SettingsScreen";
 import { UpdateDialogs } from "../features/updates/UpdateDialogs";
@@ -92,6 +97,16 @@ function Screen({ route }: { route: Route }) {
       return <CollectionDetailScreen id={route.id} />;
     case "comic":
       return <DetailsScreen key={route.id} id={route.id} />;
+    case "explore":
+      return <ExploreScreen />;
+    case "series":
+      return <SeriesScreen key={route.id} id={route.id} />;
+    case "downloads":
+      return <DownloadsScreen />;
+    case "extensions":
+      return <ExtensionsScreen />;
+    case "repositories":
+      return <RepositoriesScreen />;
     case "settings":
       return <SettingsScreen />;
     case "reader":

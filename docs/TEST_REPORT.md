@@ -1,6 +1,6 @@
-# Relatório de testes — Prancha 0.2.0
+# Relatório de testes — Prancha 0.2.0 e extensões
 
-Executado em 2026-11-01, Windows 11 Pro 10.0.26200, WebView2 156, Rust 1.99.1, Node 22.23.
+Executado em 2026-11-02, com as extensões ainda sem versão publicada, em Windows 11 Pro 10.0.26200, WebView2 156, Rust 1.99.1 e Node 22.23.
 
 ## Resumo
 
@@ -8,13 +8,15 @@ Executado em 2026-11-01, Windows 11 Pro 10.0.26200, WebView2 156, Rust 1.99.1, N
 |---|---|---|
 | TypeScript estrito | `npm run typecheck` | ✅ sem erros |
 | ESLint (+ React Compiler) | `npm run lint` | ✅ 0 erros, 1 aviso conhecido (`useVirtualizer` não memoizável — limitação da biblioteca) |
-| Rust — unitários | `cargo test --lib` | ✅ 55/55 |
+| Rust — unitários | `cargo test --lib` | ✅ 81/81 |
 | Rust — integração | `cargo test --test backend` | ✅ 28/28 |
-| Rust — páginas reais | `cargo test --release --test guided -- --test-threads=1` | ✅ 6/6 na 0.1.2; não repetida na 0.2.0, porque a detecção não mudou |
-| Frontend — Vitest | `npm test` | ✅ 76/76 |
-| E2E no executável real | `npm run test:e2e` | ✅ 40/40 |
-| Atualização instalada de verdade | `npm run test:update -- --build` | ✅ 23 verificações; servidor local e chave descartável, detalhes abaixo |
-| Instalador | `npm run tauri build` | ✅ NSIS e MSI gerados, com 2 assinaturas; verificação abaixo |
+| Rust — extensões | `cargo test --test extensions` | ✅ 89/89, com os 15 testes de download repetidos 10 vezes depois da última correção; mais 1 fora da execução normal, que usa a internet, também aprovado |
+| Rust — páginas reais | `npm run test:rust`, que roda todas as suítes de Rust | ✅ 6/6, com as páginas reais locais |
+| Frontend — Vitest | `npm test` | ✅ 95/95 |
+| E2E no executável real | `npm run test:e2e` | ✅ 49/49 |
+| Atualização instalada de verdade | `npm run test:update -- --build` | ✅ 23 verificações na 0.2.0; não repetida nas extensões, porque `updates.rs` e `tauri.conf.json` não mudaram |
+| Instalador da 0.2.0 | `npm run tauri build` | ✅ NSIS e MSI gerados, com 2 assinaturas; verificação abaixo |
+| Build de release com extensões | `npm run tauri build`, sem os artefatos do atualizador | ✅ NSIS e MSI gerados; tamanhos e conferência do executável abaixo |
 
 ## Instaladores
 
@@ -128,6 +130,74 @@ Em 2026-11-02, a v0.2.0 foi conferida pelos endereços públicos. Os instaladore
 
 O `prancha.exe` extraído do MSI publicado rodou sem instalar, com dados isolados, e leu o `latest.json` publicado. Ele não acusou versão nova nem erro, nenhuma janela abriu, o `updates.log` ficou vazio e a seção Atualizações mostrou as quatro versões, com a v0.2.0 como instalada.
 
+## Extensões
+
+Na execução normal, nenhum teste depende de site externo. O servidor é local e controlado pelo teste, os componentes WebAssembly são compilados de verdade (`extensions/test-fixture`, `extensions/template` e `extensions/demo`) e as assinaturas usam chaves geradas na hora. Esse servidor só é alcançável pela exceção de rede para `127.0.0.1`, que existe apenas em builds de depuração.
+
+### Rust (`src-tauri/tests/extensions.rs` e testes de unidade em `src/extensions/`)
+- **Isolamento:** laço infinito para por tempo e por cancelamento, o excesso de processamento esgota o combustível, memória acima do limite é recusada, estouro de pilha e pânico viram erro e o motor continua funcionando. Arquivos e ambiente não existem para a extensão, e um componente que importa WASI nem carrega.
+- **Rede da extensão:** exige a capacidade e um host autorizado, redirecionamentos não saem da lista, cabeçalhos privados são recusados, resposta grande não chega à extensão e o número de requisições por chamada é limitado.
+- **Rede do Prancha:** endereços privados, loopback, link-local e metadados são bloqueados na URL e na resolução de DNS. Redirecionamentos são conferidos de novo, até 3. Limite de tamanho sem tamanho declarado, servidor lento, cancelamento durante a espera, tipo de conteúdo e `ETag`.
+- **Repositórios:** endereço válido e inválido, manifesto ausente e JSON inválido, formato mais novo, Mihon com a mensagem exata, chave fixada só depois da revisão, mudança de chave, assinatura errada, índice assinado com outra chave, índice mais antigo, entrada ruim recusando o índice inteiro, falha de rede preservando o catálogo, vários repositórios com um falhando e índice sem mudança não baixado de novo.
+- **Instalação:** extensão válida, hash, tamanho, assinatura, compatibilidade e runtime errados, componente que não carrega, divergência com o índice, atualização mantendo os dados da extensão, falha de atualização mantendo a versão anterior, procedência que não muda em silêncio, extensão desabilitada e remoção sem tocar na biblioteca.
+- **Fontes:** populares, recentes, pesquisa, detalhes, capítulos, páginas, paginação, fonte sem resultados, tipos de falha, fonte indisponível, conteúdo adulto filtrado e esquecido, e capas pelo backend com cache e dentro dos hosts da extensão.
+- **Downloads:** CBZ válido na biblioteca, ordem declarada, posições repetidas ou ausentes, página inválida limpando só os próprios arquivos, status ruim e host bloqueado, duplicação, cancelamento, pausa e retomada sem baixar de novo, continuação depois de reiniciar, uma por fonte com o intervalo respeitado, CBZ corrompido e os mesmos bytes para o mesmo capítulo.
+- **Biblioteca:** o capítulo sobrevive à remoção da extensão e do repositório e à falta de rede, remover da biblioteca só desfaz o vínculo e capítulo que sumiu da fonte continua local.
+- **Demonstração:** do repositório à leitura sem rede, sem interface.
+- **Banco:** migração em banco novo e em banco usado da 0.2.0, regras de exclusão e unicidade.
+
+### Vitest (`tests/unit/online.test.tsx`, IPC simulado)
+Telas de Repositórios, Extensões, Explorar, obra e Downloads: revisão de confiança, mudança de chave, catálogo com paginação, revisão de permissões antes de atualizar, pesquisa com fonte falhando, seleção de capítulos e estados de download. Também as regras sem interface de `src/domain/online.ts`.
+
+### E2E (`tests/e2e/extensions.spec.ts`, executável real)
+O executável real fala com um servidor HTTP local que publica o repositório de demonstração, gerado na hora com uma chave descartável. Os 16 passos da definição de pronto, nesta ordem:
+
+| Passos | O que acontece |
+|---|---|
+| 1 a 5 | Abre o app e vai a Repositórios. Um endereço do Mihon é recusado com a mensagem exata. O repositório é validado, a impressão digital mostrada confere com a calculada pelo teste, nada fica salvo antes da confirmação, e o catálogo sincroniza. |
+| 6 a 8 | Consulta o catálogo, vê as permissões, instala a extensão assinada e vê as fontes. |
+| 9 a 12 | Em Explorar: paginação, recentes, pesquisa vazia, pesquisa sem acento, detalhes, capítulos, ordem e acompanhamento. |
+| 13 a 15 | Baixa um capítulo, encontra o CBZ na biblioteca e abre no leitor de sempre. |
+| 16 | Com o servidor desligado e o app reaberto, a leitura continua de onde parou. |
+
+Outros cenários:
+
+- **Downloads:** progresso, pausa, retomada, falha e nova tentativa. O quadrinho local continua abrindo durante um download lento.
+- **Telas:** nos dois temas, em 1280 e 760 de largura, sem rolagem horizontal. As capturas ficam em `tests/.tmp/extension-shots`, fora do git, e foram revisadas à mão.
+- **Remoção:** remover a extensão e o repositório não apaga nenhum dos 3 CBZ.
+
+### Desempenho
+Revisão do código, com o comportamento coberto pelos testes acima. Não há medição de carga.
+
+| Ponto | Como funciona | Evidência |
+|---|---|---|
+| Nada de polling | As telas online não têm `setInterval` nem `setTimeout`. Os downloads avisam por evento. | Busca no código |
+| Parado, sem custo | Os downloads esperam em uma `Condvar`, e o relógio das extensões só anda com chamadas em andamento. O motor só é criado no primeiro uso. | `downloads.rs`, `runtime.rs`, `core.rs` |
+| Catálogo fora da memória | Fica no SQLite e chega à tela de 100 em 100. | Teste de unidade da tela |
+| Sincronização | Só sob pedido, com `ETag`, até 4 repositórios ao mesmo tempo. Um repositório com falha não para os outros. | Testes de integração |
+| Concorrência | 4 chamadas ao todo e 2 por extensão. 3 downloads e 1 por fonte, com o intervalo declarado. 3 fontes por vez em Explorar e 4 capas. | Testes de integração |
+| Extensão lenta | Não atrasa outra extensão nem a leitura local. | Teste de integração e E2E |
+| Conexões | Um único cliente HTTP reaproveita as conexões. | Só no código, sem teste próprio |
+| Limpeza | Temporários são limpos ao abrir, e obras não acompanhadas saem depois de 30 dias. | Testes de integração |
+
+### Executável de release
+Os E2E usam o build de depuração, então o executável de release foi conferido uma vez, à mão, com dados isolados. Como não há repositório em HTTPS antes do merge, a extensão de demonstração assinada foi colocada direto na pasta e no banco.
+
+- Com `PRANCHA_E2E_ALLOW_LOOPBACK=1` definido, um endereço em `127.0.0.1` é recusado com "Endereço não permitido: só HTTPS é aceito.", e o servidor local não recebe nenhuma requisição.
+- O `repo.json` da Keiyoushi é buscado em HTTPS público e reconhecido como Mihon, em 261 ms.
+- Em Explorar, o componente compila e executa, e o host busca o catálogo em HTTPS. Como esse catálogo só existe depois do merge, a tela mostra o erro da própria fonte, "O acervo respondeu 404.", em cerca de 1 s.
+
+### Tamanho
+Mesmo perfil de release, antes e depois das extensões. O MSI "antes" é o publicado na v0.2.0, e os outros dois vêm de um build local da mesma versão.
+
+| Arquivo | Antes (0.2.0) | Com extensões | Diferença |
+|---|---|---|---|
+| `prancha.exe` | 21.607.424 bytes | 36.260.352 bytes | +14,7 MB (+68%) |
+| Instalador NSIS | 8.308.041 bytes | 11.571.650 bytes | +3,3 MB (+39%) |
+| Instalador MSI | 10.461.184 bytes | 15.310.848 bytes | +4,8 MB (+46%) |
+
+O build de release levou 17 min, compilando Wasmtime e Cranelift do zero, com outras suítes rodando ao mesmo tempo.
+
 ## Validação visual
 
 Capturas em `artifacts/screenshots/`, geradas pelos testes E2E e revisadas manualmente:
@@ -157,12 +227,31 @@ As capturas das atualizações ficam em `tests/.tmp/update-shots/`, fora do git,
 - Texto "1 quadrinho encontrados" — concordância corrigida.
 - Alternador Grade/Lista quebrava em duas linhas em janelas estreitas — agora mostra só ícones.
 - O teste E2E de PDF falhava por tempo em cerca de 1 a cada 6 execuções. A causa era o próprio teste: ele clicava em "Biblioteca" depois que os controles do leitor já tinham se escondido. Agora o teste move o ponteiro antes de sair do leitor.
+- O teste de cancelamento de um laço infinito falhou uma vez com todos os testes em paralelo. A causa era o próprio teste: o relógio incluía a compilação do componente, e o cancelamento podia chegar antes de o laço começar. Agora o componente é aquecido antes.
+- O teste de página inválida falhou uma vez. A causa estava no código: o download publicava o estado final antes de apagar a pasta temporária, e um "tentar de novo" imediato podia ter a pasta nova apagada. Agora a limpeza vem antes.
+- Na revisão antes do merge, um índice assinado com fração de segundo não numérica, como `.12é`, derrubava a consulta com um pânico. Agora a data é recusada, e o ano passa a ter limite.
+- Na mesma revisão, uma extensão com `network: false` e hosts declarados aparecia como "sem rede", mas o Prancha baixaria capas e páginas desses hosts. Agora o índice é recusado.
+- `runtime`, `apiVersion` e `supportedKinds` no índice, e nome, idioma, descrição e tipos declarados pelo componente, não tinham limite de tamanho. Agora têm.
+- A regra de IPv6 listava o que bloquear e deixava passar o NAT64 local (`64:ff9b:1::/48`) e o IPv4 traduzido (`::ffff:0:0/96`). Agora só a faixa global `2000::/3` é aceita.
+- Uma fonte podia pedir até 49 dias de intervalo e ocupar um download por todo esse tempo. O intervalo agora vai até 60 s.
+- Um download novo podia ser marcado de volta como "na fila" se começasse enquanto a verificação de arquivos da abertura ainda rodava. A retomada agora vem antes dessa verificação.
+- Atualizar uma extensão deixava o componente antigo na memória até fechar o app. Agora ele sai na atualização.
+- Atualizar uma extensão pulava a revisão: agora mostra as duas versões e o acesso novo antes de confirmar.
+- O catálogo de extensões parava em 200 itens, sem aviso: agora tem "Carregar mais".
+- O filtro de tipo em Explorar cortava "Todos os tipos".
 - Revisão de UX (diretrizes da Apple): filtros movidos para um botão "Filtrar" com contador e chips removíveis; um só seletor de ordenação; estado redundante removido dos cartões e dos detalhes; legendas óbvias e notificações para mudanças já visíveis removidas; a página do leitor não fica mais sob as barras; barra do leitor reduzida ao essencial (o restante no painel de configurações); resposta visual ao pressionar botões; barras sólidas com "reduzir transparência".
 
 ### Observação não reproduzida
 Em uma execução do E2E, o leitor avançou páginas sozinho após as teclas (página 5 → 11 em alguns segundos). Repetições com captura de todos os eventos de teclado e roda do mouse não reproduziram o problema (três teclas → página 4, como esperado) e o cenário passou nas três execuções seguintes. A hipótese mais provável é a roda do mouse real sobre a janela visível durante o teste (a roda vira a página). Fica registrado como ponto a observar.
 
 ## Não verificado / limitações
+- **Fontes reais:** nenhuma extensão falou com um site de verdade. O fluxo foi provado com a demonstração, em servidor local, e o endereço público do repositório de demonstração só funciona depois de ir para a `main`. Em HTTPS público, a única conferência é `a_public_https_address_is_really_fetched`, que fica fora da execução normal: o Prancha busca o `repo.json` da Keiyoushi com TLS e DNS reais e reconhece o formato do Mihon. Assinatura, instalação e download nunca rodaram por HTTPS, e o executável de release só foi conferido até a chamada da fonte, como descrito acima.
+- **Compilação de extensão:** não pode ser cancelada. É curta (37 ms no build de release, para 24 KB) e o pacote tem tamanho limitado, mas conta como espera fora do limite de tempo da chamada.
+- **Permissões novas em uma atualização:** a comparação é feita na tela, antes de confirmar, e o backend não a repete.
+- **Download com falha:** uma nova tentativa recomeça do zero. Só a pausa e o reinício aproveitam as páginas já baixadas.
+- **Reaproveitamento de conexões:** vem do cliente único, sem teste próprio.
+- **Telas online em temas e janela pequena:** conferidas no E2E, porque o ambiente do Vitest não calcula layout.
+- **Capturas versionadas:** `artifacts/screenshots` ainda mostra a barra lateral antiga, sem as novas seções.
 - **Atualização pelo GitHub:** nenhum app instalado baixou uma atualização das releases, porque isso exige duas versões publicadas com o atualizador. A primeira oportunidade é a versão seguinte à 0.2.0.
 - **Atualização por MSI:** nunca executada, porque exige administrador. O caminho testado é o do NSIS. Com o MSI, a confirmação do Windows vem depois que o app fechou, e uma recusa só aparece na abertura seguinte.
 - **Sem espaço em disco e sem permissão:** só a tradução das mensagens de erro foi testada. Falha ao reiniciar foi simulada a partir do estado pendente salvo.

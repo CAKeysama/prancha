@@ -1,0 +1,85 @@
+[
+  {
+    "id": "farol-de-papel",
+    "title": "Farol de Papel",
+    "author": "Projeto Prancha",
+    "synopsis": "Uma cidade costeira acende, toda noite, um farol feito de cartas que nunca foram entregues.",
+    "genres": ["Aventura", "Fantasia"],
+    "status": "ongoing",
+    "kind": "comic",
+    "popularity": 90,
+    "chapters": [
+      { "id": "cap-01", "title": "A primeira carta", "number": "1", "published": "2026-02-10", "pages": 6 },
+      { "id": "cap-02", "title": "Maré de envelopes", "number": "2", "published": "2026-03-12", "pages": 5 },
+      { "id": "cap-03", "title": "O remetente", "number": "3", "published": "2026-09-20", "pages": 6 }
+    ]
+  },
+  {
+    "id": "o-mapa-das-mares",
+    "title": "O Mapa das Marés",
+    "author": "Projeto Prancha",
+    "synopsis": "Duas irmãs seguem um mapa que muda de lugar a cada lua e descobrem quem o desenhou.",
+    "genres": ["Aventura", "Mistério"],
+    "status": "completed",
+    "kind": "comic",
+    "popularity": 75,
+    "chapters": [
+      { "id": "cap-01", "title": "Lua nova", "number": "1", "published": "2025-11-02", "pages": 5 },
+      { "id": "cap-02", "title": "Lua cheia", "number": "2", "published": "2025-12-01", "pages": 5 }
+    ]
+  },
+  {
+    "id": "jardim-de-engrenagens",
+    "title": "Jardim de Engrenagens",
+    "author": "Projeto Prancha",
+    "synopsis": "Um relojoeiro aposentado planta sementes de metal e colhe pequenas máquinas curiosas.",
+    "genres": ["Ficção científica", "Cotidiano"],
+    "status": "ongoing",
+    "kind": "manga",
+    "popularity": 60,
+    "chapters": [
+      { "id": "cap-01", "title": "Primeira colheita", "number": "1", "published": "2026-05-05", "pages": 6 },
+      { "id": "cap-02", "title": "Ferrugem", "number": "2", "published": "2026-10-03", "pages": 6 }
+    ]
+  },
+  {
+    "id": "cidade-sem-relogios",
+    "title": "Cidade Sem Relógios",
+    "author": "Projeto Prancha",
+    "synopsis": "Numa cidade onde ninguém mede o tempo, uma pontualidade inexplicável causa alvoroço.",
+    "genres": ["Mistério", "Humor"],
+    "status": "hiatus",
+    "kind": "comic",
+    "popularity": 45,
+    "chapters": [
+      { "id": "cap-01", "title": "Chegou na hora", "number": "1", "published": "2026-01-20", "pages": 5 }
+    ]
+  },
+  {
+    "id": "quintal-estelar",
+    "title": "Quintal Estelar",
+    "author": "Projeto Prancha",
+    "synopsis": "Uma constelação cai no quintal de uma avó, que resolve tratá-la como visita.",
+    "genres": ["Fantasia", "Cotidiano"],
+    "status": "ongoing",
+    "kind": "manga",
+    "popularity": 80,
+    "chapters": [
+      { "id": "cap-01", "title": "Visita inesperada", "number": "1", "published": "2026-04-18", "pages": 6 },
+      { "id": "cap-02", "title": "Chá de cometa", "number": "2", "published": "2026-08-30", "pages": 5 }
+    ]
+  },
+  {
+    "id": "as-cartas-de-lina",
+    "title": "As Cartas de Lina",
+    "author": "Projeto Prancha",
+    "synopsis": "Lina escreve para o próprio futuro e, um dia, recebe uma resposta.",
+    "genres": ["Drama", "Ficção científica"],
+    "status": "completed",
+    "kind": "comic",
+    "popularity": 30,
+    "chapters": [
+      { "id": "cap-01", "title": "Remetente: eu", "number": "1", "published": "2025-09-14", "pages": 5 }
+    ]
+  }
+]

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BookOpen, FolderHeart, History, House, Library, Settings, Star } from "lucide-react";
+import { BookOpen, Boxes, Compass, Download, FolderHeart, History, House, Library, Puzzle, Settings, Star } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "../components/cn";
 import { Logo } from "../components/Logo";
@@ -15,6 +15,13 @@ const ITEMS: Array<{ route: Route; label: string; icon: LucideIcon }> = [
   { route: { name: "recent" }, label: "Recentes", icon: History },
   { route: { name: "favorites" }, label: "Favoritos", icon: Star },
   { route: { name: "collections" }, label: "Coleções", icon: FolderHeart },
+];
+
+const ONLINE_ITEMS: Array<{ route: Route; label: string; icon: LucideIcon }> = [
+  { route: { name: "explore" }, label: "Explorar", icon: Compass },
+  { route: { name: "downloads" }, label: "Downloads", icon: Download },
+  { route: { name: "extensions" }, label: "Extensões", icon: Puzzle },
+  { route: { name: "repositories" }, label: "Repositórios", icon: Boxes },
 ];
 
 function useNarrow(breakpoint = 960): boolean {
@@ -64,12 +71,20 @@ export function Sidebar({ current }: { current: Route["name"] }) {
         <Logo />
         {!narrow && <span className="text-lg font-semibold tracking-tight">{APP_NAME}</span>}
       </div>
-      <ul className="flex flex-col gap-0.5">
-        {ITEMS.map((i) => (
-          <li key={i.route.name}>{item(i.route, i.label, i.icon)}</li>
-        ))}
-      </ul>
-      <div className="mt-auto border-t border-border pt-3">
+      {/* A lista rola em janelas baixas: os dois blocos continuam alcançáveis. */}
+      <div className="-mx-3 min-h-0 flex-1 overflow-y-auto px-3">
+        <ul className="flex flex-col gap-0.5">
+          {ITEMS.map((i) => (
+            <li key={i.route.name}>{item(i.route, i.label, i.icon)}</li>
+          ))}
+        </ul>
+        <ul className="mt-3 flex flex-col gap-0.5 border-t border-border pt-3">
+          {ONLINE_ITEMS.map((i) => (
+            <li key={i.route.name}>{item(i.route, i.label, i.icon)}</li>
+          ))}
+        </ul>
+      </div>
+      <div className="mt-3 border-t border-border pt-3">
         <UpdateIndicator narrow={narrow} />
         {item({ name: "settings" }, "Configurações", Settings)}
       </div>

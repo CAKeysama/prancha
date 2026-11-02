@@ -18,7 +18,7 @@ function hash(s: string): number {
  * Capa substituta gerada localmente: título + desenho geométrico discreto e o aviso
  * explícito de que a imagem original não pôde ser extraída.
  */
-function PlaceholderCover({ title, reason, className }: { title: string; reason?: string | null; className?: string }) {
+export function PlaceholderCover({ title, reason, className }: { title: string; reason?: string | null; className?: string }) {
   const h = hash(title);
   const shapes = Array.from({ length: 5 }, (_, i) => {
     const v = (h >>> (i * 5)) & 31;

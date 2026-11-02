@@ -20,6 +20,7 @@ export const coverUrl = (id: number, rev: number) => `${protocolBase()}cover/${i
 export const pageUrl = (id: number, index: number, token = 0) =>
   `${protocolBase()}page/${id}/${index}${token ? `?r=${token}` : ""}`;
 export const fileUrl = (id: number) => `${protocolBase()}file/${id}`;
+export const onlineCoverUrl = (id: number) => `${protocolBase()}online-cover/${id}`;
 
 /** Lê a mensagem de erro do protocolo (o <img> não expõe o motivo da falha). */
 export async function fetchPageError(url: string): Promise<string> {

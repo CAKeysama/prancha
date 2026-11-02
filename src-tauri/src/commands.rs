@@ -16,6 +16,11 @@ use tauri_plugin_updater::{Error as UpdaterError, Update, UpdaterExt};
 use crate::core::Core;
 use crate::covers::{self, COVER_PARAMS_VERSION};
 use crate::error::{AppError, AppResult};
+use crate::extensions::downloads::{self, DownloadView};
+use crate::extensions::install::{self, InstalledExtension};
+use crate::extensions::net::Cancel;
+use crate::extensions::repository::{self, CatalogItem, CatalogQuery, RepositoryInfo, RepositoryPreview};
+use crate::extensions::sources::{self, BrowsePage, ComicOrigin, SeriesCard, SeriesView, SourceSummary};
 use crate::formats::{self, COMIC_EXTENSIONS};
 use crate::guided::{self, store::{self, GuidedPage, GuidedRegion}};
 use crate::import::{self, EVENT_LIBRARY};
@@ -835,4 +840,200 @@ pub async fn updates_open_release(app: AppHandle, version: String) -> AppResult<
     app.opener()
         .open_url(url, None::<&str>)
         .map_err(|e| AppError::user("opener", format!("Não foi possível abrir o navegador ({e}).")))
+}
+
+// ---------------------------------------------------------------------------
+// Repositórios de extensões
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn repositories_list(state: S<'_>) -> AppResult<Vec<RepositoryInfo>> {
+    blocking(&state, |c| repository::list(&c.db())).await
+}
+
+#[tauri::command]
+pub async fn repository_preview(state: S<'_>, address: String) -> AppResult<RepositoryPreview> {
+    blocking(&state, move |c| repository::preview(c, &address)).await
+}
+
+#[tauri::command]
+pub async fn repository_add(state: S<'_>, address: String, fingerprint: String) -> AppResult<RepositoryInfo> {
+    blocking(&state, move |c| repository::add(c, &address, &fingerprint)).await
+}
+
+#[tauri::command]
+pub async fn repository_accept_key(state: S<'_>, id: String, fingerprint: String) -> AppResult<RepositoryInfo> {
+    blocking(&state, move |c| repository::accept_key(c, &id, &fingerprint)).await
+}
+
+#[tauri::command]
+pub async fn repository_remove(state: S<'_>, id: String) -> AppResult<()> {
+    blocking(&state, move |c| repository::remove(&c.db(), &id)).await
+}
+
+#[tauri::command]
+pub async fn repository_set_enabled(state: S<'_>, id: String, enabled: bool) -> AppResult<RepositoryInfo> {
+    blocking(&state, move |c| repository::set_enabled(&c.db(), &id, enabled)).await
+}
+
+#[tauri::command]
+pub async fn repository_sync(state: S<'_>, id: String) -> AppResult<RepositoryInfo> {
+    blocking(&state, move |c| repository::sync(c, &id)).await
+}
+
+#[tauri::command]
+pub async fn repositories_sync_all(state: S<'_>) -> AppResult<Vec<RepositoryInfo>> {
+    blocking(&state, |c| repository::sync_all(c)).await
+}
+
+// ---------------------------------------------------------------------------
+// Extensões
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn extension_catalog(state: S<'_>, query: CatalogQuery) -> AppResult<Vec<CatalogItem>> {
+    blocking(&state, move |c| repository::catalog(&c.db(), &query, env!("CARGO_PKG_VERSION"))).await
+}
+
+#[tauri::command]
+pub async fn extension_catalog_languages(state: S<'_>) -> AppResult<Vec<String>> {
+    blocking(&state, |c| repository::catalog_languages(&c.db())).await
+}
+
+#[tauri::command]
+pub async fn extensions_list(state: S<'_>) -> AppResult<Vec<InstalledExtension>> {
+    blocking(&state, |c| install::list(&c.db())).await
+}
+
+#[tauri::command]
+pub async fn extension_install(state: S<'_>, repository_id: String, extension_id: String) -> AppResult<InstalledExtension> {
+    blocking(&state, move |c| install::install(c, &repository_id, &extension_id)).await
+}
+
+#[tauri::command]
+pub async fn extension_update(state: S<'_>, id: String) -> AppResult<InstalledExtension> {
+    blocking(&state, move |c| install::update(c, &id)).await
+}
+
+#[tauri::command]
+pub async fn extension_remove(state: S<'_>, id: String) -> AppResult<()> {
+    blocking(&state, move |c| install::remove(c, &id)).await
+}
+
+#[tauri::command]
+pub async fn extension_set_enabled(state: S<'_>, id: String, enabled: bool) -> AppResult<InstalledExtension> {
+    blocking(&state, move |c| install::set_enabled(&c.db(), &id, enabled)).await
+}
+
+// ---------------------------------------------------------------------------
+// Fontes e obras
+// ---------------------------------------------------------------------------
+
+/// Roda uma consulta que a interface pode abandonar com `source_cancel`.
+async fn cancellable<T: Send + 'static>(state: &Arc<Core>, request_id: String, f: impl FnOnce(&Core, &Cancel) -> AppResult<T> + Send + 'static) -> AppResult<T> {
+    blocking(state, move |c| {
+        let cancel = c.requests.begin(&request_id);
+        let out = f(c, &cancel);
+        c.requests.end(&request_id);
+        out
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn sources_list(state: S<'_>) -> AppResult<Vec<SourceSummary>> {
+    blocking(&state, |c| sources::available_sources(&c.db())).await
+}
+
+#[tauri::command]
+pub async fn source_popular(state: S<'_>, request_id: String, extension_id: String, source_id: String, page: u32, kind: Option<String>) -> AppResult<BrowsePage> {
+    cancellable(&state, request_id, move |c, cancel| sources::popular(c, &extension_id, &source_id, page, kind.as_deref(), Some(cancel))).await
+}
+
+#[tauri::command]
+pub async fn source_latest(state: S<'_>, request_id: String, extension_id: String, source_id: String, page: u32, kind: Option<String>) -> AppResult<BrowsePage> {
+    cancellable(&state, request_id, move |c, cancel| sources::latest(c, &extension_id, &source_id, page, kind.as_deref(), Some(cancel))).await
+}
+
+#[tauri::command]
+pub async fn source_search(state: S<'_>, request_id: String, extension_id: String, source_id: String, query: String, page: u32, kind: Option<String>) -> AppResult<BrowsePage> {
+    cancellable(&state, request_id, move |c, cancel| sources::search(c, &extension_id, &source_id, &query, page, kind.as_deref(), Some(cancel))).await
+}
+
+#[tauri::command]
+pub async fn source_cancel(state: S<'_>, request_id: String) -> AppResult<()> {
+    state.requests.cancel(&request_id);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn series_stored(state: S<'_>, id: i64) -> AppResult<SeriesView> {
+    blocking(&state, move |c| sources::stored_series(&c.db(), id)).await
+}
+
+#[tauri::command]
+pub async fn series_open(state: S<'_>, request_id: String, id: i64) -> AppResult<SeriesView> {
+    cancellable(&state, request_id, move |c, cancel| sources::open_series(c, id, Some(cancel))).await
+}
+
+#[tauri::command]
+pub async fn series_set_following(state: S<'_>, id: i64, following: bool) -> AppResult<SeriesCard> {
+    blocking(&state, move |c| sources::set_following(&c.db(), id, following)).await
+}
+
+#[tauri::command]
+pub async fn series_set_chapter_sort(state: S<'_>, id: i64, sort: String) -> AppResult<SeriesCard> {
+    blocking(&state, move |c| sources::set_chapter_sort(&c.db(), id, &sort)).await
+}
+
+#[tauri::command]
+pub async fn series_following(state: S<'_>) -> AppResult<Vec<SeriesCard>> {
+    blocking(&state, |c| sources::list_following(&c.db())).await
+}
+
+#[tauri::command]
+pub async fn comic_origin(state: S<'_>, id: i64) -> AppResult<Option<ComicOrigin>> {
+    blocking(&state, move |c| sources::comic_origin(&c.db(), id)).await
+}
+
+// ---------------------------------------------------------------------------
+// Downloads
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn downloads_list(state: S<'_>, limit: i64) -> AppResult<Vec<DownloadView>> {
+    blocking(&state, move |c| downloads::list(&c.db(), limit)).await
+}
+
+#[tauri::command]
+pub async fn downloads_enqueue(state: S<'_>, chapter_ids: Vec<i64>) -> AppResult<Vec<i64>> {
+    let core = state.inner().clone();
+    blocking(&state, move |_| downloads::enqueue(&core, &chapter_ids)).await
+}
+
+#[tauri::command]
+pub async fn download_pause(state: S<'_>, id: i64) -> AppResult<()> {
+    blocking(&state, move |c| downloads::pause(c, id)).await
+}
+
+#[tauri::command]
+pub async fn download_resume(state: S<'_>, id: i64) -> AppResult<()> {
+    let core = state.inner().clone();
+    blocking(&state, move |_| downloads::resume(&core, id)).await
+}
+
+#[tauri::command]
+pub async fn download_cancel(state: S<'_>, id: i64) -> AppResult<()> {
+    blocking(&state, move |c| downloads::cancel(c, id)).await
+}
+
+#[tauri::command]
+pub async fn download_retry(state: S<'_>, id: i64) -> AppResult<()> {
+    let core = state.inner().clone();
+    blocking(&state, move |_| downloads::retry(&core, id)).await
+}
+
+#[tauri::command]
+pub async fn downloads_clear_finished(state: S<'_>) -> AppResult<usize> {
+    blocking(&state, |c| downloads::clear_finished(&c.db())).await
 }

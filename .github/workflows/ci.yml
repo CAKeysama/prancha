@@ -27,7 +27,7 @@ jobs:
           cache: npm
 
       - name: Prepara o Rust
-        run: rustup toolchain install stable --profile minimal
+        run: rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown
 
       - uses: actions/cache@v6
         with:
@@ -48,4 +48,4 @@ jobs:
 
       # Os testes de detecção (--test guided) e o E2E usam páginas reais, que não vão para o git: rodam localmente, antes de cada versão.
       - name: Testes do backend
-        run: cargo test --manifest-path src-tauri/Cargo.toml --lib --test backend
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib --test backend --test extensions
