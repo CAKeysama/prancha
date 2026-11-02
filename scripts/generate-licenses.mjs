@@ -34,10 +34,11 @@ function jsDeps() {
   const walk = (deps) => {
     for (const [name, info] of Object.entries(deps ?? {})) {
       const key = `${name}@${info.version}`;
-      if (seen.has(key) || !info.version) continue;
-      let license = typeof info.license === "string" ? info.license : "desconhecida";
       const pj = join(info.path ?? join(root, "node_modules", name), "package.json");
-      if (license === "desconhecida" && existsSync(pj)) {
+      // Opcional de outra plataforma aparece na lista sem estar instalado: não vai no aplicativo.
+      if (seen.has(key) || !info.version || !existsSync(pj)) continue;
+      let license = typeof info.license === "string" ? info.license : "desconhecida";
+      if (license === "desconhecida") {
         const p = JSON.parse(readFileSync(pj, "utf8"));
         license = typeof p.license === "string" ? p.license : (p.license?.type ?? license);
       }
