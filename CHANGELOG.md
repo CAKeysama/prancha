@@ -3,6 +3,34 @@
 Tudo o que mudou em cada versão do Prancha. O projeto segue o [versionamento semântico](https://semver.org/lang/pt-BR/),
 e as notas das releases e a [página de downloads](https://cakeysama.github.io/prancha/) são geradas a partir deste arquivo.
 
+## [0.3.0] - 2026-11-02
+
+Chegam as extensões: você adiciona os repositórios em que confia, pesquisa em Explorar e baixa capítulos direto para a biblioteca.
+
+### Novidades
+
+- **Repositórios:** adicione um repositório pelo endereço e confira a chave antes de confiar. O catálogo é assinado, e uma troca de chave nunca é aceita sem a sua confirmação.
+- **Extensões:** veja as permissões antes de instalar. Cada extensão roda em WebAssembly isolado e só acessa os endereços que declarou, sem tocar nos seus arquivos nem nos outros dados do aplicativo.
+- **Explorar:** pesquise em todas as fontes ao mesmo tempo e veja populares e recentes. Uma fonte lenta ou fora do ar mostra o próprio erro sem atrapalhar as outras.
+- **Downloads:** baixe um capítulo, os selecionados ou todos, com pausa, retomada, cancelamento e nova tentativa.
+- **Na mesma biblioteca:** o capítulo baixado vira um CBZ comum, com capa, progresso e coleções, e abre no leitor de sempre, mesmo sem internet.
+- **Acompanhar:** guarde uma obra em Explorar sem baixar nada. Com a fonte fora do ar, a página da obra mostra o último conhecido.
+
+### Correções
+
+- Ao trocar o arquivo de um PDF, os Detalhes não mostram mais 0 páginas enquanto o número é desconhecido: o campo fica vazio.
+- O menu das configurações agora acompanha a rolagem. Antes, o destaque só mudava ao clicar nele.
+
+### Observações
+
+- O Prancha não vem com nenhuma fonte de leitura. Por enquanto, o projeto só publica a extensão de demonstração, com obras originais criadas para testar o fluxo. O endereço está em `docs/extensions/README.md`, no repositório do projeto.
+- Até aqui, o fluxo foi testado só com essa demonstração: nenhuma extensão foi testada ainda com um site de terceiros.
+- Extensões são código de terceiros, e o conteúdo que mostram é responsabilidade de quem as publica. Só adicione repositórios em que você confia.
+- Conteúdo adulto não aparece: fontes adultas ou sem classificação ficam desabilitadas. A classificação é a declarada por quem publica.
+- Repositórios do Mihon são reconhecidos e recusados, porque o Prancha não executa APKs.
+- Quem está na 0.1.x precisa instalar esta versão por cima uma vez. Da 0.2.0 em diante, o Prancha avisa ao abrir. A biblioteca e o progresso são mantidos, e o banco de dados se atualiza sozinho na primeira abertura.
+- Requer Windows 10 ou 11 de 64 bits. Os instaladores não têm assinatura digital, então o Windows SmartScreen pode pedir confirmação.
+
 ## [0.2.0] - 2026-11-02
 
 O Prancha agora avisa quando há versão nova e se atualiza sem sair do aplicativo, sempre com a sua confirmação.
