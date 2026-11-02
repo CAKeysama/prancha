@@ -98,6 +98,31 @@ Usa o `tauri-plugin-updater` e as GitHub Releases, sem servidor próprio. Toda a
 
 **Limites conhecidos.** Com o MSI, o Windows pede a confirmação depois que o aplicativo já fechou: se a pessoa recusar, ele não reabre sozinho, e o aviso aparece na próxima abertura. Falta de disco durante a escrita do instalador e falta de permissão têm mensagem própria, mas só foram testadas por mapeamento de erro.
 
+## Extensões
+
+Extensões acrescentam fontes de leitura em Explorar. São componentes WebAssembly executados pelo Wasmtime 48, sem WASI: a decisão e as medições estão na [ADR 0001](adr/0001-runtime-de-extensoes.md), e o guia, os formatos e o modelo de segurança em [`docs/extensions/`](extensions/README.md).
+
+```
+repositório (prancha-repo.json, índice e pacotes assinados)
+   │ extensions/repository.rs   manifesto, chave fixada, índice assinado, catálogo no SQLite
+   │ extensions/install.rs      pacote: tamanho, SHA-256, assinatura, fontes iguais às declaradas
+   ▼
+extensions/runtime.rs           Source Engine: instância por chamada, fuel, epoch, memória, sem WASI
+   │ extensions/net.rs          única saída de rede: HTTPS, DNS próprio, hosts autorizados
+   ▼
+extensions/sources.rs           API de fontes, classificação de conteúdo, obras e capítulos no SQLite, capas
+   ▼
+extensions/downloads.rs         fila persistente → CBZ → import::process_one → biblioteca e leitor de sempre
+```
+
+**Uma biblioteca só.** Um capítulo baixado é um CBZ importado pelo mesmo caminho de qualquer arquivo. `online_chapters.comic_id` liga o capítulo à biblioteca com `ON DELETE SET NULL`: remover o item da biblioteca, a extensão ou o repositório não apaga o resto. A biblioteca e o leitor não dependem de nenhuma tabela nova.
+
+**Rede.** Tudo que sai em nome de um repositório ou de uma extensão passa por `net.rs`. A interface recebe as capas pelo protocolo do app, em `/online-cover/<id>`, e a CSP continua sem endereços externos.
+
+**Sem polling.** Os downloads avisam por evento (`downloads:changed`), e a fila usa `Condvar`. A sincronização só roda a pedido, com `ETag`. Pesquisas e obras abertas são canceladas quando a tela muda.
+
+**Limites conhecidos.** A compilação de um componente não pode ser interrompida. Um download que falha recomeça do zero. O comportamento de rede foi provado contra servidores locais, sem uma fonte externa real.
+
 ## Limites de segurança (`formats/mod.rs`)
 
 Até 20 000 entradas por arquivo, 150 MB por página, 2 MB para `ComicInfo.xml`, imagens de até 30 000 px e 1 GB de alocação na decodificação. Leituras usam `take(limite + 1)` para não confiar no tamanho declarado.

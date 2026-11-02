@@ -33,6 +33,7 @@
 - **Biblioteca:** capas automáticas (metadados → imagem de capa → primeira página válida → capa substituta identificada), pesquisa sem acentos, filtros, ordenação, grade/lista, favoritos e coleções.
 - **Leitor:** página única, dupla e rolagem vertical; ajustar à página/largura/altura; zoom; direita→esquerda; tela cheia; índice de páginas; atalhos configuráveis; progresso salvo automaticamente.
 - **Leitura Guiada:** a página fica inteira e cada balão salta para fora, maior, na ordem de leitura. A detecção roda no próprio computador, e o que estiver errado pode ser corrigido à mão.
+- **Extensões:** repositórios próprios com assinatura e confiança explícita, fontes de leitura em WebAssembly isolado, pesquisa em Explorar e download de capítulos, que viram CBZ na biblioteca e abrem sem internet. O Prancha não vem com fontes instaladas, e o único repositório publicado pelo projeto é uma [demonstração com obras originais](docs/extensions/README.md#repositório-de-demonstração). Extensões são código de terceiros: leia o [guia](docs/extensions/README.md). Extensões do Mihon [não são compatíveis](docs/extensions/COMPATIBILITY.md).
 - **Tutorial** de primeira execução com importação real.
 
 | Leitor | Configurações |
@@ -71,7 +72,7 @@ Para isso, ele lê o arquivo `latest.json` da release mais recente no GitHub e, 
 |---|---|---|
 | Windows | 10/11 x64 | WebView2 já vem no Windows 11 |
 | Node.js | 22.13+ | npm 10+ |
-| Rust | stable (1.90+) | via [rustup](https://rustup.rs) |
+| Rust | stable (1.95+) | via [rustup](https://rustup.rs), com `rustup target add wasm32-unknown-unknown` para os testes de extensões |
 | Visual Studio Build Tools | 2022 | workload "Desenvolvimento para desktop com C++" + Windows 11 SDK (o UnRAR e o SQLite são compilados em C/C++) |
 
 > **Caminhos longos:** se a pasta do projeto tiver um caminho muito longo, o linker do Windows
@@ -95,7 +96,7 @@ Os dados ficam em `%APPDATA%\app.prancha.desktop`. Para usar outra pasta (testes
 npm run typecheck      # TypeScript estrito
 npm run lint           # ESLint (+ regras do React Compiler)
 npm test               # Vitest: regras de domínio e componentes (IPC simulado)
-npm run test:rust      # cargo test: formatos, importação, capas, catálogo, progresso, detecção
+npm run test:rust      # cargo test: formatos, importação, capas, catálogo, progresso, detecção, extensões
 npm run e2e:build      # compila o app de depuração e gera os arquivos de teste
 npm run test:e2e       # Playwright no executável real (WebView2 via CDP) + capturas de tela
 npm run test:update    # atualização real entre duas versões instaladas, com servidor local
@@ -138,11 +139,12 @@ e `src-tauri/tauri.conf.json` (`productName` e `app.windows[0].title`, usados no
 | Pasta | Conteúdo |
 |---|---|
 | `src/` | Interface em React: `features/` (biblioteca, leitor, tutorial, configurações), `domain/` (regras sem interface), `services/` e `components/` |
-| `src-tauri/` | Backend em Rust: formatos, importação, capas, banco de dados e, em `src/guided/`, a detecção da Leitura Guiada |
+| `src-tauri/` | Backend em Rust: formatos, importação, capas, banco de dados, em `src/guided/` a detecção da Leitura Guiada e em `src/extensions/` repositórios, runtime, fontes e downloads |
+| `extensions/` | Contrato WIT, SDK, modelo, ferramenta `prancha-ext` e a extensão e o repositório de demonstração |
 | `site/` | Site oficial, publicado na Vercel |
 | `scripts/` | Geração do site, da página de downloads, das notas de versão e das licenças de terceiros |
 | `tests/` | Testes de interface (`unit/`) e no executável real (`e2e/`) |
-| `docs/` | [Arquitetura](docs/ARCHITECTURE.md), [relatório de testes](docs/TEST_REPORT.md), [como publicar uma versão](docs/RELEASING.md) e [plano de implementação](docs/IMPLEMENTATION_PLAN.md) |
+| `docs/` | [Arquitetura](docs/ARCHITECTURE.md), [extensões](docs/extensions/README.md), [relatório de testes](docs/TEST_REPORT.md), [como publicar uma versão](docs/RELEASING.md) e [plano de implementação](docs/IMPLEMENTATION_PLAN.md) |
 
 ## Versões
 
