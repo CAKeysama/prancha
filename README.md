@@ -1,7 +1,33 @@
-# Prancha
+<p align="center">
+  <img src="assets/app-icon.svg" width="88" height="88" alt="" />
+</p>
 
-Leitor e organizador local de quadrinhos, mangás e graphic novels para Windows.
-Funciona sem conta, sem internet e sem assinatura. Interface em português do Brasil.
+<h1 align="center">Prancha</h1>
+
+<p align="center">
+  Leitor e organizador de quadrinhos, mangás e graphic novels para Windows.<br />
+  Funciona sem conta, sem internet e sem assinatura.
+</p>
+
+<p align="center">
+  <a href="https://cakeysama.github.io/prancha/"><strong>Baixar</strong></a>
+  ·
+  <a href="https://prancha-beta.vercel.app">Site oficial</a>
+  ·
+  <a href="https://github.com/CAKeysama/prancha/releases">Todas as versões</a>
+  ·
+  <a href="CHANGELOG.md">Novidades</a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/CAKeysama/prancha/releases/latest"><img src="https://img.shields.io/github/v/release/CAKeysama/prancha?label=vers%C3%A3o" alt="Versão mais recente" /></a>
+  <a href="https://github.com/CAKeysama/prancha/actions/workflows/ci.yml"><img src="https://github.com/CAKeysama/prancha/actions/workflows/ci.yml/badge.svg" alt="Estado das verificações" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/CAKeysama/prancha?label=licen%C3%A7a" alt="Licença MIT" /></a>
+</p>
+
+![Biblioteca do Prancha com capas e o progresso de leitura de cada quadrinho](artifacts/screenshots/06-biblioteca-capas-e-progresso.png)
+
+## Funcionalidades
 
 - **Formatos testados:** CBZ, CBR (RAR4/RAR5 via UnRAR), CB7, CBT, PDF e pastas com imagens (JPEG, PNG, WebP, GIF, BMP; AVIF exibido no leitor).
 - **Biblioteca:** capas automáticas (metadados → imagem de capa → primeira página válida → capa substituta identificada), pesquisa sem acentos, filtros, ordenação, grade/lista, favoritos e coleções.
@@ -9,9 +35,33 @@ Funciona sem conta, sem internet e sem assinatura. Interface em português do Br
 - **Leitura Guiada:** a página fica inteira e cada balão salta para fora, maior, na ordem de leitura. A detecção roda no próprio computador, e o que estiver errado pode ser corrigido à mão.
 - **Tutorial** de primeira execução com importação real.
 
-Capturas de tela: [`artifacts/screenshots/`](artifacts/screenshots/).
+| Leitor | Configurações |
+|---|---|
+| ![Leitor em página dupla](artifacts/screenshots/09a-leitor-pagina-dupla.png) | ![Tela de configurações no tema claro](artifacts/screenshots/11-configuracoes-tema-claro.png) |
 
-## Pré-requisitos (desenvolvimento)
+Mais capturas em [`artifacts/screenshots/`](artifacts/screenshots/).
+
+## Instalação
+
+Baixe a versão mais recente na [página de downloads](https://cakeysama.github.io/prancha/) ou em [Releases](https://github.com/CAKeysama/prancha/releases/latest), e abra o instalador.
+
+| Arquivo | Para quem |
+|---|---|
+| `Prancha_X.Y.Z_x64-setup.exe` | Recomendado. Instala só para o seu usuário e não exige administrador. |
+| `Prancha_X.Y.Z_x64_pt-BR.msi` | Instala para todos os usuários do computador e exige administrador. |
+
+Os instaladores não têm assinatura digital, então o Windows SmartScreen pode pedir confirmação na primeira execução. Cada release traz os SHA-256 para conferir o download.
+
+Para atualizar, instale a nova versão por cima: a biblioteca e o progresso são mantidos.
+
+### Requisitos
+
+- Windows 10 ou 11 de 64 bits. Por enquanto, o Windows é o único sistema com instalador.
+- WebView2, que já vem no Windows 11. Se faltar, o instalador baixa.
+
+## Desenvolvimento
+
+### Pré-requisitos
 
 | Ferramenta | Versão usada | Observação |
 |---|---|---|
@@ -24,15 +74,10 @@ Capturas de tela: [`artifacts/screenshots/`](artifacts/screenshots/).
 > pode falhar (limite de 260 caracteres). Use uma pasta de build curta:
 > `set CARGO_TARGET_DIR=C:\Users\<você>\.cache\prancha-target` (PowerShell: `$env:CARGO_TARGET_DIR=...`).
 
-## Instalação das dependências
+### Executar
 
 ```bash
 npm install
-```
-
-## Desenvolvimento
-
-```bash
 npm run tauri dev
 ```
 
@@ -40,13 +85,13 @@ O frontend roda em `http://localhost:1420` com recarga automática; o backend Ru
 Os dados ficam em `%APPDATA%\app.prancha.desktop`. Para usar outra pasta (testes, modo portátil):
 `PRANCHA_DATA_DIR=C:\caminho\dados`.
 
-## Testes
+### Testes
 
 ```bash
 npm run typecheck      # TypeScript estrito
 npm run lint           # ESLint (+ regras do React Compiler)
 npm test               # Vitest: regras de domínio e componentes (IPC simulado)
-npm run test:rust      # cargo test: formatos, importação, capas, catálogo, progresso
+npm run test:rust      # cargo test: formatos, importação, capas, catálogo, progresso, detecção
 npm run e2e:build      # compila o app de depuração e gera os arquivos de teste
 npm run test:e2e       # Playwright no executável real (WebView2 via CDP) + capturas de tela
 ```
@@ -57,8 +102,9 @@ próprios; nenhum quadrinho comercial no repositório). Resultados: [`docs/TEST_
 Os testes da Leitura Guiada só rodam com páginas reais: os quadrinhos ficam no seu disco e o gabarito em
 `tests/real/manifest.json`, fora do git. Sem esse arquivo esses testes falham de propósito, para ninguém
 achar que a detecção foi conferida. As capturas deles vão para `tests/real/screenshots/`, também fora do git.
+Por isso, o GitHub Actions roda só as demais verificações, e estes testes rodam localmente antes de cada versão.
 
-## Compilação e instalador
+### Compilação e instalador
 
 ```bash
 npm run tauri build
@@ -66,20 +112,34 @@ npm run tauri build
 
 Gera, em `<target>/release/bundle/`:
 
-- `nsis/Prancha_0.1.2_x64-setup.exe` — instalador por usuário (não exige administrador), em português;
-- `msi/Prancha_0.1.2_x64_pt-BR.msi` — pacote MSI.
+- `nsis/Prancha_X.Y.Z_x64-setup.exe` — instalador por usuário (não exige administrador), em português;
+- `msi/Prancha_X.Y.Z_x64_pt-BR.msi` — pacote MSI.
 
-O instalador baixa o WebView2 se ele não estiver presente. Os binários não são assinados
-digitalmente; o Windows SmartScreen pode pedir confirmação na primeira execução.
+O instalador baixa o WebView2 se ele não estiver presente.
 
-## Renomear o aplicativo
+### Renomear o aplicativo
 
 O nome está centralizado em dois pontos: `src/app/config.ts` (`APP_NAME`, usado em toda a interface)
 e `src-tauri/tauri.conf.json` (`productName` e `app.windows[0].title`, usados no executável e no instalador).
 
-## Licenças
+## Estrutura do projeto
 
-Código do Prancha: MIT. A lista completa de componentes de terceiros fica em
+| Pasta | Conteúdo |
+|---|---|
+| `src/` | Interface em React: `features/` (biblioteca, leitor, tutorial, configurações), `domain/` (regras sem interface), `services/` e `components/` |
+| `src-tauri/` | Backend em Rust: formatos, importação, capas, banco de dados e, em `src/guided/`, a detecção da Leitura Guiada |
+| `site/` | Site oficial, publicado na Vercel |
+| `scripts/` | Geração do site, da página de downloads, das notas de versão e das licenças de terceiros |
+| `tests/` | Testes de interface (`unit/`) e no executável real (`e2e/`) |
+| `docs/` | [Arquitetura](docs/ARCHITECTURE.md), [relatório de testes](docs/TEST_REPORT.md), [como publicar uma versão](docs/RELEASING.md) e [plano de implementação](docs/IMPLEMENTATION_PLAN.md) |
+
+## Versões
+
+O projeto segue o [versionamento semântico](https://semver.org/lang/pt-BR/): `PATCH` para correções, `MINOR` para funcionalidades compatíveis e `MAJOR` para mudanças incompatíveis. O que mudou em cada versão está no [`CHANGELOG.md`](CHANGELOG.md) e em [Releases](https://github.com/CAKeysama/prancha/releases). Para publicar uma versão, veja [`docs/RELEASING.md`](docs/RELEASING.md).
+
+## Licença
+
+Código do Prancha: [MIT](LICENSE). A lista completa de componentes de terceiros fica em
 Configurações › Geral › Licenças de terceiros (gerada por `npm run licenses`).
 A leitura de CBR usa o código-fonte do **UnRAR**, de Alexander Roshal, sem modificações, sob esta condição:
 
@@ -89,5 +149,3 @@ A leitura de CBR usa o código-fonte do **UnRAR**, de Alexander Roshal, sem modi
 > software is permitted, provided that full text of this paragraph, starting from "UnRAR source code" words,
 > is included in license, or in documentation if license is not available, and in source code comments of
 > resulting package.
-
-Documentação técnica: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · plano: [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md).
