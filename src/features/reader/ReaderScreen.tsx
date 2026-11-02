@@ -46,7 +46,7 @@ import { useOnboarding } from "../onboarding/onboarding-context";
 import { ReaderTip } from "../onboarding/ReaderTip";
 import { GuidedReader } from "./GuidedReader";
 import { PageIndexPanel, ReaderSettingsPanel, ShortcutsDialog } from "./ReaderPanels";
-import { PagedView, VerticalView, type VerticalHandle, type ViewHandle } from "./Views";
+import { PagedView, VerticalView, type VerticalHandle } from "./Views";
 import { usePreload } from "./PageView";
 import { useProgressSaver } from "./useProgressSaver";
 
@@ -56,6 +56,25 @@ const FIT_ICONS: Record<"page" | "width", typeof Square> = { page: Square, width
 function isTyping(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null;
   return !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable);
+}
+
+function SideButton({ side, icon: Icon, label, onClick, disabled, visible }: { side: "left-3" | "right-3"; icon: typeof Square; label: string; onClick: () => void; disabled: boolean; visible: boolean }) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        "absolute top-1/2 z-10 flex size-11 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-elevated/90 text-fg shadow-overlay transition-opacity hover:bg-elevated disabled:opacity-0",
+        side,
+        visible ? "opacity-100" : "pointer-events-none opacity-0",
+      )}
+    >
+      <Icon size={22} aria-hidden />
+    </button>
+  );
 }
 
 export function ReaderScreen({ id }: { id: number }) {
@@ -158,7 +177,6 @@ function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount
   const [endReached, setEndReached] = useState(false);
   const [guided, setGuided] = useState(false);
   const verticalRef = useRef<VerticalHandle>(null);
-  const pagedRef = useRef<ViewHandle>(null);
   const hideTimer = useRef<number | undefined>(undefined);
   const [activity, setActivity] = useState(0);
   const [initialRatio] = useState(session.start.scrollRatio);
@@ -261,6 +279,7 @@ function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount
     void update("reader.fit", f);
   };
   const setMode = (m: ReaderMode) => void update("reader.mode", m);
+  const togglePanel = (name: "settings" | "index") => setPanel((p) => (p === name ? null : name));
 
   // ---- Controles: ocultar automaticamente, com forma clara de reaparecer ----
   const tipActive = onboarding.readerTipVisible;
@@ -319,7 +338,7 @@ function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount
         case "toggleControls":
           return toggleControls();
         case "pageIndex":
-          return setPanel((p) => (p === "index" ? null : "index"));
+          return togglePanel("index");
         case "guided":
           setPanel(null);
           return setGuided(true);
@@ -418,32 +437,8 @@ function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount
 
   const sideButtons = mode !== "vertical" && (
     <>
-      <button
-        type="button"
-        aria-label={rtl ? nextLabel : prevLabel}
-        title={rtl ? nextLabel : prevLabel}
-        onClick={rtl ? next : prev}
-        disabled={!rtl && spreadIdx === 0}
-        className={cn(
-          "absolute top-1/2 left-3 z-10 flex size-11 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-elevated/90 text-fg shadow-overlay transition-opacity hover:bg-elevated disabled:opacity-0",
-          visible ? "opacity-100" : "pointer-events-none opacity-0",
-        )}
-      >
-        <ChevronLeft size={22} aria-hidden />
-      </button>
-      <button
-        type="button"
-        aria-label={rtl ? prevLabel : nextLabel}
-        title={rtl ? prevLabel : nextLabel}
-        onClick={rtl ? prev : next}
-        disabled={rtl && spreadIdx === 0}
-        className={cn(
-          "absolute top-1/2 right-3 z-10 flex size-11 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-elevated/90 text-fg shadow-overlay transition-opacity hover:bg-elevated disabled:opacity-0",
-          visible ? "opacity-100" : "pointer-events-none opacity-0",
-        )}
-      >
-        <ChevronRight size={22} aria-hidden />
-      </button>
+      <SideButton side="left-3" icon={ChevronLeft} label={rtl ? nextLabel : prevLabel} onClick={rtl ? next : prev} disabled={!rtl && spreadIdx === 0} visible={visible} />
+      <SideButton side="right-3" icon={ChevronRight} label={rtl ? prevLabel : nextLabel} onClick={rtl ? prev : next} disabled={rtl && spreadIdx === 0} visible={visible} />
     </>
   );
 
@@ -458,7 +453,7 @@ function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount
         )}
         onMouseEnter={() => window.clearTimeout(hideTimer.current)}
       >
-        <span className={tipActive ? tour : ""} data-tour="reader-back">
+        <span className={tour} data-tour="reader-back">
           <Button variant="ghost" size="sm" icon={ArrowLeft} onClick={back} title={`Voltar à biblioteca (${k("back") ?? ""})`}>
             Biblioteca
           </Button>
@@ -498,8 +493,8 @@ function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount
           <span className="max-lg:sr-only">Leitura Guiada</span>
         </Button>
         <IconButton icon={ModeIcon} label={`Alternar modo de exibição (atual: ${MODE_LABELS[mode]})`} shortcut={k("cycleMode")} onClick={() => setMode(nextMode(mode))} size="sm" />
-        <IconButton icon={ListOrdered} label="Abrir índice de páginas" shortcut={k("pageIndex")} pressed={panel === "index"} onClick={() => setPanel((p) => (p === "index" ? null : "index"))} size="sm" />
-        <IconButton icon={Settings2} label="Configurações de leitura" pressed={panel === "settings"} onClick={() => setPanel((p) => (p === "settings" ? null : "settings"))} size="sm" />
+        <IconButton icon={ListOrdered} label="Abrir índice de páginas" shortcut={k("pageIndex")} pressed={panel === "index"} onClick={() => togglePanel("index")} size="sm" />
+        <IconButton icon={Settings2} label="Configurações de leitura" pressed={panel === "settings"} onClick={() => togglePanel("settings")} size="sm" />
         <IconButton icon={fullscreen ? Minimize : Maximize} label={fullscreen ? "Sair da tela cheia" : "Entrar em tela cheia"} shortcut={k("fullscreen")} onClick={() => void toggleFullscreen()} size="sm" />
       </header>
 
@@ -520,7 +515,7 @@ function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount
             onPosition={onPosition}
           />
         ) : (
-          <PagedView ref={pagedRef} comicId={comic.id} spread={spread} sizes={sizes} fit={fit} zoom={zoom} direction={direction} pdf={pdf} onSize={onSize} onWheelEdge={onWheelEdge} />
+          <PagedView comicId={comic.id} spread={spread} sizes={sizes} fit={fit} zoom={zoom} direction={direction} pdf={pdf} onSize={onSize} onWheelEdge={onWheelEdge} />
         )}
         {sideButtons}
         {panel === "settings" && (

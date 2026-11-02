@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { ImportCounts, ImportEvent, ImportItem } from "../../domain/types";
 import { api, errorMessage } from "../../services/api";
-import { onImportProgress } from "../../services/events";
+import { cancellable, onImportProgress } from "../../services/events";
 import { useToast } from "../../components/Toast";
 
 export interface ImportJob {
@@ -36,6 +36,8 @@ export function useImport(): ImportApi {
 
 const EMPTY_COUNTS: ImportCounts = { total: 0, processed: 0, added: 0, skipped: 0, failed: 0 };
 
+const newJob = (id: number): ImportJob => ({ id, phase: "scanning", counts: EMPTY_COUNTS, current: null, items: [], startedAt: Date.now() });
+
 export function ImportProvider({ children }: { children: ReactNode }) {
   const [jobs, setJobs] = useState<ImportJob[]>([]);
   const [dragging, setDragging] = useState(false);
@@ -48,14 +50,7 @@ export function ImportProvider({ children }: { children: ReactNode }) {
       onImportProgress((e) => {
         setJobs((list) => {
           const existing = list.find((j) => j.id === e.jobId);
-          const base: ImportJob = existing ?? {
-            id: e.jobId,
-            phase: "scanning",
-            counts: EMPTY_COUNTS,
-            current: null,
-            items: [],
-            startedAt: Date.now(),
-          };
+          const base = existing ?? newJob(e.jobId);
           const job: ImportJob = {
             ...base,
             phase: e.phase,
@@ -80,11 +75,7 @@ export function ImportProvider({ children }: { children: ReactNode }) {
       if (paths.length === 0) return null;
       try {
         const id = await api.startImport(paths);
-        setJobs((list) =>
-          list.some((j) => j.id === id)
-            ? list
-            : [...list, { id, phase: "scanning", counts: EMPTY_COUNTS, current: null, items: [], startedAt: Date.now() }],
-        );
+        setJobs((list) => (list.some((j) => j.id === id) ? list : [...list, newJob(id)]));
         return id;
       } catch (e) {
         toast.error("Não foi possível iniciar a importação", errorMessage(e));
@@ -122,12 +113,10 @@ export function ImportProvider({ children }: { children: ReactNode }) {
   const dismiss = useCallback((jobId: number) => setJobs((list) => list.filter((j) => j.id !== jobId)), []);
 
   // Arrastar e soltar arquivos/pastas sobre a janela.
-  useEffect(() => {
-    let off: (() => void) | undefined;
-    let cancelled = false;
-    try {
-      getCurrentWebview()
-        .onDragDropEvent((event) => {
+  useEffect(
+    () =>
+      cancellable(() =>
+        getCurrentWebview().onDragDropEvent((event) => {
           const p = event.payload;
           if (p.type === "enter" || p.type === "over") setDragging(true);
           else if (p.type === "leave") setDragging(false);
@@ -135,20 +124,10 @@ export function ImportProvider({ children }: { children: ReactNode }) {
             setDragging(false);
             void importPaths(p.paths);
           }
-        })
-        .then((fn) => {
-          if (cancelled) fn();
-          else off = fn;
-        })
-        .catch(() => undefined);
-    } catch {
-      /* fora do Tauri */
-    }
-    return () => {
-      cancelled = true;
-      off?.();
-    };
-  }, [importPaths]);
+        }),
+      ),
+    [importPaths],
+  );
 
   const value = useMemo(
     () => ({ jobs, pickAndImport, importPaths, cancel, dismiss, waitFor, dragging }),

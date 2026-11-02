@@ -41,7 +41,8 @@ async function loadPage(comicId: number, page: number, rtl: boolean, pdf: PDFDoc
  */
 function PoppedBalloon({ region, page, view, src, active }: { region: GuidedRegion; page: Size; view: Size; src: string; active: boolean }) {
   const pop = computePop(region, page, view, CONTROLS_SPACE);
-  const points = (region.outline.length ? region.outline : WHOLE_RECT).map(([x, y]) => `${x * 100}% ${y * 100}%`).join(",");
+  const outline = region.outline.length ? region.outline : WHOLE_RECT;
+  const points = outline.map(([x, y]) => `${x * 100}% ${y * 100}%`).join(",");
   return (
     <div
       data-testid={active ? "guided-spot" : undefined}
@@ -74,7 +75,7 @@ function PoppedBalloon({ region, page, view, src, active }: { region: GuidedRegi
       {isDoubtful(region) && (
         <svg data-testid={active ? "guided-spot-doubtful" : undefined} className="absolute inset-0 size-full overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none">
           <polygon
-            points={(region.outline.length ? region.outline : WHOLE_RECT).map(([x, y]) => `${x * 100},${y * 100}`).join(" ")}
+            points={outline.map(([x, y]) => `${x * 100},${y * 100}`).join(" ")}
             fill="none"
             className="stroke-attention"
             strokeWidth={2}
@@ -267,27 +268,16 @@ function GuidedStage({ comicId, page, pageCount, pdf, rtl, shortcuts, natural, o
     else prev();
   };
 
-  const reload = (data: GuidedPage) => {
-    setLoad({ status: "ready", data });
-    setIndex(0);
-    setEditing(false);
-  };
-
-  const save = async (edited: GuidedRegion[]) => {
+  /** Depois de gravar ou desfazer correções, a página volta do backend e recomeça do primeiro balão. */
+  const reloadAfter = async (work: Promise<unknown>, failureTitle: string) => {
     try {
-      await api.guidedSaveCorrections(comicId, page, edited);
-      reload(await loadPage(comicId, page, rtl, pdf));
+      await work;
+      const data = await loadPage(comicId, page, rtl, pdf);
+      setLoad({ status: "ready", data });
+      setIndex(0);
+      setEditing(false);
     } catch (e) {
-      toast.error("Não foi possível salvar as correções", errorMessage(e));
-    }
-  };
-
-  const restore = async () => {
-    try {
-      await api.guidedClearCorrections(comicId, page);
-      reload(await loadPage(comicId, page, rtl, pdf));
-    } catch (e) {
-      toast.error("Não foi possível restaurar a detecção", errorMessage(e));
+      toast.error(failureTitle, errorMessage(e));
     }
   };
 
@@ -397,8 +387,8 @@ function GuidedStage({ comicId, page, pageCount, pdf, rtl, shortcuts, natural, o
             initialSelection={regions[index]?.id ?? null}
             canRestore={load.status === "ready" && load.data.source === "user"}
             onSize={onSize}
-            onSave={save}
-            onRestore={restore}
+            onSave={(edited) => reloadAfter(api.guidedSaveCorrections(comicId, page, edited), "Não foi possível salvar as correções")}
+            onRestore={() => reloadAfter(api.guidedClearCorrections(comicId, page), "Não foi possível restaurar a detecção")}
             onCancel={() => setEditing(false)}
           />
         </div>

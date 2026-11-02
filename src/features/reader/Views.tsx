@@ -20,10 +20,6 @@ export function useViewportSize(ref: React.RefObject<HTMLElement | null>): Size 
 
 const aspectOf = (s: Size | undefined) => (s && s.height > 0 ? s.width / s.height : DEFAULT_ASPECT);
 
-export interface ViewHandle {
-  element: HTMLDivElement | null;
-}
-
 interface PagedProps {
   comicId: number;
   spread: number[];
@@ -38,13 +34,9 @@ interface PagedProps {
 }
 
 /** Página única ou dupla. O conteúdo maior que a janela pode ser rolado. */
-export const PagedView = forwardRef<ViewHandle, PagedProps>(function PagedView(
-  { comicId, spread, sizes, fit, zoom, direction, pdf, onSize, onWheelEdge },
-  ref,
-) {
+export function PagedView({ comicId, spread, sizes, fit, zoom, direction, pdf, onSize, onWheelEdge }: PagedProps) {
   const viewport = useRef<HTMLDivElement>(null);
   const size = useViewportSize(viewport);
-  useImperativeHandle(ref, () => ({ element: viewport.current }), []);
   const aspects = spread.map((i) => aspectOf(sizes.get(i)));
   const padding = 16;
   const inner = { width: Math.max(1, size.width - padding * 2), height: Math.max(1, size.height - padding * 2) };
@@ -97,7 +89,7 @@ export const PagedView = forwardRef<ViewHandle, PagedProps>(function PagedView(
       </div>
     </div>
   );
-});
+}
 
 interface VerticalProps {
   comicId: number;
@@ -113,7 +105,7 @@ interface VerticalProps {
   onPosition: (page: number, ratio: number) => void;
 }
 
-export interface VerticalHandle extends ViewHandle {
+export interface VerticalHandle {
   scrollToPage: (page: number, ratio?: number) => void;
 }
 
@@ -146,7 +138,7 @@ export const VerticalView = forwardRef<VerticalHandle, VerticalProps>(function V
     el.scrollTop = target.offsetTop + ratio * target.offsetHeight;
   }, []);
 
-  useImperativeHandle(ref, () => ({ element: viewport.current, scrollToPage }), [scrollToPage]);
+  useImperativeHandle(ref, () => ({ scrollToPage }), [scrollToPage]);
 
   // Restaura a posição salva assim que o layout tem tamanho.
   useLayoutEffect(() => {
