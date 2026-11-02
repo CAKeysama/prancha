@@ -1,16 +1,16 @@
 import type { SortKey } from "./types";
 import { DEFAULT_SHORTCUTS, type ShortcutMap, sanitizeShortcuts } from "./shortcuts";
 
-export type ThemePreference = "dark" | "light" | "system";
+type ThemePreference = "dark" | "light" | "system";
 export type ReaderMode = "single" | "double" | "vertical";
 export type ReadingDirection = "ltr" | "rtl";
 export type FitMode = "page" | "width" | "height";
 export type WheelBehavior = "page" | "scroll";
-export type EndBehavior = "stay" | "library";
+type EndBehavior = "stay" | "library";
 export type ControlsBehavior = "autohide" | "always";
-export type LibraryView = "grid" | "list";
-export type ThumbSize = "small" | "medium" | "large";
-export type Density = "comfortable" | "compact";
+type LibraryView = "grid" | "list";
+type ThumbSize = "small" | "medium" | "large";
+type Density = "comfortable" | "compact";
 export type DuplicatePolicy = "skip" | "allow";
 
 export interface OnboardingState {

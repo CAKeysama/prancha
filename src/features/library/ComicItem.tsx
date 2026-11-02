@@ -9,7 +9,7 @@ import { STATUS_LABELS, formatDate, progressLabel, progressRatio, readActionLabe
 import { FORMAT_LABELS, type ComicSummary } from "../../domain/types";
 import { useComicActions } from "./comic-actions";
 
-export function StatusLine({ comic, compact }: { comic: ComicSummary; compact?: boolean }) {
+function StatusLine({ comic, compact }: { comic: ComicSummary; compact?: boolean }) {
   const ratio = progressRatio(comic);
   const Icon = comic.status === "completed" ? CircleCheck : comic.status === "reading" ? BookOpen : CircleDashed;
   // Uma linha só: em andamento mostra onde parou (o estado fica implícito e no leitor de tela).

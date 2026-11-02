@@ -7,7 +7,7 @@ import type { UpdateProgress, UpdatesSnapshot } from "../../domain/updates";
 import { ApiError, api, errorMessage } from "../../services/api";
 import { useOnboarding } from "../onboarding/onboarding-context";
 
-export type UpdateStage =
+type UpdateStage =
   | { name: "idle" }
   | { name: "progress"; progress: UpdateProgress }
   | { name: "failed"; version: string; message: string };

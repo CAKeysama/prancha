@@ -7,7 +7,7 @@ import { cn } from "./cn";
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-export interface DialogProps {
+interface DialogProps {
   open: boolean;
   title: string;
   icon?: ReactNode;
@@ -109,7 +109,7 @@ export function Dialog({ open, title, icon, description, onClose, dismissible = 
   );
 }
 
-export interface ConfirmDialogProps {
+interface ConfirmDialogProps {
   open: boolean;
   title: string;
   children?: ReactNode;

@@ -126,7 +126,7 @@ export function Checkbox({
   );
 }
 
-export interface SegmentOption<T extends string> {
+interface SegmentOption<T extends string> {
   value: T;
   label: string;
   icon?: React.ComponentType<{ size?: number; "aria-hidden"?: boolean }>;
