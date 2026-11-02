@@ -14,8 +14,8 @@
   ],
   "redirects": [
     {
-      "source": "/downloads/Prancha_:version(\\d+\\.\\d+\\.\\d+)_:file",
-      "destination": "https://github.com/CAKeysama/prancha/releases/download/v:version/Prancha_:version\\_:file",
+      "source": "/downloads/Prancha_:version(\\d+\\.\\d+\\.\\d+):rest(_.+)",
+      "destination": "https://github.com/CAKeysama/prancha/releases/download/v:version/Prancha_:version:rest",
       "permanent": false
     }
   ]
