@@ -89,6 +89,7 @@ export function DetailsScreen({ id }: { id: number }) {
   const actions = useComicActions();
   const toast = useToast();
   const { data: comic, error } = useLibraryData(() => api.comic(id), [id]);
+  const { data: origin } = useLibraryData(() => api.comicOrigin(id), [id]);
   const [confirmReset, setConfirmReset] = useState(false);
 
   if (error && !comic) {
@@ -164,6 +165,14 @@ export function DetailsScreen({ id }: { id: number }) {
               {comic.series && (
                 <Row label="Série" source={src.series}>
                   {comic.series}
+                </Row>
+              )}
+              {origin && (
+                <Row label="Origem">
+                  <button type="button" onClick={() => nav.navigate({ name: "series", id: origin.seriesId })} className="text-left text-accent-fg hover:underline">
+                    {origin.seriesTitle}
+                  </button>
+                  <span className="text-muted"> · {origin.sourceName ?? "Fonte não instalada"}</span>
                 </Row>
               )}
               {(comic.issueNumber || comic.volume) && (

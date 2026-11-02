@@ -87,12 +87,14 @@ export function Checkbox({
   checked,
   onChange,
   disabled,
+  hideLabel,
 }: {
   label: string;
   description?: ReactNode;
   checked: boolean;
   onChange: (v: boolean) => void;
   disabled?: boolean;
+  hideLabel?: boolean;
 }) {
   const id = useId();
   return (
@@ -114,7 +116,7 @@ export function Checkbox({
           className="pointer-events-none absolute top-0.5 left-0.5 hidden text-on-emphasis peer-checked:block"
         />
       </span>
-      <label htmlFor={id} className="text-base leading-5">
+      <label htmlFor={id} className={hideLabel ? "sr-only" : "text-base leading-5"}>
         {label}
         {description && (
           <span id={`${id}-d`} className="mt-0.5 block text-sm text-muted">
