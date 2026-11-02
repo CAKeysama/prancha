@@ -14,7 +14,7 @@ import { useSettings } from "../../app/settings-context";
 import { AddComicsButtons } from "./AddComicsButtons";
 import { ComicCollectionView } from "./ComicCollectionView";
 
-export interface LibraryPreset {
+interface LibraryPreset {
   title: string;
   subtitle?: ReactNode;
   base: LibraryQuery;
@@ -199,11 +199,14 @@ export function LibraryScreen({ preset }: { preset: LibraryPreset }) {
     }
   };
   const toggleStatus = (s: ReadStatus) => setStatuses((v) => (v.includes(s) ? v.filter((x) => x !== s) : [...v, s]));
-  const clearFilters = () => {
-    setText("");
+  const clearChips = () => {
     setStatuses([]);
     setFormat("");
     setFavoritesOnly(false);
+  };
+  const clearFilters = () => {
+    setText("");
+    clearChips();
   };
 
   const countText = data
@@ -262,11 +265,7 @@ export function LibraryScreen({ preset }: { preset: LibraryPreset }) {
             onFavorites={setFavoritesOnly}
             format={format}
             onFormat={setFormat}
-            onClear={() => {
-              setStatuses([]);
-              setFormat("");
-              setFavoritesOnly(false);
-            }}
+            onClear={clearChips}
           />
           <div className="ml-auto flex items-center gap-2">
             <Select label="Ordenar" hideLabel value={`${sort === "recentProgress" ? "opened" : sort}:${desc ? "desc" : "asc"}`} onChange={(e) => setSortValue(e.target.value)} className="w-52 max-sm:w-40">

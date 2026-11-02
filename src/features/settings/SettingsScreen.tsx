@@ -64,6 +64,14 @@ function SettingRow({ label, description, children }: { label: string; descripti
   );
 }
 
+function SegmentedRow<T extends string>({ label, description, ...segmented }: { label: string; description?: ReactNode; value: T; onChange: (v: T) => void; options: Array<{ value: T; label: string }> }) {
+  return (
+    <SettingRow label={label} description={description}>
+      <Segmented label={label} hideLabel {...segmented} />
+    </SettingRow>
+  );
+}
+
 function useSave() {
   const { update } = useSettings();
   const toast = useToast();
@@ -407,56 +415,45 @@ export function SettingsScreen() {
         </nav>
         <div className="min-w-0 flex-1">
           <Section id="aparencia" title="Aparência">
-            <SettingRow label="Tema" description={settings["appearance.theme"] === "system" ? `Seguindo o sistema (agora: ${effectiveTheme === "dark" ? "escuro" : "claro"}).` : undefined}>
-              <Segmented
-                label="Tema"
-                hideLabel
-                value={settings["appearance.theme"]}
-                onChange={(v) => save("appearance.theme", v)}
-                options={[
-                  { value: "dark", label: "Escuro" },
-                  { value: "light", label: "Claro" },
-                  { value: "system", label: "Seguir o sistema" },
-                ]}
-              />
-            </SettingRow>
-            <SettingRow label="Densidade da biblioteca">
-              <Segmented
-                label="Densidade da biblioteca"
-                hideLabel
-                value={settings["appearance.density"]}
-                onChange={(v) => save("appearance.density", v)}
-                options={[
-                  { value: "comfortable", label: "Confortável" },
-                  { value: "compact", label: "Compacta" },
-                ]}
-              />
-            </SettingRow>
-            <SettingRow label="Visualização da biblioteca">
-              <Segmented
-                label="Visualização da biblioteca"
-                hideLabel
-                value={settings["library.view"]}
-                onChange={(v) => save("library.view", v)}
-                options={[
-                  { value: "grid", label: "Grade" },
-                  { value: "list", label: "Lista" },
-                ]}
-              />
-            </SettingRow>
-            <SettingRow label="Tamanho das miniaturas">
-              <Segmented
-                label="Tamanho das miniaturas"
-                hideLabel
-                value={settings["appearance.thumbSize"]}
-                onChange={(v) => save("appearance.thumbSize", v)}
-                options={[
-                  { value: "small", label: "Pequeno" },
-                  { value: "medium", label: "Médio" },
-                  { value: "large", label: "Grande" },
-                ]}
-              />
-            </SettingRow>
+            <SegmentedRow
+              label="Tema"
+              description={settings["appearance.theme"] === "system" ? `Seguindo o sistema (agora: ${effectiveTheme === "dark" ? "escuro" : "claro"}).` : undefined}
+              value={settings["appearance.theme"]}
+              onChange={(v) => save("appearance.theme", v)}
+              options={[
+                { value: "dark", label: "Escuro" },
+                { value: "light", label: "Claro" },
+                { value: "system", label: "Seguir o sistema" },
+              ]}
+            />
+            <SegmentedRow
+              label="Densidade da biblioteca"
+              value={settings["appearance.density"]}
+              onChange={(v) => save("appearance.density", v)}
+              options={[
+                { value: "comfortable", label: "Confortável" },
+                { value: "compact", label: "Compacta" },
+              ]}
+            />
+            <SegmentedRow
+              label="Visualização da biblioteca"
+              value={settings["library.view"]}
+              onChange={(v) => save("library.view", v)}
+              options={[
+                { value: "grid", label: "Grade" },
+                { value: "list", label: "Lista" },
+              ]}
+            />
+            <SegmentedRow
+              label="Tamanho das miniaturas"
+              value={settings["appearance.thumbSize"]}
+              onChange={(v) => save("appearance.thumbSize", v)}
+              options={[
+                { value: "small", label: "Pequeno" },
+                { value: "medium", label: "Médio" },
+                { value: "large", label: "Grande" },
+              ]}
+            />
           </Section>
 
           <Section id="leitura" title="Leitura">
@@ -469,18 +466,16 @@ export function SettingsScreen() {
                 ))}
               </Select>
             </SettingRow>
-            <SettingRow label="Direção de leitura" description="Direita para a esquerda é o padrão de mangás.">
-              <Segmented
-                label="Direção de leitura"
-                hideLabel
-                value={settings["reader.direction"]}
-                onChange={(v) => save("reader.direction", v)}
-                options={[
-                  { value: "ltr", label: "Esquerda → direita" },
-                  { value: "rtl", label: "Direita → esquerda" },
-                ]}
-              />
-            </SettingRow>
+            <SegmentedRow
+              label="Direção de leitura"
+              description="Direita para a esquerda é o padrão de mangás."
+              value={settings["reader.direction"]}
+              onChange={(v) => save("reader.direction", v)}
+              options={[
+                { value: "ltr", label: "Esquerda → direita" },
+                { value: "rtl", label: "Direita → esquerda" },
+              ]}
+            />
             <SettingRow label="Ajuste padrão da imagem">
               <Select label="Ajuste padrão da imagem" hideLabel value={settings["reader.fit"]} onChange={(e) => save("reader.fit", e.target.value as Settings["reader.fit"])} className="w-48">
                 {(["page", "width", "height"] as const).map((f) => (
@@ -496,42 +491,35 @@ export function SettingsScreen() {
               checked={settings["reader.coverAlone"]}
               onChange={(v) => save("reader.coverAlone", v)}
             />
-            <SettingRow label="Roda do mouse" description="Em página única ou dupla, ao chegar ao fim da página.">
-              <Segmented
-                label="Roda do mouse"
-                hideLabel
-                value={settings["reader.wheel"]}
-                onChange={(v) => save("reader.wheel", v)}
-                options={[
-                  { value: "page", label: "Vira a página" },
-                  { value: "scroll", label: "Só rola" },
-                ]}
-              />
-            </SettingRow>
-            <SettingRow label="Ao avançar depois da última página">
-              <Segmented
-                label="Ao avançar depois da última página"
-                hideLabel
-                value={settings["reader.end"]}
-                onChange={(v) => save("reader.end", v)}
-                options={[
-                  { value: "stay", label: "Permanecer no leitor" },
-                  { value: "library", label: "Voltar à biblioteca" },
-                ]}
-              />
-            </SettingRow>
-            <SettingRow label="Controles do leitor" description="Ocultos, reaparecem ao mover o mouse ou pelo botão “Mostrar controles”.">
-              <Segmented
-                label="Controles do leitor"
-                hideLabel
-                value={settings["reader.controls"]}
-                onChange={(v) => save("reader.controls", v)}
-                options={[
-                  { value: "autohide", label: "Ocultar sozinhos" },
-                  { value: "always", label: "Sempre visíveis" },
-                ]}
-              />
-            </SettingRow>
+            <SegmentedRow
+              label="Roda do mouse"
+              description="Em página única ou dupla, ao chegar ao fim da página."
+              value={settings["reader.wheel"]}
+              onChange={(v) => save("reader.wheel", v)}
+              options={[
+                { value: "page", label: "Vira a página" },
+                { value: "scroll", label: "Só rola" },
+              ]}
+            />
+            <SegmentedRow
+              label="Ao avançar depois da última página"
+              value={settings["reader.end"]}
+              onChange={(v) => save("reader.end", v)}
+              options={[
+                { value: "stay", label: "Permanecer no leitor" },
+                { value: "library", label: "Voltar à biblioteca" },
+              ]}
+            />
+            <SegmentedRow
+              label="Controles do leitor"
+              description="Ocultos, reaparecem ao mover o mouse ou pelo botão “Mostrar controles”."
+              value={settings["reader.controls"]}
+              onChange={(v) => save("reader.controls", v)}
+              options={[
+                { value: "autohide", label: "Ocultar sozinhos" },
+                { value: "always", label: "Sempre visíveis" },
+              ]}
+            />
             <ShortcutEditor />
           </Section>
 

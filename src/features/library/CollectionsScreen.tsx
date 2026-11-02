@@ -8,6 +8,7 @@ import { EmptyState, ErrorState, Spinner } from "../../components/Feedback";
 import { Menu } from "../../components/Menu";
 import { PageHeader } from "../../components/PageHeader";
 import { useToast } from "../../components/Toast";
+import { comicCountLabel } from "../../domain/progress";
 import type { CollectionInfo } from "../../domain/types";
 import { api, errorMessage } from "../../services/api";
 import { useLibraryData, useLibraryVersion } from "../../app/library-events";
@@ -178,9 +179,7 @@ export function CollectionsScreen() {
                     })}
                   </div>
                   <p className="mt-3 truncate pr-8 font-semibold">{c.name}</p>
-                  <p className="text-sm text-muted">
-                    {c.comicCount} {c.comicCount === 1 ? "HQ" : "HQs"}
-                  </p>
+                  <p className="text-sm text-muted">{comicCountLabel(c.comicCount)}</p>
                 </button>
                 <div className="absolute right-2 bottom-3">
                   <Menu
@@ -203,6 +202,8 @@ export function CollectionsScreen() {
   );
 }
 
+const fold = (s: string) => s.toLocaleLowerCase("pt-BR").normalize("NFD").replace(/\p{M}/gu, "");
+
 function AddComicsToCollection({ collection, onClose }: { collection: CollectionInfo; onClose: () => void }) {
   const toast = useToast();
   const [text, setText] = useState("");
@@ -212,10 +213,8 @@ function AddComicsToCollection({ collection, onClose }: { collection: Collection
   const { data: inside } = useLibraryData(() => api.listComics({ collectionId: collection.id }), [collection.id]);
   const insideIds = useMemo(() => new Set((inside ?? []).map((c) => c.id)), [inside]);
   const candidates = useMemo(() => {
-    const q = text.trim().toLocaleLowerCase("pt-BR").normalize("NFD").replace(/\p{M}/gu, "");
-    return (all ?? []).filter(
-      (c) => !insideIds.has(c.id) && (!q || `${c.title} ${c.fileName} ${c.series ?? ""}`.toLocaleLowerCase("pt-BR").normalize("NFD").replace(/\p{M}/gu, "").includes(q)),
-    );
+    const q = fold(text.trim());
+    return (all ?? []).filter((c) => !insideIds.has(c.id) && (!q || fold(`${c.title} ${c.fileName} ${c.series ?? ""}`).includes(q)));
   }, [all, insideIds, text]);
   const save = async () => {
     setBusy(true);
@@ -295,7 +294,7 @@ export function CollectionDetailScreen({ id }: { id: number }) {
         key={id}
         preset={{
           title: collection.name,
-          subtitle: `Coleção · ${collection.comicCount} ${collection.comicCount === 1 ? "HQ" : "HQs"}`,
+          subtitle: `Coleção · ${comicCountLabel(collection.comicCount)}`,
           base: { collectionId: id },
           collectionId: id,
           onBack: () => nav.navigate({ name: "collections" }),

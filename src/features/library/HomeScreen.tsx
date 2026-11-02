@@ -1,10 +1,9 @@
 import type { ReactNode } from "react";
 import { BookOpen, ChevronRight, FolderPlus, GraduationCap, Library, Plus } from "lucide-react";
 import { Button } from "../../components/Button";
-import { ErrorState, Spinner } from "../../components/Feedback";
+import { ErrorState, ProgressBar, Spinner } from "../../components/Feedback";
 import { PageHeader } from "../../components/PageHeader";
 import { Cover } from "../../components/Cover";
-import { ProgressBar } from "../../components/Feedback";
 import { progressLabel, progressRatio, subtitle } from "../../domain/progress";
 import type { ComicSummary } from "../../domain/types";
 import { api } from "../../services/api";
