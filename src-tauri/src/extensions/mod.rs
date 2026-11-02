@@ -1,5 +1,7 @@
 //! Extensões de fontes de leitura: repositórios, execução em WebAssembly e downloads.
 
+pub mod install;
 pub mod net;
 pub mod repository;
+pub mod runtime;
 pub mod signing;

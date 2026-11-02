@@ -1,14 +1,15 @@
 //! Estado compartilhado do aplicativo (independente do Tauri, para facilitar testes).
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use rusqlite::Connection;
 use serde_json::json;
 
 use crate::db;
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::extensions::net::Net;
+use crate::extensions::runtime::SourceEngine;
 use crate::import::{EVENT_LIBRARY, Emit, Importer};
 use crate::library;
 use crate::pages::PageService;
@@ -43,6 +44,8 @@ pub struct Core {
     pub emit: Emit,
     pub guided_lock: Mutex<()>,
     pub net: Arc<Net>,
+    /// Criado no primeiro uso: quem não usa extensões não paga por ele e nada aqui impede o app de abrir.
+    engine: OnceLock<Result<SourceEngine, String>>,
 }
 
 impl Core {
@@ -54,11 +57,16 @@ impl Core {
         let importer = Importer::spawn(move || db::open(&db_path), paths.covers.clone(), emit.clone())?;
         // Capas pendentes ou geradas com parâmetros antigos são refeitas em segundo plano.
         importer.enqueue_covers();
-        Ok(Core { pages: PageService::new(paths.pages_cache.clone()), paths, db: Mutex::new(conn), importer, emit, guided_lock: Mutex::new(()), net: Arc::new(Net::from_env()) })
+        Ok(Core { pages: PageService::new(paths.pages_cache.clone()), paths, db: Mutex::new(conn), importer, emit, guided_lock: Mutex::new(()), net: Arc::new(Net::from_env()), engine: OnceLock::new() })
     }
 
     pub fn db(&self) -> MutexGuard<'_, Connection> {
         self.db.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    pub fn engine(&self) -> AppResult<&SourceEngine> {
+        let built = self.engine.get_or_init(|| SourceEngine::new(self.net.clone(), self.paths.db.clone()).map_err(|e| e.to_string()));
+        built.as_ref().map_err(|e| AppError::user("extension_load", e.clone()))
     }
 
     /// Confere se os arquivos ainda existem e atualiza o indicador `missing`.
