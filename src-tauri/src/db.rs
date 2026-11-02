@@ -10,7 +10,11 @@ use crate::natural::natural_cmp;
 
 /// Migrações em ordem. A posição + 1 é a versão do esquema após aplicá-la.
 /// Nunca altere uma migração publicada: acrescente uma nova.
-const MIGRATIONS: &[&str] = &[include_str!("../migrations/0001_initial.sql"), include_str!("../migrations/0002_guided_reading.sql")];
+const MIGRATIONS: &[&str] = &[
+    include_str!("../migrations/0001_initial.sql"),
+    include_str!("../migrations/0002_guided_reading.sql"),
+    include_str!("../migrations/0003_extensions.sql"),
+];
 
 pub fn schema_version() -> i64 {
     MIGRATIONS.len() as i64
@@ -85,6 +89,113 @@ mod tests {
         assert_eq!(tables, 1);
         let fk: i64 = conn.pragma_query_value(None, "foreign_keys", |r| r.get(0)).unwrap();
         assert_eq!(fk, 1);
+    }
+
+    /// Banco como a versão 0.2.0 deixava, com o uso de uma pessoa.
+    fn database_from_0_2_0() -> Connection {
+        let mut conn = Connection::open_in_memory().unwrap();
+        configure(&conn).unwrap();
+        conn.execute_batch(MIGRATIONS[0]).unwrap();
+        conn.execute_batch(MIGRATIONS[1]).unwrap();
+        conn.pragma_update(None, "user_version", 2).unwrap();
+        conn.execute_batch(
+            "INSERT INTO comics (id, path, file_name, format, fingerprint, title, added_at, updated_at) VALUES (7, 'C:/hq.cbz', 'hq.cbz', 'cbz', 'abc', 'Minha HQ', 1, 1);
+             INSERT INTO reading_progress (comic_id, page_index, page_count, updated_at) VALUES (7, 3, 10, 1);
+             INSERT INTO collections (id, name, created_at, updated_at) VALUES (1, 'Favoritas', 1, 1);
+             INSERT INTO comic_collections (comic_id, collection_id, added_at) VALUES (7, 1, 1);
+             INSERT INTO settings (key, value) VALUES ('appearance.theme', '\"light\"');",
+        )
+        .unwrap();
+        migrate(&mut conn).unwrap();
+        conn
+    }
+
+    fn extension_rows(conn: &Connection) {
+        conn.execute_batch(
+            "INSERT INTO source_repositories (id, url, name, index_url, public_key, key_fingerprint, added_at) VALUES ('r', 'https://r/prancha-repo.json', 'R', 'https://r/i', 'k', 'f', 1);
+             INSERT INTO repository_extensions (repository_id, extension_id, name, version, entry) VALUES ('r', 'e', 'E', '1.0.0', '{}');
+             INSERT INTO installed_extensions (id, repository_id, repository_name, public_key, key_fingerprint, name, version, entry, file_name, sha256, installed_at, updated_at)
+                VALUES ('e', 'r', 'R', 'k', 'f', 'E', '1.0.0', '{}', 'e.wasm', 'h', 1, 1);
+             INSERT INTO extension_sources (extension_id, source_id, name, language, rating, direction, supports_latest, supports_search) VALUES ('e', 's', 'S', 'pt-BR', 'general', 'ltr', 1, 1);
+             INSERT INTO extension_storage (extension_id, key, value) VALUES ('e', 'chave', x'00');
+             INSERT INTO online_series (id, extension_id, source_id, remote_id, title, created_at, updated_at) VALUES (1, 'e', 's', 'obra', 'Obra', 1, 1);
+             INSERT INTO online_chapters (id, series_id, remote_id, title, sort_order, comic_id) VALUES (1, 1, 'cap', 'Cap', 0, 7);
+             INSERT INTO chapter_downloads (chapter_id, status, created_at, updated_at) VALUES (1, 'completed', 1, 1);",
+        )
+        .unwrap();
+    }
+
+    fn count(conn: &Connection, table: &str) -> i64 {
+        conn.query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0)).unwrap()
+    }
+
+    #[test]
+    fn upgrading_a_used_database_keeps_library_progress_and_settings() {
+        let conn = database_from_0_2_0();
+        let version: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0)).unwrap();
+        assert_eq!(version, schema_version());
+        let title: String = conn.query_row("SELECT title FROM comics WHERE id = 7", [], |r| r.get(0)).unwrap();
+        assert_eq!(title, "Minha HQ");
+        let page: i64 = conn.query_row("SELECT page_index FROM reading_progress WHERE comic_id = 7", [], |r| r.get(0)).unwrap();
+        assert_eq!(page, 3);
+        assert_eq!(count(&conn, "comic_collections"), 1);
+        let theme: String = conn.query_row("SELECT value FROM settings WHERE key = 'appearance.theme'", [], |r| r.get(0)).unwrap();
+        assert_eq!(theme, "\"light\"");
+        extension_rows(&conn);
+    }
+
+    #[test]
+    fn removing_a_repository_keeps_installed_extensions() {
+        let conn = database_from_0_2_0();
+        extension_rows(&conn);
+        conn.execute("DELETE FROM source_repositories WHERE id = 'r'", []).unwrap();
+        assert_eq!(count(&conn, "repository_extensions"), 0);
+        assert_eq!(count(&conn, "installed_extensions"), 1);
+        assert_eq!(count(&conn, "extension_sources"), 1);
+    }
+
+    #[test]
+    fn uninstalling_keeps_series_chapters_and_the_library() {
+        let conn = database_from_0_2_0();
+        extension_rows(&conn);
+        conn.execute("DELETE FROM installed_extensions WHERE id = 'e'", []).unwrap();
+        assert_eq!(count(&conn, "extension_sources"), 0);
+        assert_eq!(count(&conn, "extension_storage"), 0, "os dados privados saem com a extensão");
+        assert_eq!(count(&conn, "online_series"), 1);
+        assert_eq!(count(&conn, "online_chapters"), 1);
+        assert_eq!(count(&conn, "chapter_downloads"), 1);
+        assert_eq!(count(&conn, "comics"), 1);
+    }
+
+    #[test]
+    fn removing_a_comic_only_unlinks_the_chapter() {
+        let conn = database_from_0_2_0();
+        extension_rows(&conn);
+        conn.execute("DELETE FROM comics WHERE id = 7", []).unwrap();
+        let linked: Option<i64> = conn.query_row("SELECT comic_id FROM online_chapters WHERE id = 1", [], |r| r.get(0)).unwrap();
+        assert_eq!(linked, None);
+        assert_eq!(count(&conn, "online_chapters"), 1);
+    }
+
+    #[test]
+    fn series_are_unique_per_source_and_a_chapter_has_one_open_download() {
+        let conn = database_from_0_2_0();
+        extension_rows(&conn);
+        let repeated = "INSERT INTO online_series (extension_id, source_id, remote_id, title, created_at, updated_at) VALUES ('e', 's', 'obra', 'Outra', 1, 1)";
+        assert!(conn.execute(repeated, []).is_err());
+        let other_source = "INSERT INTO online_series (extension_id, source_id, remote_id, title, created_at, updated_at) VALUES ('e', 's2', 'obra', 'Outra', 1, 1)";
+        assert!(conn.execute(other_source, []).is_ok());
+        let open = "INSERT INTO chapter_downloads (chapter_id, status, created_at, updated_at) VALUES (1, 'queued', 1, 1)";
+        assert!(conn.execute(open, []).is_ok());
+        assert!(conn.execute(open, []).is_err());
+    }
+
+    #[test]
+    fn a_rating_outside_the_list_is_refused() {
+        let conn = database_from_0_2_0();
+        extension_rows(&conn);
+        let bad = "INSERT INTO extension_sources (extension_id, source_id, name, language, rating, direction, supports_latest, supports_search) VALUES ('e', 'x', 'X', 'pt-BR', 'liberado', 'ltr', 1, 1)";
+        assert!(conn.execute(bad, []).is_err());
     }
 
     #[test]
