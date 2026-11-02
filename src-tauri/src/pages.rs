@@ -44,7 +44,7 @@ pub struct PageService {
     extractions: Mutex<HashMap<i64, Arc<Extraction>>>,
 }
 
-pub fn mime_for(name: &str) -> &'static str {
+fn mime_for(name: &str) -> &'static str {
     let lower = name.to_lowercase();
     match lower.rsplit_once('.').map(|(_, e)| e) {
         Some("jpg" | "jpeg" | "jpe" | "jfif") => "image/jpeg",
@@ -99,10 +99,6 @@ impl PageService {
         }
         map.insert(info.id, cached.clone());
         Ok(cached)
-    }
-
-    pub fn invalidate(&self, id: i64) {
-        self.listings.lock().unwrap().remove(&id);
     }
 
     /// Devolve os bytes e o tipo MIME de uma página (índice começando em 0).
@@ -274,7 +270,7 @@ impl PageService {
     }
 
     pub fn forget_comic(&self, id: i64) {
-        self.invalidate(id);
+        self.listings.lock().unwrap().remove(&id);
         self.extractions.lock().unwrap().remove(&id);
         if let Ok(entries) = std::fs::read_dir(&self.cache_dir) {
             for e in entries.filter_map(Result::ok) {

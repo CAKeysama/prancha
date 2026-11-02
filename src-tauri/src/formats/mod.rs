@@ -24,7 +24,7 @@ pub const MAX_ENTRIES: usize = 20_000;
 pub const MAX_PAGE_BYTES: u64 = 150 * 1024 * 1024;
 pub const MAX_COMICINFO_BYTES: u64 = 2 * 1024 * 1024;
 
-pub const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "jpe", "jfif", "png", "webp", "gif", "bmp", "avif"];
+const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "jpe", "jfif", "png", "webp", "gif", "bmp", "avif"];
 pub const COMIC_EXTENSIONS: &[&str] = &["cbz", "zip", "cbr", "rar", "cb7", "7z", "cbt", "tar", "pdf"];
 /// Formatos de leitura conhecidos que ainda não são suportados: ao varrer pastas,
 /// são relatados como falha em vez de ignorados em silêncio.
@@ -145,6 +145,12 @@ pub fn extension_of(path: &Path) -> String {
     path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default()
 }
 
+/// Recusa pela extensão, dizendo qual é.
+pub fn unsupported(path: &Path) -> FormatError {
+    let ext = extension_of(path);
+    FormatError::Unsupported(if ext.is_empty() { "sem extensão".into() } else { format!(".{ext}") })
+}
+
 pub fn is_comic_file(path: &Path) -> bool {
     COMIC_EXTENSIONS.contains(&extension_of(path).as_str())
 }
@@ -218,9 +224,8 @@ pub fn detect(path: &Path) -> FormatResult<ComicFormat> {
     if meta.is_dir() {
         return Ok(ComicFormat::Folder);
     }
-    let ext = extension_of(path);
-    if !COMIC_EXTENSIONS.contains(&ext.as_str()) {
-        return Err(FormatError::Unsupported(if ext.is_empty() { "sem extensão".into() } else { format!(".{ext}") }));
+    if !is_comic_file(path) {
+        return Err(unsupported(path));
     }
     let mut head = [0u8; 1024];
     let mut file = File::open(path)?;

@@ -17,7 +17,7 @@ use crate::formats::{self, ComicFormat, Listing};
 
 /// Mudar estes parâmetros invalida as miniaturas existentes (são regeneradas).
 pub const COVER_PARAMS_VERSION: i64 = 1;
-pub const COVER_WIDTH: u32 = 400;
+const COVER_WIDTH: u32 = 400;
 /// Proporção máxima altura/largura (tiras verticais muito longas são recortadas no topo).
 const MAX_ASPECT: f32 = 2.0;
 const MAX_DIMENSION: u32 = 30_000;
@@ -53,11 +53,6 @@ pub struct CoverOutcome {
     pub error: Option<String>,
 }
 
-/// Decodifica uma imagem com limites e gera a miniatura JPEG.
-pub fn make_thumbnail(bytes: &[u8]) -> Result<Vec<u8>, String> {
-    thumbnail_from_image(decode_limited(bytes)?)
-}
-
 /// Decodifica uma imagem vinda de arquivo ou da interface, recusando dimensões absurdas.
 pub fn decode_limited(bytes: &[u8]) -> Result<DynamicImage, String> {
     let mut reader = ImageReader::new(Cursor::new(bytes))
@@ -74,7 +69,9 @@ pub fn decode_limited(bytes: &[u8]) -> Result<DynamicImage, String> {
     reader.decode().map_err(|e| format!("imagem inválida ({e})"))
 }
 
-pub fn thumbnail_from_image(img: DynamicImage) -> Result<Vec<u8>, String> {
+/// Decodifica uma imagem com limites e gera a miniatura JPEG.
+pub fn make_thumbnail(bytes: &[u8]) -> Result<Vec<u8>, String> {
+    let img = decode_limited(bytes)?;
     let (w, h) = (img.width(), img.height());
     if w == 0 || h == 0 {
         return Err("imagem sem dimensões".into());
@@ -129,19 +126,12 @@ pub fn generate(format: ComicFormat, path: &Path, listing: &Listing) -> CoverOut
         }
     };
 
-    if let Some(idx) = listing.comic_info.as_ref().and_then(|i| i.front_cover) {
+    let candidates = listing.comic_info.as_ref().and_then(|i| i.front_cover).map(|i| (CoverKind::Metadata, i)).into_iter()
+        .chain(listing.cover_named_index().map(|i| (CoverKind::Format, i)))
+        .chain((0..listing.pages.len().min(FIRST_PAGE_ATTEMPTS)).map(|i| (CoverKind::FirstPage, i)));
+    for (kind, idx) in candidates {
         if let Some(jpeg) = try_page(idx) {
-            return CoverOutcome { kind: CoverKind::Metadata, page: Some(idx), jpeg: Some(jpeg), error: None };
-        }
-    }
-    if let Some(idx) = listing.cover_named_index() {
-        if let Some(jpeg) = try_page(idx) {
-            return CoverOutcome { kind: CoverKind::Format, page: Some(idx), jpeg: Some(jpeg), error: None };
-        }
-    }
-    for idx in 0..listing.pages.len().min(FIRST_PAGE_ATTEMPTS) {
-        if let Some(jpeg) = try_page(idx) {
-            return CoverOutcome { kind: CoverKind::FirstPage, page: Some(idx), jpeg: Some(jpeg), error: None };
+            return CoverOutcome { kind, page: Some(idx), jpeg: Some(jpeg), error: None };
         }
     }
     CoverOutcome {

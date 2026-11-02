@@ -404,7 +404,7 @@ fn all_formats_import_end_to_end() {
     assert_eq!(d.summary.title, "Titulo do PDF");
     assert_eq!(d.summary.page_count, Some(4));
     assert_eq!(d.summary.cover_kind, "pending", "capa do PDF é renderizada pela interface");
-    assert_eq!(library::pending_pdf_covers(&e.conn).unwrap(), vec![pdf]);
+    assert_eq!(library::pending_covers(&e.conn, true).unwrap(), vec![pdf]);
 }
 
 // ---------------------------------------------------------------------------

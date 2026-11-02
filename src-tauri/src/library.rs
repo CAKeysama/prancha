@@ -139,7 +139,6 @@ pub struct NewComic {
     pub file_name: String,
     pub format: String,
     pub file_size: i64,
-    pub file_mtime: Option<i64>,
     pub fingerprint: String,
     pub page_count: Option<i64>,
     pub title: String,
@@ -341,32 +340,31 @@ pub fn details(conn: &Connection, id: i64) -> AppResult<ComicDetails> {
     })
 }
 
+const FILE_INFO_SELECT: &str = "SELECT id, path, format, fingerprint, page_count, status, missing, cover_file, title FROM comics";
+
+fn file_info_from_row(r: &Row<'_>) -> rusqlite::Result<ComicFileInfo> {
+    Ok(ComicFileInfo {
+        id: r.get(0)?,
+        path: r.get(1)?,
+        format: r.get(2)?,
+        fingerprint: r.get(3)?,
+        page_count: r.get(4)?,
+        status: r.get(5)?,
+        missing: r.get::<_, i64>(6)? == 1,
+        cover_file: r.get(7)?,
+        title: r.get(8)?,
+    })
+}
+
 pub fn file_info(conn: &Connection, id: i64) -> AppResult<ComicFileInfo> {
-    conn.query_row(
-        "SELECT id, path, format, fingerprint, page_count, status, missing, cover_file, title FROM comics WHERE id = ?",
-        [id],
-        |r| {
-            Ok(ComicFileInfo {
-                id: r.get(0)?,
-                path: r.get(1)?,
-                format: r.get(2)?,
-                fingerprint: r.get(3)?,
-                page_count: r.get(4)?,
-                status: r.get(5)?,
-                missing: r.get::<_, i64>(6)? == 1,
-                cover_file: r.get(7)?,
-                title: r.get(8)?,
-            })
-        },
-    )
-    .optional()?
-    .ok_or(AppError::NotFound)
+    let sql = format!("{FILE_INFO_SELECT} WHERE id = ?");
+    conn.query_row(&sql, [id], file_info_from_row).optional()?.ok_or(AppError::NotFound)
 }
 
 pub fn all_file_infos(conn: &Connection) -> AppResult<Vec<ComicFileInfo>> {
-    let mut stmt = conn.prepare("SELECT id FROM comics ORDER BY id")?;
-    let ids: Vec<i64> = stmt.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?;
-    ids.into_iter().map(|id| file_info(conn, id)).collect()
+    let mut stmt = conn.prepare(&format!("{FILE_INFO_SELECT} ORDER BY id"))?;
+    let rows = stmt.query_map([], file_info_from_row)?;
+    Ok(rows.collect::<Result<_, _>>()?)
 }
 
 pub fn find_by_path(conn: &Connection, path: &str) -> AppResult<Option<i64>> {
@@ -374,12 +372,12 @@ pub fn find_by_path(conn: &Connection, path: &str) -> AppResult<Option<i64>> {
 }
 
 pub fn find_by_fingerprint(conn: &Connection, fingerprint: &str) -> AppResult<Vec<ComicFileInfo>> {
-    let mut stmt = conn.prepare("SELECT id FROM comics WHERE fingerprint = ? ORDER BY id")?;
-    let ids: Vec<i64> = stmt.query_map([fingerprint], |r| r.get(0))?.collect::<Result<_, _>>()?;
-    ids.into_iter().map(|id| file_info(conn, id)).collect()
+    let mut stmt = conn.prepare(&format!("{FILE_INFO_SELECT} WHERE fingerprint = ? ORDER BY id"))?;
+    let rows = stmt.query_map([fingerprint], file_info_from_row)?;
+    Ok(rows.collect::<Result<_, _>>()?)
 }
 
-pub fn tags_of(conn: &Connection, id: i64) -> AppResult<Vec<String>> {
+fn tags_of(conn: &Connection, id: i64) -> AppResult<Vec<String>> {
     let mut stmt = conn.prepare(
         "SELECT t.name FROM tags t JOIN comic_tags ct ON ct.tag_id = t.id WHERE ct.comic_id = ? ORDER BY t.name COLLATE NOCASE",
     )?;
@@ -427,7 +425,7 @@ fn set_tags(conn: &Connection, id: i64, tags: &[String]) -> AppResult<()> {
 }
 
 /// Recalcula o texto de busca (título, arquivo, série, autores, editora, tags) sem acentos.
-pub fn refresh_search_text(conn: &Connection, id: i64) -> AppResult<()> {
+fn refresh_search_text(conn: &Connection, id: i64) -> AppResult<()> {
     let parts: Vec<Option<String>> = conn.query_row(
         "SELECT title, file_name, series, writer, artist, publisher, issue_number FROM comics WHERE id = ?",
         [id],
@@ -442,15 +440,14 @@ pub fn refresh_search_text(conn: &Connection, id: i64) -> AppResult<()> {
 pub fn insert_comic(conn: &Connection, c: &NewComic) -> AppResult<i64> {
     let now = now_ms();
     conn.execute(
-        "INSERT INTO comics (path, file_name, format, file_size, file_mtime, fingerprint, page_count, title, series, \
+        "INSERT INTO comics (path, file_name, format, file_size, fingerprint, page_count, title, series, \
          issue_number, volume, year, writer, artist, publisher, summary, field_sources, added_at, updated_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?18)",
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?17)",
         params![
             c.path,
             c.file_name,
             c.format,
             c.file_size,
-            c.file_mtime,
             c.fingerprint,
             c.page_count,
             c.title,
@@ -495,12 +492,21 @@ pub fn set_page_count(conn: &Connection, id: i64, count: i64) -> AppResult<()> {
     Ok(())
 }
 
-pub fn relink(conn: &Connection, id: i64, path: &str, file_name: &str, size: i64, mtime: Option<i64>) -> AppResult<()> {
+pub fn relink(conn: &Connection, id: i64, path: &str, file_name: &str, size: i64) -> AppResult<()> {
     conn.execute(
-        "UPDATE comics SET path = ?1, file_name = ?2, file_size = ?3, file_mtime = ?4, missing = 0, updated_at = ?5 WHERE id = ?6",
-        params![path, file_name, size, mtime, now_ms(), id],
+        "UPDATE comics SET path = ?1, file_name = ?2, file_size = ?3, missing = 0, updated_at = ?4 WHERE id = ?5",
+        params![path, file_name, size, now_ms(), id],
     )?;
     refresh_search_text(conn, id)
+}
+
+/// A HQ passou a apontar para um arquivo com outro conteúdo.
+pub fn set_content(conn: &Connection, id: i64, fingerprint: &str, format: &str, page_count: Option<i64>) -> AppResult<()> {
+    conn.execute(
+        "UPDATE comics SET fingerprint = ?1, format = ?2, page_count = ?3 WHERE id = ?4",
+        params![fingerprint, format, page_count, id],
+    )?;
+    Ok(())
 }
 
 pub fn set_missing(conn: &Connection, id: i64, missing: bool) -> AppResult<()> {
@@ -547,14 +553,10 @@ pub fn update_metadata(conn: &mut Connection, id: i64, patch: &MetadataPatch) ->
     let old_tags = tags_of(&tx, id)?;
     let mut new_tags: Vec<String> = patch.tags.iter().map(|t| t.trim().to_string()).filter(|t| !t.is_empty()).collect();
     new_tags.dedup();
-    if old_tags.iter().map(|t| t.to_lowercase()).collect::<Vec<_>>()
-        != {
-            let mut v: Vec<String> = new_tags.iter().map(|t| t.to_lowercase()).collect();
-            v.sort();
-            v.dedup();
-            v
-        }
-    {
+    let mut folded: Vec<String> = new_tags.iter().map(|t| t.to_lowercase()).collect();
+    folded.sort();
+    folded.dedup();
+    if old_tags.iter().map(|t| t.to_lowercase()).ne(folded) {
         sources.insert("tags".into(), "user".into());
     }
     tx.execute(
@@ -858,22 +860,12 @@ pub fn set_setting(conn: &Connection, key: &str, value: &Value) -> AppResult<()>
 // Capas pendentes / manutenção
 // ---------------------------------------------------------------------------
 
-pub fn comics_needing_cover(conn: &Connection, include_pdf: bool) -> AppResult<Vec<i64>> {
-    let sql = if include_pdf {
-        "SELECT id FROM comics WHERE missing = 0 AND (cover_kind = 'pending' OR cover_params <> ?1) ORDER BY id"
-    } else {
-        "SELECT id FROM comics WHERE missing = 0 AND format <> 'pdf' AND (cover_kind = 'pending' OR cover_params <> ?1) ORDER BY id"
-    };
-    let mut stmt = conn.prepare(sql)?;
-    let rows = stmt.query_map([crate::covers::COVER_PARAMS_VERSION], |r| r.get(0))?;
-    Ok(rows.collect::<Result<_, _>>()?)
-}
-
-pub fn pending_pdf_covers(conn: &Connection) -> AppResult<Vec<i64>> {
+/// HQs com capa pendente ou gerada com parâmetros antigos. Quem desenha a capa de um PDF é a interface.
+pub fn pending_covers(conn: &Connection, pdf: bool) -> AppResult<Vec<i64>> {
     let mut stmt = conn.prepare(
-        "SELECT id FROM comics WHERE format = 'pdf' AND missing = 0 AND (cover_kind = 'pending' OR cover_params <> ?1) ORDER BY id",
+        "SELECT id FROM comics WHERE missing = 0 AND (format = 'pdf') = ?1 AND (cover_kind = 'pending' OR cover_params <> ?2) ORDER BY id",
     )?;
-    let rows = stmt.query_map([crate::covers::COVER_PARAMS_VERSION], |r| r.get(0))?;
+    let rows = stmt.query_map(params![pdf, crate::covers::COVER_PARAMS_VERSION], |r| r.get(0))?;
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
@@ -927,8 +919,4 @@ pub fn finish_import_job(
 /// Importações que estavam rodando quando o app fechou são marcadas como interrompidas.
 pub fn mark_interrupted_jobs(conn: &Connection) -> AppResult<usize> {
     Ok(conn.execute("UPDATE import_jobs SET status = 'interrupted', finished_at = ? WHERE status = 'running'", [now_ms()])?)
-}
-
-pub fn counts(conn: &Connection) -> AppResult<(i64, i64)> {
-    Ok(conn.query_row("SELECT count(*), COALESCE(SUM(missing), 0) FROM comics", [], |r| Ok((r.get(0)?, r.get(1)?)))?)
 }

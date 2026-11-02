@@ -23,9 +23,9 @@ use crate::text::title_from_file_name;
 
 pub type Emit = Arc<dyn Fn(&str, Value) + Send + Sync>;
 
-pub const EVENT_IMPORT: &str = "import:progress";
+const EVENT_IMPORT: &str = "import:progress";
 pub const EVENT_LIBRARY: &str = "library:changed";
-pub const EVENT_COVERS: &str = "covers:progress";
+const EVENT_COVERS: &str = "covers:progress";
 
 /// Profundidade máxima ao procurar quadrinhos dentro de uma pasta escolhida.
 const MAX_SCAN_DEPTH: usize = 8;
@@ -77,7 +77,7 @@ pub fn canonical(path: &Path) -> std::io::Result<PathBuf> {
     Ok(c)
 }
 
-fn display_name(path: &Path) -> String {
+pub fn display_name(path: &Path) -> String {
     path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| path.to_string_lossy().to_string())
 }
 
@@ -107,8 +107,7 @@ pub fn expand(paths: &[PathBuf]) -> (Vec<PathBuf>, Vec<ItemResult>) {
             if formats::is_comic_file(path) {
                 candidates.push(path.clone());
             } else {
-                let ext = formats::extension_of(path);
-                errors.push(failed(path, FormatError::Unsupported(if ext.is_empty() { "sem extensão".into() } else { format!(".{ext}") }).to_string()));
+                errors.push(failed(path, formats::unsupported(path).to_string()));
             }
             continue;
         }
@@ -128,7 +127,7 @@ pub fn expand(paths: &[PathBuf]) -> (Vec<PathBuf>, Vec<ItemResult>) {
                     if formats::is_comic_file(p) {
                         found.push(p.to_path_buf());
                     } else if formats::KNOWN_UNSUPPORTED_EXTENSIONS.contains(&formats::extension_of(p).as_str()) {
-                        errors.push(failed(p, FormatError::Unsupported(format!(".{}", formats::extension_of(p))).to_string()));
+                        errors.push(failed(p, formats::unsupported(p).to_string()));
                     } else if formats::is_image_name(&name) {
                         if let Some(parent) = p.parent() {
                             image_dirs.insert(parent.to_path_buf());
@@ -153,11 +152,14 @@ pub fn expand(paths: &[PathBuf]) -> (Vec<PathBuf>, Vec<ItemResult>) {
     (candidates, errors)
 }
 
-fn file_mtime(meta: &std::fs::Metadata) -> Option<i64> {
-    meta.modified()
-        .ok()
-        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|d| d.as_millis() as i64)
+/// Uma pasta não tem tamanho próprio: vale a soma das páginas.
+pub fn content_size(format: ComicFormat, listing: &Listing, meta: &std::fs::Metadata) -> i64 {
+    if format == ComicFormat::Folder { listing.pages.iter().map(|p| p.size as i64).sum() } else { meta.len() as i64 }
+}
+
+/// Total de páginas, quando já se sabe: um PDF grande só o conhece ao abrir.
+pub fn known_page_count(format: ComicFormat, listing: &Listing) -> Option<i64> {
+    Some(formats::page_count(format, listing) as i64).filter(|n| *n > 0)
 }
 
 /// Impressão digital do conteúdo (ver ARCHITECTURE.md, "Duplicatas").
@@ -220,7 +222,7 @@ pub fn apply_cover(conn: &Connection, covers_dir: &Path, id: i64, format: ComicF
     }
 }
 
-fn build_new_comic(format: ComicFormat, path: &Path, listing: &Listing, fp: String, size: i64, mtime: Option<i64>) -> NewComic {
+fn build_new_comic(format: ComicFormat, path: &Path, listing: &Listing, fp: String, size: i64) -> NewComic {
     let file_name = display_name(path);
     let mut sources: HashMap<String, String> = HashMap::new();
     let info = listing.comic_info.clone().unwrap_or_default();
@@ -256,15 +258,13 @@ fn build_new_comic(format: ComicFormat, path: &Path, listing: &Listing, fp: Stri
             sources.insert(field.into(), "file".into());
         }
     }
-    let count = formats::page_count(format, listing);
     NewComic {
         path: path.to_string_lossy().to_string(),
         file_name,
         format: format.as_str().into(),
         file_size: size,
-        file_mtime: mtime,
         fingerprint: fp,
-        page_count: if count > 0 { Some(count as i64) } else { None },
+        page_count: known_page_count(format, listing),
         title,
         series: info.series,
         issue_number: info.number,
@@ -279,93 +279,62 @@ fn build_new_comic(format: ComicFormat, path: &Path, listing: &Listing, fp: Stri
     }
 }
 
+/// O que aconteceu com um candidato: estado, explicação e a HQ envolvida.
+type Outcome = (&'static str, Option<String>, Option<i64>);
+
+fn process_path(conn: &Connection, covers_dir: &Path, path: &Path, policy: DuplicatePolicy) -> AppResult<Outcome> {
+    let path_str = path.to_string_lossy().to_string();
+    if let Some(id) = library::find_by_path(conn, &path_str)? {
+        let _ = library::set_missing(conn, id, false);
+        return Ok(("skipped", Some("Já está na biblioteca.".into()), Some(id)));
+    }
+
+    let format = formats::detect(path)?;
+    let meta = std::fs::metadata(path)?;
+    // Confirma permissão de leitura antes de processar.
+    if format != ComicFormat::Folder {
+        File::open(path)?;
+    }
+    let listing = formats::list(format, path)?;
+    let fp = fingerprint(format, path, &listing)?;
+    let size = content_size(format, &listing, &meta);
+
+    let dups = library::find_by_fingerprint(conn, &fp)?;
+    if let Some(moved) = dups.iter().find(|d| d.missing || !Path::new(&d.path).exists()) {
+        library::relink(conn, moved.id, &path_str, &display_name(path), size)?;
+        let message = format!("“{}” foi encontrado em um novo local. A localização foi atualizada e o progresso mantido.", moved.title);
+        return Ok(("relinked", Some(message), Some(moved.id)));
+    }
+    if policy == DuplicatePolicy::Skip {
+        if let Some(d) = dups.first() {
+            return Ok(("duplicate", Some(format!("Conteúdo idêntico a “{}”, que já está na biblioteca.", d.title)), Some(d.id)));
+        }
+    }
+
+    let id = library::insert_comic(conn, &build_new_comic(format, path, &listing, fp, size))?;
+    let message = match apply_cover(conn, covers_dir, id, format, path, &listing) {
+        Ok(Some(cover_err)) => Some(format!("Adicionado com capa substituta: {cover_err}.")),
+        Ok(None) => None,
+        Err(e) => Some(format!("Adicionado, mas a capa não foi registrada: {e}")),
+    };
+    Ok(("added", message, Some(id)))
+}
+
 /// Processa um candidato. Erros viram `ItemResult` com explicação; nada é descartado em silêncio.
 pub fn process_one(conn: &Connection, covers_dir: &Path, raw: &Path, policy: DuplicatePolicy) -> ItemResult {
     let path = match canonical(raw) {
         Ok(p) => p,
         Err(e) => return failed(raw, crate::error::io_message(&e)),
     };
-    let path_str = path.to_string_lossy().to_string();
-    let name = display_name(&path);
-    let result = |status: &str, message: Option<String>, comic_id: Option<i64>| ItemResult {
-        path: path_str.clone(),
-        name: name.clone(),
-        status: status.into(),
-        message,
-        comic_id,
-    };
-
-    match library::find_by_path(conn, &path_str) {
-        Ok(Some(id)) => {
-            let _ = library::set_missing(conn, id, false);
-            return result("skipped", Some("Já está na biblioteca.".into()), Some(id));
-        }
-        Ok(None) => {}
-        Err(e) => return result("failed", Some(e.to_string()), None),
-    }
-
-    let format = match formats::detect(&path) {
-        Ok(f) => f,
-        Err(e) => return result("failed", Some(e.to_string()), None),
-    };
-    let meta = match std::fs::metadata(&path) {
-        Ok(m) => m,
-        Err(e) => return result("failed", Some(crate::error::io_message(&e)), None),
-    };
-    // Confirma permissão de leitura antes de processar.
-    if format != ComicFormat::Folder {
-        if let Err(e) = File::open(&path) {
-            return result("failed", Some(crate::error::io_message(&e)), None);
-        }
-    }
-    let listing = match formats::list(format, &path) {
-        Ok(l) => l,
-        Err(e) => return result("failed", Some(e.to_string()), None),
-    };
-    let fp = match fingerprint(format, &path, &listing) {
-        Ok(f) => f,
-        Err(e) => return result("failed", Some(e.to_string()), None),
-    };
-    let size = if format == ComicFormat::Folder {
-        listing.pages.iter().map(|p| p.size as i64).sum()
-    } else {
-        meta.len() as i64
-    };
-    let mtime = file_mtime(&meta);
-
-    let dups = match library::find_by_fingerprint(conn, &fp) {
-        Ok(d) => d,
-        Err(e) => return result("failed", Some(e.to_string()), None),
-    };
-    if let Some(moved) = dups.iter().find(|d| d.missing || !Path::new(&d.path).exists()) {
-        return match library::relink(conn, moved.id, &path_str, &name, size, mtime) {
-            Ok(()) => result(
-                "relinked",
-                Some(format!("“{}” foi encontrado em um novo local. A localização foi atualizada e o progresso mantido.", moved.title)),
-                Some(moved.id),
-            ),
-            Err(e) => result("failed", Some(e.to_string()), None),
-        };
-    }
-    if policy == DuplicatePolicy::Skip {
-        if let Some(d) = dups.first() {
-            return result(
-                "duplicate",
-                Some(format!("Conteúdo idêntico a “{}”, que já está na biblioteca.", d.title)),
-                Some(d.id),
-            );
-        }
-    }
-
-    let new = build_new_comic(format, &path, &listing, fp, size, mtime);
-    let id = match library::insert_comic(conn, &new) {
-        Ok(id) => id,
-        Err(e) => return result("failed", Some(e.to_string()), None),
-    };
-    match apply_cover(conn, covers_dir, id, format, &path, &listing) {
-        Ok(Some(cover_err)) => result("added", Some(format!("Adicionado com capa substituta: {cover_err}.")), Some(id)),
-        Ok(None) => result("added", None, Some(id)),
-        Err(e) => result("added", Some(format!("Adicionado, mas a capa não foi registrada: {e}")), Some(id)),
+    match process_path(conn, covers_dir, &path, policy) {
+        Ok((status, message, comic_id)) => ItemResult {
+            path: path.to_string_lossy().to_string(),
+            name: display_name(&path),
+            status: status.into(),
+            message,
+            comic_id,
+        },
+        Err(e) => failed(&path, e.to_string()),
     }
 }
 
@@ -417,7 +386,7 @@ pub fn run_import(
 
 /// Regenera capas pendentes ou geradas com parâmetros antigos (exceto PDF, feito pela interface).
 pub fn regenerate_covers(conn: &Connection, covers_dir: &Path, emit: &Emit) -> AppResult<usize> {
-    let ids = library::comics_needing_cover(conn, false)?;
+    let ids = library::pending_covers(conn, false)?;
     let total = ids.len();
     for (i, id) in ids.into_iter().enumerate() {
         let info = library::file_info(conn, id)?;

@@ -16,7 +16,7 @@ use tauri_plugin_updater::{Error as UpdaterError, Update, UpdaterExt};
 use crate::core::Core;
 use crate::covers::{self, COVER_PARAMS_VERSION};
 use crate::error::{AppError, AppResult};
-use crate::formats::{self, COMIC_EXTENSIONS, ComicFormat};
+use crate::formats::{self, COMIC_EXTENSIONS};
 use crate::guided::{self, store::{self, GuidedPage, GuidedRegion}};
 use crate::import::{self, EVENT_LIBRARY};
 use crate::library::{
@@ -41,6 +41,19 @@ fn library_changed(core: &Core) {
     (core.emit)(EVENT_LIBRARY, json!({}));
 }
 
+/// Como `blocking`, e avisa a interface de que a biblioteca mudou quando `f` dá certo.
+async fn changing<T: Send + 'static>(
+    core: &Arc<Core>,
+    f: impl FnOnce(&Core) -> AppResult<T> + Send + 'static,
+) -> AppResult<T> {
+    blocking(core, move |c| {
+        let out = f(c)?;
+        library_changed(c);
+        Ok(out)
+    })
+    .await
+}
+
 // ---------------------------------------------------------------------------
 // App e configurações
 // ---------------------------------------------------------------------------
@@ -48,24 +61,17 @@ fn library_changed(core: &Core) {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppInfo {
-    name: String,
     version: String,
     tauri_version: String,
-    data_dir: String,
     schema_version: i64,
-    supported_extensions: Vec<String>,
 }
 
 #[tauri::command]
-pub async fn get_app_info(app: AppHandle, state: S<'_>) -> AppResult<AppInfo> {
-    let info = app.package_info();
+pub async fn get_app_info(app: AppHandle) -> AppResult<AppInfo> {
     Ok(AppInfo {
-        name: info.name.clone(),
-        version: info.version.to_string(),
+        version: app.package_info().version.to_string(),
         tauri_version: tauri::VERSION.to_string(),
-        data_dir: state.paths.data_dir.to_string_lossy().to_string(),
         schema_version: crate::db::schema_version(),
-        supported_extensions: COMIC_EXTENSIONS.iter().map(|s| s.to_string()).collect(),
     })
 }
 
@@ -114,58 +120,39 @@ pub async fn list_tags(state: S<'_>) -> AppResult<Vec<String>> {
 
 #[tauri::command]
 pub async fn update_metadata(state: S<'_>, id: i64, patch: MetadataPatch) -> AppResult<ComicDetails> {
-    blocking(&state, move |c| {
+    changing(&state, move |c| {
         let mut db = c.db();
         library::update_metadata(&mut db, id, &patch)?;
-        let d = library::details(&db, id)?;
-        drop(db);
-        library_changed(c);
-        Ok(d)
+        library::details(&db, id)
     })
     .await
 }
 
 #[tauri::command]
 pub async fn set_favorite(state: S<'_>, id: i64, favorite: bool) -> AppResult<()> {
-    blocking(&state, move |c| {
-        library::set_favorite(&c.db(), id, favorite)?;
-        library_changed(c);
-        Ok(())
-    })
-    .await
+    changing(&state, move |c| library::set_favorite(&c.db(), id, favorite)).await
 }
 
 #[tauri::command]
 pub async fn set_read_status(state: S<'_>, id: i64, status: String) -> AppResult<()> {
-    blocking(&state, move |c| {
-        library::set_read_status(&c.db(), id, &status)?;
-        library_changed(c);
-        Ok(())
-    })
-    .await
+    changing(&state, move |c| library::set_read_status(&c.db(), id, &status)).await
 }
 
 #[tauri::command]
 pub async fn reset_progress(state: S<'_>, id: i64) -> AppResult<()> {
-    blocking(&state, move |c| {
-        library::reset_progress(&c.db(), id)?;
-        library_changed(c);
-        Ok(())
-    })
-    .await
+    changing(&state, move |c| library::reset_progress(&c.db(), id)).await
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoveResult {
-    removed: bool,
     trashed: bool,
 }
 
 /// Remove do catálogo. Com `delete_original`, o arquivo vai para a Lixeira do sistema (reversível).
 #[tauri::command]
 pub async fn remove_comic(state: S<'_>, id: i64, delete_original: bool) -> AppResult<RemoveResult> {
-    blocking(&state, move |c| {
+    changing(&state, move |c| {
         let info = library::file_info(&c.db(), id)?;
         let mut trashed = false;
         if delete_original && Path::new(&info.path).exists() {
@@ -182,8 +169,7 @@ pub async fn remove_comic(state: S<'_>, id: i64, delete_original: bool) -> AppRe
             let _ = std::fs::remove_file(c.paths.covers.join(file));
         }
         c.pages.forget_comic(id);
-        library_changed(c);
-        Ok(RemoveResult { removed: true, trashed })
+        Ok(RemoveResult { trashed })
     })
     .await
 }
@@ -232,17 +218,12 @@ pub async fn relocate_comic(app: AppHandle, state: S<'_>, id: i64, path: Option<
                 return Err(AppError::user("duplicate", "Esse arquivo já está registrado como outra HQ da biblioteca."));
             }
         }
-        let meta = std::fs::metadata(&path)?;
-        let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-        let size = if format == ComicFormat::Folder { listing.pages.iter().map(|p| p.size as i64).sum() } else { meta.len() as i64 };
+        let size = import::content_size(format, &listing, &std::fs::metadata(&path)?);
         {
             let db = c.db();
-            library::relink(&db, id, &path_str, &name, size, None)?;
+            library::relink(&db, id, &path_str, &import::display_name(&path), size)?;
             if !matched {
-                db.execute(
-                    "UPDATE comics SET fingerprint = ?1, format = ?2, page_count = ?3 WHERE id = ?4",
-                    rusqlite::params![fp, format.as_str(), formats::page_count(format, &listing) as i64, id],
-                )?;
+                library::set_content(&db, id, &fp, format.as_str(), Some(formats::page_count(format, &listing) as i64))?;
                 import::apply_cover(&db, &c.paths.covers, id, format, &path, &listing)?;
             }
         }
@@ -404,12 +385,7 @@ pub async fn open_comic(state: S<'_>, id: i64) -> AppResult<ReaderSession> {
 
 #[tauri::command]
 pub async fn save_progress(state: S<'_>, id: i64, page_index: i64, page_count: i64, scroll_ratio: f64) -> AppResult<String> {
-    blocking(&state, move |c| {
-        let s = library::save_progress(&c.db(), id, page_index, page_count, scroll_ratio)?;
-        library_changed(c);
-        Ok(s)
-    })
-    .await
+    changing(&state, move |c| library::save_progress(&c.db(), id, page_index, page_count, scroll_ratio)).await
 }
 
 /// O PDF.js informa o número real de páginas de um PDF.
@@ -434,14 +410,14 @@ pub async fn set_pdf_page_count(state: S<'_>, id: i64, page_count: i64) -> AppRe
 
 #[tauri::command]
 pub async fn pending_pdf_covers(state: S<'_>) -> AppResult<Vec<i64>> {
-    blocking(&state, |c| library::pending_pdf_covers(&c.db())).await
+    blocking(&state, |c| library::pending_covers(&c.db(), true)).await
 }
 
 /// Recebe a primeira página de um PDF renderizada pelo PDF.js. Os bytes são validados
 /// e normalizados no backend antes de virarem miniatura.
 #[tauri::command]
 pub async fn save_pdf_cover(state: S<'_>, id: i64, image: Vec<u8>, page_count: Option<i64>) -> AppResult<()> {
-    blocking(&state, move |c| {
+    changing(&state, move |c| {
         let info = library::file_info(&c.db(), id)?;
         if info.format != "pdf" {
             return Err(AppError::user("invalid", "Apenas PDFs aceitam capa renderizada pela interface."));
@@ -459,8 +435,6 @@ pub async fn save_pdf_cover(state: S<'_>, id: i64, image: Vec<u8>, page_count: O
             }
             Err(e) => library::set_cover(&db, id, "placeholder", None, None, Some(&e), COVER_PARAMS_VERSION)?,
         }
-        drop(db);
-        library_changed(c);
         Ok(())
     })
     .await
@@ -468,11 +442,9 @@ pub async fn save_pdf_cover(state: S<'_>, id: i64, image: Vec<u8>, page_count: O
 
 #[tauri::command]
 pub async fn report_pdf_cover_failure(state: S<'_>, id: i64, message: String) -> AppResult<()> {
-    blocking(&state, move |c| {
+    changing(&state, move |c| {
         let msg: String = message.chars().take(300).collect();
-        library::set_cover(&c.db(), id, "placeholder", None, None, Some(&msg), COVER_PARAMS_VERSION)?;
-        library_changed(c);
-        Ok(())
+        library::set_cover(&c.db(), id, "placeholder", None, None, Some(&msg), COVER_PARAMS_VERSION)
     })
     .await
 }
@@ -558,42 +530,22 @@ pub async fn rename_collection(state: S<'_>, id: i64, name: String) -> AppResult
 
 #[tauri::command]
 pub async fn delete_collection(state: S<'_>, id: i64) -> AppResult<()> {
-    blocking(&state, move |c| {
-        library::delete_collection(&c.db(), id)?;
-        library_changed(c);
-        Ok(())
-    })
-    .await
+    changing(&state, move |c| library::delete_collection(&c.db(), id)).await
 }
 
 #[tauri::command]
 pub async fn set_comic_collections(state: S<'_>, comic_id: i64, collection_ids: Vec<i64>) -> AppResult<()> {
-    blocking(&state, move |c| {
-        library::set_comic_collections(&mut c.db(), comic_id, &collection_ids)?;
-        library_changed(c);
-        Ok(())
-    })
-    .await
+    changing(&state, move |c| library::set_comic_collections(&mut c.db(), comic_id, &collection_ids)).await
 }
 
 #[tauri::command]
 pub async fn add_to_collection(state: S<'_>, collection_id: i64, comic_ids: Vec<i64>) -> AppResult<()> {
-    blocking(&state, move |c| {
-        library::add_to_collection(&mut c.db(), collection_id, &comic_ids)?;
-        library_changed(c);
-        Ok(())
-    })
-    .await
+    changing(&state, move |c| library::add_to_collection(&mut c.db(), collection_id, &comic_ids)).await
 }
 
 #[tauri::command]
 pub async fn remove_from_collection(state: S<'_>, collection_id: i64, comic_id: i64) -> AppResult<()> {
-    blocking(&state, move |c| {
-        library::remove_from_collection(&c.db(), collection_id, comic_id)?;
-        library_changed(c);
-        Ok(())
-    })
-    .await
+    changing(&state, move |c| library::remove_from_collection(&c.db(), collection_id, comic_id)).await
 }
 
 // ---------------------------------------------------------------------------
@@ -607,14 +559,11 @@ pub struct StorageInfo {
     database_bytes: u64,
     covers_bytes: u64,
     pages_bytes: u64,
-    comic_count: i64,
-    missing_count: i64,
 }
 
 #[tauri::command]
 pub async fn storage_info(state: S<'_>) -> AppResult<StorageInfo> {
     blocking(&state, |c| {
-        let (comic_count, missing_count) = library::counts(&c.db())?;
         let db_bytes = ["prancha.db", "prancha.db-wal", "prancha.db-shm"]
             .iter()
             .filter_map(|f| std::fs::metadata(c.paths.data_dir.join(f)).ok())
@@ -625,8 +574,6 @@ pub async fn storage_info(state: S<'_>) -> AppResult<StorageInfo> {
             database_bytes: db_bytes,
             covers_bytes: dir_size(&c.paths.covers),
             pages_bytes: c.pages.cache_size(),
-            comic_count,
-            missing_count,
         })
     })
     .await
@@ -635,7 +582,7 @@ pub async fn storage_info(state: S<'_>) -> AppResult<StorageInfo> {
 /// Apaga as miniaturas em cache e agenda a recriação. Progresso e HQs originais não são tocados.
 #[tauri::command]
 pub async fn clear_cover_cache(state: S<'_>) -> AppResult<u64> {
-    blocking(&state, |c| {
+    changing(&state, |c| {
         let freed = dir_size(&c.paths.covers);
         if let Ok(entries) = std::fs::read_dir(&c.paths.covers) {
             for e in entries.filter_map(Result::ok) {
@@ -644,7 +591,6 @@ pub async fn clear_cover_cache(state: S<'_>) -> AppResult<u64> {
         }
         library::reset_all_covers(&c.db())?;
         c.importer.enqueue_covers();
-        library_changed(c);
         Ok(freed)
     })
     .await
@@ -658,10 +604,9 @@ pub async fn clear_page_cache(state: S<'_>) -> AppResult<u64> {
 /// Refaz todas as capas (útil após trocar arquivos de lugar ou atualizar o app).
 #[tauri::command]
 pub async fn regenerate_covers(state: S<'_>) -> AppResult<()> {
-    blocking(&state, |c| {
+    changing(&state, |c| {
         library::reset_all_covers(&c.db())?;
         c.importer.enqueue_covers();
-        library_changed(c);
         Ok(())
     })
     .await

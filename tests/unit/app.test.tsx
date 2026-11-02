@@ -64,9 +64,9 @@ function setup() {
         case "list_collections":
           return [];
         case "get_app_info":
-          return { name: "Prancha", version: "0.1.0", tauriVersion: "2", dataDir: "C:/dados", schemaVersion: 1, supportedExtensions: [] };
+          return { version: "0.1.0", tauriVersion: "2", schemaVersion: 1 };
         case "storage_info":
-          return { dataDir: "C:/dados", databaseBytes: 1024, coversBytes: 2048, pagesBytes: 0, comicCount: comics.length, missingCount: 0 };
+          return { dataDir: "C:/dados", databaseBytes: 1024, coversBytes: 2048, pagesBytes: 0 };
         default:
           return null;
       }
@@ -176,7 +176,7 @@ describe("biblioteca", () => {
   it("remover pede confirmação e não apaga o original por padrão", async () => {
     settings.onboarding = { status: "completed", step: 4, comicId: null };
     comics = [comic];
-    overrides.remove_comic = () => ({ removed: true, trashed: false });
+    overrides.remove_comic = () => ({ trashed: false });
     const user = userEvent.setup();
     render(<App />);
     await user.click(await screen.findByRole("button", { name: "Minha biblioteca" }));
