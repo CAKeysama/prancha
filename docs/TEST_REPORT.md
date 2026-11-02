@@ -121,7 +121,12 @@ Instala um pacote NSIS assinado e atualiza da 9.8.0 para a 9.8.1. O pacote, a as
 ### Build de produção e GitHub real
 O build com a chave de produção gerou os 2 pacotes e as 2 assinaturas. O `latest.json` traz `windows-x86_64`, `windows-x86_64-nsis` e `windows-x86_64-msi`. Nas três entradas, o SHA-256 confere, a chave é a mesma da configuração e a assinatura declara `version:0.2.0`.
 
-Esse executável também rodou contra o GitHub real, com dados isolados. O histórico veio da API com as notas de v0.1.0, v0.1.1 e v0.1.2. O `latest.json` ainda não existe nas releases publicadas: a consulta falhou como previsto, nenhuma janela abriu, e a verificação manual disse que não conseguiu falar com o GitHub.
+Antes da publicação, esse executável rodou contra o GitHub real, com dados isolados. O histórico veio da API com as notas de v0.1.0, v0.1.1 e v0.1.2. O `latest.json` ainda não existia: a consulta falhou como previsto e nenhuma janela abriu.
+
+### Release publicada
+Em 2026-11-02, a v0.2.0 foi conferida pelos endereços públicos. Os instaladores, as assinaturas, o `SHA256SUMS.txt` e o `latest.json` passaram nas mesmas verificações, incluindo as assinaturas contra a chave pública do aplicativo e a recusa de um arquivo adulterado.
+
+O `prancha.exe` extraído do MSI publicado rodou sem instalar, com dados isolados, e leu o `latest.json` publicado. Ele não acusou versão nova nem erro, nenhuma janela abriu, o `updates.log` ficou vazio e a seção Atualizações mostrou as quatro versões, com a v0.2.0 como instalada.
 
 ## Validação visual
 
@@ -158,7 +163,7 @@ As capturas das atualizações ficam em `tests/.tmp/update-shots/`, fora do git,
 Em uma execução do E2E, o leitor avançou páginas sozinho após as teclas (página 5 → 11 em alguns segundos). Repetições com captura de todos os eventos de teclado e roda do mouse não reproduziram o problema (três teclas → página 4, como esperado) e o cenário passou nas três execuções seguintes. A hipótese mais provável é a roda do mouse real sobre a janela visível durante o teste (a roda vira a página). Fica registrado como ponto a observar.
 
 ## Não verificado / limitações
-- **Atualização pelo GitHub:** nenhum app instalado baixou uma atualização das releases, porque isso exige duas versões publicadas com o atualizador. A etapa de publicação com o `latest.json` também ainda não rodou. Até a 0.2.0 sair, a verificação manual diz que não conseguiu falar com o GitHub, já que o arquivo ainda não existe.
+- **Atualização pelo GitHub:** nenhum app instalado baixou uma atualização das releases, porque isso exige duas versões publicadas com o atualizador. A primeira oportunidade é a versão seguinte à 0.2.0.
 - **Atualização por MSI:** nunca executada, porque exige administrador. O caminho testado é o do NSIS. Com o MSI, a confirmação do Windows vem depois que o app fechou, e uma recusa só aparece na abertura seguinte.
 - **Sem espaço em disco e sem permissão:** só a tradução das mensagens de erro foi testada. Falha ao reiniciar foi simulada a partir do estado pendente salvo.
 - **Assinatura do Windows:** os instaladores não têm Authenticode, então o SmartScreen pode pedir confirmação.
