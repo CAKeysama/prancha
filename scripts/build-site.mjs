@@ -1,51 +1,41 @@
-// Monta a landing page em site/: copia instaladores, fontes, ícone e captura,
-// e atualiza no HTML o tamanho e os SHA-256 dos instaladores a partir dos arquivos reais.
-// Uso: npm run site:build  (depois de `npm run tauri build`)
-import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+// Monta o site em site/: fontes, ícone, capturas e a página de downloads,
+// e atualiza no HTML os links, o tamanho e os SHA-256 a partir da release publicada no GitHub.
+// Uso: npm run site:build  (depois de publicar a release da versão atual)
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { buildDownloads, megabytes } from "./build-downloads.mjs";
+import { ROOT } from "./changelog.mjs";
 
-const root = join(import.meta.dirname, "..");
-const site = join(root, "site");
-const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
-const version = pkg.version;
-const exe = `Prancha_${version}_x64-setup.exe`;
-const msi = `Prancha_${version}_x64_pt-BR.msi`;
+const site = join(ROOT, "site");
+const { version } = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
 
-const target = process.env.CARGO_TARGET_DIR ?? join(root, "src-tauri", "target");
-const sources = [join(target, "release", "bundle"), join(root, "artifacts", "installer")];
-function findInstaller(name, sub) {
-  for (const base of sources) {
-    for (const p of [join(base, sub, name), join(base, name)]) if (existsSync(p)) return p;
-  }
-  throw new Error(`Instalador ${name} não encontrado. Rode "npm run tauri build".`);
+const manifest = await buildDownloads();
+const release = manifest.releases[0];
+if (release?.version !== version) {
+  throw new Error(`A versão ${version} ainda não foi publicada: a release mais recente é ${release?.version ?? "nenhuma"}.`);
 }
+const exe = release.assets.find((a) => a.name.endsWith("-setup.exe"));
+const msi = release.assets.find((a) => a.name.endsWith(".msi"));
+if (!exe?.sha256 || !msi?.sha256) throw new Error(`A release ${release.tag} está sem instaladores ou sem SHA256SUMS.txt.`);
 
-for (const dir of ["downloads", "fonts", "assets"]) mkdirSync(join(site, dir), { recursive: true });
-const copy = (from, to) => copyFileSync(join(root, from), join(site, to));
-copyFileSync(findInstaller(exe, "nsis"), join(site, "downloads", exe));
-copyFileSync(findInstaller(msi, "msi"), join(site, "downloads", msi));
+for (const dir of ["fonts", "assets"]) mkdirSync(join(site, dir), { recursive: true });
+const copy = (from, to) => copyFileSync(join(ROOT, from), join(site, to));
 for (const w of ["400", "600"]) {
   copy(`node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-${w}-normal.woff2`, `fonts/ibm-plex-sans-${w}.woff2`);
 }
 copy("assets/app-icon.svg", "assets/favicon.svg");
-// As imagens de vitrine podem ser trocadas à mão: só usa as capturas dos testes se ainda não existirem.
+// As imagens de vitrine ficam fora do git e podem ser trocadas à mão: sem elas, usa as capturas dos testes.
 const copyIfMissing = (from, to) => existsSync(join(site, to)) || copy(from, to);
 copyIfMissing("artifacts/screenshots/06-biblioteca-capas-e-progresso.png", "assets/biblioteca.png");
 copyIfMissing("artifacts/screenshots/11b-biblioteca-tema-claro.png", "assets/biblioteca-claro.png");
 
-const sha = (f) => createHash("sha256").update(readFileSync(f)).digest("hex");
-const exeFile = join(site, "downloads", exe);
-const msiFile = join(site, "downloads", msi);
-const mb = (statSync(exeFile).size / 1024 / 1024).toLocaleString("pt-BR", { maximumFractionDigits: 1 });
-
 let html = readFileSync(join(site, "index.html"), "utf8");
 html = html
-  .replace(/Prancha_[\d.]+_x64-setup\.exe/g, exe)
-  .replace(/Prancha_[\d.]+_x64_pt-BR\.msi/g, msi)
+  .replace(/href="[^"]*Prancha_[\d.]+_x64-setup\.exe"/g, `href="${exe.url}"`)
+  .replace(/href="[^"]*Prancha_[\d.]+_x64_pt-BR\.msi"/g, `href="${msi.url}"`)
   .replace(/Prancha [\d.]+ · Código aberto/, `Prancha ${version} · Código aberto`)
-  .replace(/· [\d,]+ MB ·/, `· ${mb} MB ·`)
-  .replace(/(EXE <code>)[0-9a-f]{64}/, `$1${sha(exeFile)}`)
-  .replace(/(MSI <code>)[0-9a-f]{64}/, `$1${sha(msiFile)}`);
+  .replace(/· [\d,]+ MB ·/, `· ${megabytes(exe.size)} ·`)
+  .replace(/(EXE <code>)[0-9a-f]{64}/, `$1${exe.sha256}`)
+  .replace(/(MSI <code>)[0-9a-f]{64}/, `$1${msi.sha256}`);
 writeFileSync(join(site, "index.html"), html);
-console.log(`site/ pronto: Prancha ${version}, instalador ${mb} MB`);
+console.log(`site/ pronto: Prancha ${version}, instalador ${megabytes(exe.size)}`);

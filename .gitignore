@@ -11,4 +11,7 @@ tests/real/
 .vscode/
 public/pdfjs/
 artifacts/installer/
-site/downloads/
+site/downloads.html
+site/releases.json
+site/assets/biblioteca*.png
+_site/

@@ -3,17 +3,20 @@
   "cleanUrls": true,
   "headers": [
     {
-      "source": "/downloads/(.*)",
-      "headers": [
-        { "key": "Content-Disposition", "value": "attachment" },
-        { "key": "Content-Type", "value": "application/octet-stream" },
-        { "key": "Cache-Control", "value": "public, max-age=3600, must-revalidate" },
-        { "key": "X-Content-Type-Options", "value": "nosniff" }
-      ]
-    },
-    {
       "source": "/(fonts|assets)/(.*)",
-      "headers": [{ "key": "Cache-Control", "value": "public, max-age=604800" }]
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=604800"
+        }
+      ]
+    }
+  ],
+  "redirects": [
+    {
+      "source": "/downloads/Prancha_:version(\\d+\\.\\d+\\.\\d+)_:file",
+      "destination": "https://github.com/CAKeysama/prancha/releases/download/v:version/Prancha_:version\\_:file",
+      "permanent": false
     }
   ]
 }

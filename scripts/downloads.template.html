@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Baixar o Prancha — leitor de quadrinhos para Windows</title>
+    <meta name="description" content="Baixe o Prancha, leitor e organizador de quadrinhos para Windows. Instaladores, requisitos e notas de todas as versões." />
+    <meta name="color-scheme" content="dark light" />
+    <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+    <style>
+      @font-face {
+        font-family: "IBM Plex Sans";
+        font-weight: 400;
+        font-display: swap;
+        src: url("fonts/ibm-plex-sans-400.woff2") format("woff2");
+      }
+      @font-face {
+        font-family: "IBM Plex Sans";
+        font-weight: 600;
+        font-display: swap;
+        src: url("fonts/ibm-plex-sans-600.woff2") format("woff2");
+      }
+
+      /* Mesmos tokens do aplicativo (src/styles/index.css) e do site. */
+      :root {
+        color-scheme: dark;
+        --bg: #0d1117;
+        --surface: #161b22;
+        --elevated: #21262d;
+        --border: #30363d;
+        --text: #f0f6fc;
+        --muted: #8b949e;
+        --accent: #2f81f7;
+        --accent-emphasis: #1f6feb;
+        --on-emphasis: #ffffff;
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          color-scheme: light;
+          --bg: #ffffff;
+          --surface: #f6f8fa;
+          --elevated: #ffffff;
+          --border: #d1d9e0;
+          --text: #1f2328;
+          --muted: #59636e;
+          --accent: #0969da;
+          --accent-emphasis: #0969da;
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 400 16px/1.55 "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: underline;
+      }
+      :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 3px;
+        border-radius: 6px;
+      }
+      code {
+        font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+        font-size: 0.86em;
+        word-break: break-all;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .wrap {
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 0 24px;
+      }
+
+      .site-header {
+        border-bottom: 1px solid var(--border);
+      }
+      .site-header .wrap {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        height: 72px;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--text);
+        font-weight: 600;
+        font-size: 18px;
+        letter-spacing: -0.01em;
+      }
+      .brand:hover {
+        text-decoration: none;
+      }
+      .brand svg {
+        width: 28px;
+        height: 28px;
+      }
+      .site-header nav {
+        display: flex;
+        gap: 20px;
+        font-size: 14px;
+      }
+      .site-header nav a {
+        color: var(--muted);
+      }
+      .site-header nav a:hover {
+        color: var(--text);
+        text-decoration: none;
+      }
+
+      .intro {
+        padding: 64px 0 8px;
+        text-align: center;
+      }
+      h1 {
+        margin: 0;
+        font-size: clamp(34px, 6vw, 52px);
+        line-height: 1.08;
+        font-weight: 600;
+        letter-spacing: -0.04em;
+        text-wrap: balance;
+      }
+      .intro p {
+        margin: 14px auto 0;
+        max-width: 44ch;
+        font-size: 18px;
+        color: var(--muted);
+        text-wrap: balance;
+      }
+
+      .latest {
+        margin-top: 32px;
+        padding: 28px 24px;
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        background: var(--surface);
+        text-align: center;
+      }
+      .eyebrow {
+        margin: 0 0 8px;
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+      .latest h2 {
+        margin: 0;
+        font-size: 28px;
+        font-weight: 600;
+        letter-spacing: -0.03em;
+      }
+      .meta {
+        margin: 6px 0 20px;
+        color: var(--muted);
+        font-size: 14px;
+        text-wrap: balance;
+      }
+      .cta-actions {
+        display: flex;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+      .button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        min-height: 48px;
+        padding: 0 22px;
+        border: 1px solid transparent;
+        border-radius: 999px;
+        background: var(--accent-emphasis);
+        color: var(--on-emphasis);
+        font-weight: 600;
+        font-size: 15px;
+        transition:
+          filter 120ms ease,
+          transform 100ms ease;
+      }
+      .button:hover {
+        filter: brightness(1.1);
+        text-decoration: none;
+      }
+      .button:active {
+        transform: scale(0.98);
+      }
+      .button svg {
+        width: 20px;
+        height: 20px;
+      }
+      .button-secondary {
+        border-color: var(--border);
+        background: var(--elevated);
+        color: var(--text);
+      }
+      summary {
+        cursor: pointer;
+      }
+      .hashes {
+        margin-top: 18px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .hashes p {
+        margin: 10px 0 0;
+      }
+
+      section.block {
+        padding-top: 56px;
+      }
+      section.block > h2 {
+        margin: 0 0 16px;
+        font-size: 22px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+      }
+      .columns {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 32px;
+      }
+      .columns h2 {
+        margin: 0 0 12px;
+        font-size: 22px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+      }
+      .columns ul,
+      .columns ol {
+        margin: 0;
+        padding-left: 20px;
+      }
+      .columns li + li {
+        margin-top: 8px;
+      }
+      .note {
+        margin: 14px 0 0;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .entry {
+        border: 1px solid var(--border);
+        border-radius: 14px;
+      }
+      .entry + .entry {
+        margin-top: 10px;
+      }
+      .entry-current {
+        border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+      }
+      .entry summary {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 4px 12px;
+        padding: 14px 18px;
+        border-radius: 14px;
+      }
+      .entry summary:hover {
+        background: var(--surface);
+      }
+      .entry-version {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 600;
+        font-size: 17px;
+      }
+      .entry time {
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .tag {
+        padding: 1px 8px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .entry-body {
+        padding: 2px 18px 18px;
+      }
+      .entry-body > p:first-child {
+        margin-top: 0;
+      }
+      .entry-body h3 {
+        margin: 18px 0 6px;
+        font-size: 14px;
+        font-weight: 600;
+      }
+      .entry-body ul {
+        margin: 0;
+        padding-left: 20px;
+      }
+      .entry-body li + li {
+        margin-top: 6px;
+      }
+      .entry-body .files {
+        padding: 0;
+        list-style: none;
+      }
+      .files a {
+        word-break: break-all;
+      }
+      .entry-link {
+        margin: 16px 0 0;
+        font-size: 14px;
+      }
+
+      footer {
+        margin-top: 64px;
+        padding: 24px 0 40px;
+        border-top: 1px solid var(--border);
+        color: var(--muted);
+        font-size: 13px;
+      }
+      footer .wrap {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 8px 20px;
+      }
+      footer nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 16px;
+      }
+      footer a {
+        color: inherit;
+      }
+
+      @media (max-width: 620px) {
+        .wrap {
+          padding: 0 16px;
+        }
+        .site-header .wrap {
+          height: 64px;
+        }
+        .intro {
+          padding-top: 44px;
+        }
+        .intro p {
+          font-size: 17px;
+        }
+        .latest {
+          padding: 24px 16px;
+        }
+        .columns {
+          grid-template-columns: 1fr;
+        }
+        .cta-actions {
+          flex-direction: column;
+        }
+        .cta-actions .button {
+          width: 100%;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .button {
+          transition: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="wrap">
+        <a class="brand" href="{{SITE_URL}}" aria-label="Prancha, site oficial">
+          <svg viewBox="0 0 1024 1024" aria-hidden="true">
+            <rect x="64" y="64" width="896" height="896" rx="200" fill="var(--accent-emphasis)" />
+            <rect x="232" y="224" width="250" height="576" rx="36" fill="#fff" />
+            <rect x="542" y="224" width="250" height="258" rx="36" fill="#fff" />
+            <rect x="542" y="542" width="250" height="258" rx="36" fill="#fff" fill-opacity="0.72" />
+          </svg>
+          Prancha
+        </a>
+        <nav aria-label="Links do projeto">
+          <a href="{{SITE_URL}}">Site oficial</a>
+          <a href="{{REPO_URL}}">GitHub</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <section class="intro">
+        <h1>Baixe o Prancha</h1>
+        <p>Organize e leia seus quadrinhos, mangás e graphic novels no Windows. Sem conta e sem internet.</p>
+      </section>
+
+      {{LATEST}}
+
+      <section class="block columns" aria-label="Requisitos e instalação">
+        <div>
+          <h2>Requisitos</h2>
+          <ul>
+            <li>Windows 10 ou 11 de 64 bits.</li>
+            <li>WebView2, que já vem no Windows 11. Se faltar, o instalador baixa.</li>
+            <li>Conta e internet não são necessárias para ler.</li>
+          </ul>
+        </div>
+        <div>
+          <h2>Instalação</h2>
+          <ol>
+            <li>Baixe o instalador e abra o arquivo.</li>
+            <li>Se o Windows SmartScreen avisar, escolha "Mais informações" e "Executar assim mesmo". Os instaladores ainda não têm assinatura digital.</li>
+            <li>Abra o Prancha e adicione seus quadrinhos.</li>
+          </ol>
+          <p class="note">Para atualizar, instale a nova versão por cima: a biblioteca e o progresso são mantidos. O MSI instala para todos os usuários do computador e pede permissão de administrador.</p>
+        </div>
+      </section>
+
+      <section class="block" aria-labelledby="historico">
+        <h2 id="historico">Histórico de versões</h2>
+        {{HISTORY}}
+      </section>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        <span>Prancha · Código aberto (MIT)</span>
+        <nav aria-label="Documentação">
+          <a href="{{REPO_URL}}#readme">Documentação</a>
+          <a href="{{REPO_URL}}/blob/main/CHANGELOG.md">Histórico completo</a>
+          <a href="{{REPO_URL}}/releases">Releases</a>
+        </nav>
+      </div>
+    </footer>
+  </body>
+</html>
