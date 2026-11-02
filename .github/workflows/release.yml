@@ -49,23 +49,31 @@ jobs:
           restore-keys: rust-release-${{ runner.os }}-
 
       - run: npm ci
-      - run: npm run tauri build
 
-      - name: Reúne os instaladores e calcula os SHA-256
+      # Sem a chave, a compilação falha aqui: nenhuma versão sai sem assinatura. Ver docs/RELEASING.md.
+      - run: npm run tauri build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      - name: Reúne os instaladores, as assinaturas e os SHA-256
         shell: bash
         run: |
           version="$(node -p "require('./package.json').version")"
           mkdir installers
-          cp "src-tauri/target/release/bundle/nsis/Prancha_${version}_x64-setup.exe" "src-tauri/target/release/bundle/msi/Prancha_${version}_x64_pt-BR.msi" installers/
+          for file in "src-tauri/target/release/bundle/nsis/Prancha_${version}_x64-setup.exe" "src-tauri/target/release/bundle/msi/Prancha_${version}_x64_pt-BR.msi"; do
+            cp "$file" "$file.sig" installers/
+          done
+          node scripts/updater-manifest.mjs "$version" installers
           cd installers
-          for file in *; do
+          for file in *.exe *.msi; do
             # Um instalador de verdade tem vários MB: menos que isso é build quebrado.
             if [ "$(stat -c %s "$file")" -lt 1000000 ]; then
               echo "::error::$file é pequeno demais."
               exit 1
             fi
           done
-          sha256sum -b -- Prancha_* | sed 's/ \*/  /' > SHA256SUMS.txt
+          sha256sum -b -- *.exe *.msi | sed 's/ \*/  /' > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
       - uses: actions/upload-artifact@v7
@@ -101,7 +109,10 @@ jobs:
         run: |
           version="${GITHUB_REF_NAME#v}"
           node scripts/changelog.mjs "$version" installers/SHA256SUMS.txt > notes.md
-          gh release create "$GITHUB_REF_NAME" installers/* --title "Prancha $GITHUB_REF_NAME" --notes-file notes.md --verify-tag
+          # Uma versão com sufixo (1.3.0-beta.1) nunca vira a mais recente, e por isso não chega aos aplicativos instalados.
+          preview=""
+          case "$version" in *-*) preview="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" installers/* --title "Prancha $GITHUB_REF_NAME" --notes-file notes.md --verify-tag $preview
 
       # Releases criadas por um workflow não disparam outros workflows: a página é atualizada de forma explícita.
       - name: Atualiza a página de downloads

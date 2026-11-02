@@ -16,6 +16,21 @@ describe("versão do projeto", () => {
   });
 });
 
+describe("atualizador", () => {
+  it("a configuração publicada só aceita pacote assinado, por HTTPS, das releases oficiais", () => {
+    const updater = tauri.plugins.updater;
+    expect(updater.endpoints).toEqual(["https://github.com/CAKeysama/prancha/releases/latest/download/latest.json"]);
+    expect(updater.requireSignedVersion).toBe(true);
+    expect(updater).not.toHaveProperty("dangerousInsecureTransportProtocol");
+    expect(updater).not.toHaveProperty("allowDowngrades");
+    expect(tauri.bundle.createUpdaterArtifacts).toBe(true);
+  });
+
+  it("a interface não fala com a internet: a CSP não libera endereços externos", () => {
+    expect(tauri.app.security.csp["connect-src"]).not.toMatch(/https:|github/);
+  });
+});
+
 describe("changelog", () => {
   const sample = `# Histórico
 

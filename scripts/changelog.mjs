@@ -21,7 +21,7 @@ export function parseChangelog(text) {
   let section;
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim();
-    const head = /^## \[(\d+\.\d+\.\d+)\] - (\d{4}-\d{2}-\d{2})$/.exec(line);
+    const head = /^## \[(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)\] - (\d{4}-\d{2}-\d{2})$/.exec(line);
     if (head) {
       version = { version: head[1], date: head[2], summary: "", sections: [] };
       section = undefined;
