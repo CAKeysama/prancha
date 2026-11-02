@@ -5,6 +5,7 @@ pub mod core;
 pub mod covers;
 pub mod db;
 pub mod error;
+pub mod extensions;
 pub mod formats;
 pub mod guided;
 pub mod import;
