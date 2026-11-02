@@ -10,6 +10,7 @@ use crate::db;
 use crate::error::{AppError, AppResult};
 use crate::extensions::net::Net;
 use crate::extensions::runtime::SourceEngine;
+use crate::extensions::sources::{CoverGate, Requests};
 use crate::import::{EVENT_LIBRARY, Emit, Importer};
 use crate::library;
 use crate::pages::PageService;
@@ -46,6 +47,8 @@ pub struct Core {
     pub net: Arc<Net>,
     /// Criado no primeiro uso: quem não usa extensões não paga por ele e nada aqui impede o app de abrir.
     engine: OnceLock<Result<SourceEngine, String>>,
+    pub requests: Requests,
+    pub cover_gate: CoverGate,
 }
 
 impl Core {
@@ -57,7 +60,7 @@ impl Core {
         let importer = Importer::spawn(move || db::open(&db_path), paths.covers.clone(), emit.clone())?;
         // Capas pendentes ou geradas com parâmetros antigos são refeitas em segundo plano.
         importer.enqueue_covers();
-        Ok(Core { pages: PageService::new(paths.pages_cache.clone()), paths, db: Mutex::new(conn), importer, emit, guided_lock: Mutex::new(()), net: Arc::new(Net::from_env()), engine: OnceLock::new() })
+        Ok(Core { pages: PageService::new(paths.pages_cache.clone()), paths, db: Mutex::new(conn), importer, emit, guided_lock: Mutex::new(()), net: Arc::new(Net::from_env()), engine: OnceLock::new(), requests: Requests::default(), cover_gate: CoverGate::default() })
     }
 
     pub fn db(&self) -> MutexGuard<'_, Connection> {

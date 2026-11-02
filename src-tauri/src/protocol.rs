@@ -4,6 +4,7 @@
 //! - `/cover/<id>`        miniatura da capa
 //! - `/page/<id>/<i>`     página `i` (0-based) de HQs de imagens
 //! - `/file/<id>`         o PDF original, com suporte a `Range` para o PDF.js
+//! - `/online-cover/<id>` miniatura de uma obra de uma fonte, baixada aqui e guardada em cache
 
 use std::io::{Read, Seek, SeekFrom};
 
@@ -11,6 +12,7 @@ use tauri::http::{Request, Response, StatusCode, header};
 
 use crate::core::Core;
 use crate::error::{AppError, AppResult};
+use crate::extensions::sources;
 use crate::library;
 
 type Resp = Response<Vec<u8>>;
@@ -55,7 +57,8 @@ pub fn handle(core: &Core, req: &Request<Vec<u8>>) -> Resp {
         ("cover", Some(id), _) => cover(core, id),
         ("page", Some(id), Some(index)) => page(core, id, index),
         ("file", Some(id), _) => pdf_file(core, id, req),
-        ("cover" | "page" | "file", ..) => return error(StatusCode::BAD_REQUEST, "bad_request", "Requisição inválida."),
+        ("online-cover", Some(id), _) => online_cover(core, id),
+        ("cover" | "page" | "file" | "online-cover", ..) => return error(StatusCode::BAD_REQUEST, "bad_request", "Requisição inválida."),
         _ => return error(StatusCode::NOT_FOUND, "not_found", "Recurso não encontrado."),
     };
     served.unwrap_or_else(|e| error(status_for(e.code()), e.code(), &e.to_string()))
@@ -82,6 +85,14 @@ fn cover(core: &Core, id: i64) -> AppResult<Resp> {
             .body(bytes)
             .unwrap(),
         Err(_) => error(StatusCode::NOT_FOUND, "no_cover", "A miniatura não está mais no cache."),
+    })
+}
+
+fn online_cover(core: &Core, id: i64) -> AppResult<Resp> {
+    Ok(match sources::cover(core, id)? {
+        // A fonte pode trocar a capa de uma obra: a validade é curta, ao contrário das capas da biblioteca.
+        Some(bytes) => base(StatusCode::OK).header(header::CONTENT_TYPE, "image/jpeg").header(header::CACHE_CONTROL, "public, max-age=3600").body(bytes).unwrap(),
+        None => error(StatusCode::NOT_FOUND, "no_cover", "Esta obra não possui capa disponível."),
     })
 }
 
