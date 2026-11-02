@@ -7,7 +7,8 @@ import { Segmented, Select, Switch, TextField } from "../../components/Form";
 import { PageHeader } from "../../components/PageHeader";
 import { useToast } from "../../components/Toast";
 import { cn } from "../../components/cn";
-import { formatBytes } from "../../domain/progress";
+import { formatBytes, formatDate } from "../../domain/progress";
+import { parseNotes, type ReleaseInfo, type UpdatesHistory } from "../../domain/updates";
 import { FIT_LABELS, MODE_LABELS } from "../../domain/reader";
 import type { Settings } from "../../domain/settings";
 import {
@@ -25,6 +26,8 @@ import { onCoversProgress } from "../../services/events";
 import { useSettings } from "../../app/settings-context";
 import { useNav } from "../../app/navigation";
 import { useOnboarding } from "../onboarding/onboarding-context";
+import { GithubReleaseButton, ReleaseNotes } from "../updates/UpdateDialogs";
+import { useUpdates } from "../updates/updates-context";
 import { APP_DESCRIPTION, APP_NAME } from "../../app/config";
 import licenses from "../../generated/licenses.json";
 
@@ -33,6 +36,7 @@ const SECTIONS = [
   { id: "leitura", label: "Leitura" },
   { id: "biblioteca", label: "Biblioteca" },
   { id: "armazenamento", label: "Armazenamento" },
+  { id: "atualizacoes", label: "Atualizações" },
   { id: "geral", label: "Geral" },
 ] as const;
 
@@ -277,6 +281,82 @@ function StorageSection() {
   );
 }
 
+function ReleaseRow({ release, installed }: { release: ReleaseInfo; installed: boolean }) {
+  const notes = parseNotes(release.notes);
+  const date = notes.released ?? (release.date ? formatDate(Date.parse(release.date)) : "");
+  return (
+    <li>
+      <details className="group">
+        <summary className="flex cursor-pointer items-center gap-2 px-3 py-2 hover:bg-hover">
+          <span className="font-mono text-sm font-semibold">v{release.version}</span>
+          {installed && <span className="rounded-full bg-accent-subtle px-2 text-xs font-medium text-accent-fg">instalada</span>}
+          <span className="ml-auto text-sm text-muted">{date}</span>
+        </summary>
+        <div className="space-y-3 border-t border-border px-3 py-3">
+          <ReleaseNotes notes={notes} />
+          <GithubReleaseButton version={release.version} />
+        </div>
+      </details>
+    </li>
+  );
+}
+
+function UpdatesSection() {
+  const { snapshot, check, openOffer } = useUpdates();
+  const [checking, setChecking] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+  const [history, setHistory] = useState<UpdatesHistory | null>(null);
+  const loadHistory = (force: boolean) => void api.updatesHistory(force).then(setHistory).catch(() => undefined);
+  useEffect(() => loadHistory(false), []);
+  const verify = async () => {
+    setChecking(true);
+    setResult(null);
+    try {
+      const next = await check();
+      setResult(next.available ? null : "O Prancha está na versão mais recente.");
+      loadHistory(true);
+    } catch (e) {
+      setResult(errorMessage(e));
+    } finally {
+      setChecking(false);
+    }
+  };
+  const available = snapshot?.available;
+  const releases = history?.releases ?? [];
+  return (
+    <Section id="atualizacoes" title="Atualizações">
+      <SettingRow label="Versão instalada" description={snapshot?.updatedAt ? `Atualizada em ${formatDate(snapshot.updatedAt)}.` : undefined}>
+        <span className="font-mono text-base">{snapshot ? `v${snapshot.currentVersion}` : "…"}</span>
+      </SettingRow>
+      <SettingRow
+        label={available ? `Nova versão: v${available.version}` : "Procurar nova versão"}
+        description={
+          <span role="status">{result ?? (!available && snapshot?.lastCheckAt ? `Última verificação em ${formatDate(snapshot.lastCheckAt)}.` : "")}</span>
+        }
+      >
+        <div className="flex flex-wrap gap-2">
+          <Button icon={RefreshCw} loading={checking} onClick={() => void verify()}>
+            Verificar atualizações
+          </Button>
+          {available && (
+            <Button variant="primary" onClick={openOffer}>
+              Atualizar agora
+            </Button>
+          )}
+        </div>
+      </SettingRow>
+      {history?.stale && <p className="text-sm text-muted">{releases.length ? "Sem conexão: estas são as notas guardadas neste computador." : "Não foi possível carregar as versões agora."}</p>}
+      {releases.length > 0 && (
+        <ul aria-label="Versões publicadas" className="divide-y divide-border rounded-md border border-border bg-surface">
+          {releases.map((release) => (
+            <ReleaseRow key={release.version} release={release} installed={release.version === snapshot?.currentVersion} />
+          ))}
+        </ul>
+      )}
+    </Section>
+  );
+}
+
 export function SettingsScreen() {
   const { settings, effectiveTheme } = useSettings();
   const save = useSave();
@@ -498,6 +578,8 @@ export function SettingsScreen() {
 
           <StorageSection />
 
+          <UpdatesSection />
+
           <Section id="geral" title="Geral">
             <SettingRow label="Idioma" description="No momento, a interface está disponível apenas em português do Brasil.">
               <span className="text-base">Português (Brasil)</span>
@@ -522,7 +604,7 @@ export function SettingsScreen() {
               <p className="flex items-center gap-2 font-semibold">
                 <HardDrive size={16} aria-hidden /> Sobre o {APP_NAME}
               </p>
-              <p className="mt-1 text-sm text-muted">{APP_DESCRIPTION}. Funciona totalmente no seu computador, sem conta nem internet.</p>
+              <p className="mt-1 text-sm text-muted">{APP_DESCRIPTION}. Funciona no seu computador, sem conta. A internet só é usada para procurar e baixar atualizações.</p>
               <dl className="mt-3 grid grid-cols-[160px_1fr] gap-y-1 text-sm">
                 <dt className="text-muted">Versão</dt>
                 <dd className="font-mono">{appInfo?.version ?? "…"}</dd>

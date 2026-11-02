@@ -1,6 +1,6 @@
 // Única porta de entrada para os comandos nativos. Erros chegam como { code, message } em português.
 
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, type Channel } from "@tauri-apps/api/core";
 import type {
   AppErrorInfo,
   AppInfo,
@@ -15,6 +15,7 @@ import type {
   StorageInfo,
 } from "../domain/types";
 import type { GuidedPage, GuidedRegion } from "../domain/guided";
+import type { UpdateProgress, UpdatesHistory, UpdatesSnapshot } from "../domain/updates";
 
 export class ApiError extends Error {
   code: string;
@@ -105,4 +106,13 @@ export const api = {
   clearPageCache: () => call<number>("clear_page_cache"),
   regenerateCovers: () => call<void>("regenerate_covers"),
   verifyLibrary: () => call<{ missing: number; restored: number }>("verify_library"),
+
+  updatesSnapshot: () => call<UpdatesSnapshot>("updates_snapshot"),
+  updatesCheck: () => call<UpdatesSnapshot>("updates_check"),
+  updatesDecline: (version: string) => call<void>("updates_decline", { version }),
+  updatesNotesShown: (version: string) => call<void>("updates_notes_shown", { version }),
+  updatesInstall: (onProgress: Channel<UpdateProgress>) => call<void>("updates_install", { onProgress }),
+  updatesCancel: () => call<void>("updates_cancel"),
+  updatesHistory: (force: boolean) => call<UpdatesHistory>("updates_history", { force }),
+  updatesOpenRelease: (version: string) => call<void>("updates_open_release", { version }),
 };

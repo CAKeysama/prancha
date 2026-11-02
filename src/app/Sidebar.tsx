@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { BookOpen, FolderHeart, History, House, Library, Settings, Star } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "../components/cn";
+import { Logo } from "../components/Logo";
 import { Tooltip } from "../components/Tooltip";
+import { UpdateIndicator } from "../features/updates/UpdateIndicator";
 import { APP_NAME } from "./config";
 import { useNav, type Route } from "./navigation";
 
@@ -23,17 +25,6 @@ function useNarrow(breakpoint = 960): boolean {
     return () => window.removeEventListener("resize", on);
   }, [breakpoint]);
   return narrow;
-}
-
-function Logo() {
-  return (
-    <svg viewBox="0 0 1024 1024" className="size-7 shrink-0" aria-hidden>
-      <rect x="64" y="64" width="896" height="896" rx="200" fill="var(--color-accent-emphasis)" />
-      <rect x="232" y="224" width="250" height="576" rx="36" fill="#fff" />
-      <rect x="542" y="224" width="250" height="258" rx="36" fill="#fff" />
-      <rect x="542" y="542" width="250" height="258" rx="36" fill="#fff" fillOpacity="0.72" />
-    </svg>
-  );
 }
 
 export function Sidebar({ current }: { current: Route["name"] }) {
@@ -78,7 +69,10 @@ export function Sidebar({ current }: { current: Route["name"] }) {
           <li key={i.route.name}>{item(i.route, i.label, i.icon)}</li>
         ))}
       </ul>
-      <div className="mt-auto border-t border-border pt-3">{item({ name: "settings" }, "Configurações", Settings)}</div>
+      <div className="mt-auto border-t border-border pt-3">
+        <UpdateIndicator narrow={narrow} />
+        {item({ name: "settings" }, "Configurações", Settings)}
+      </div>
     </nav>
   );
 }

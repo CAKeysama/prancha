@@ -10,6 +10,7 @@ const FOCUSABLE =
 export interface DialogProps {
   open: boolean;
   title: string;
+  icon?: ReactNode;
   description?: ReactNode;
   onClose: () => void;
   /** Diálogos de confirmação destrutiva podem impedir fechamento acidental. */
@@ -21,7 +22,7 @@ export interface DialogProps {
 }
 
 /** Diálogo modal acessível: foco preso, Esc fecha (quando permitido), foco volta ao gatilho. */
-export function Dialog({ open, title, description, onClose, dismissible = true, children, footer, size = "md", initialFocus }: DialogProps) {
+export function Dialog({ open, title, icon, description, onClose, dismissible = true, children, footer, size = "md", initialFocus }: DialogProps) {
   const titleId = useId();
   const descId = useId();
   const panel = useRef<HTMLDivElement>(null);
@@ -87,6 +88,7 @@ export function Dialog({ open, title, description, onClose, dismissible = true, 
         )}
       >
         <div className="flex items-start gap-3 border-b border-border px-4 py-3">
+          {icon}
           <div className="min-w-0 flex-1">
             <h2 id={titleId} className="text-lg font-semibold break-words">
               {title}

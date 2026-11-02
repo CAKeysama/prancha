@@ -14,6 +14,8 @@ import { OnboardingProvider } from "../features/onboarding/onboarding-context";
 import { OnboardingWizard } from "../features/onboarding/OnboardingWizard";
 import { ReaderScreen } from "../features/reader/ReaderScreen";
 import { SettingsScreen } from "../features/settings/SettingsScreen";
+import { UpdateDialogs } from "../features/updates/UpdateDialogs";
+import { UpdatesProvider } from "../features/updates/updates-context";
 import { LibraryEventsProvider } from "./library-events";
 import { NavigationProvider, sectionOf, useNav, type Route } from "./navigation";
 import { SettingsProvider, useSettings } from "./settings-context";
@@ -140,10 +142,13 @@ export function App() {
             <ImportProvider>
               <OnboardingProvider>
                 <ComicActionsProvider>
-                  <Shell />
-                  <ImportPanel />
-                  <OnboardingWizard />
-                  <PdfCoverWorker />
+                  <UpdatesProvider>
+                    <Shell />
+                    <ImportPanel />
+                    <OnboardingWizard />
+                    <PdfCoverWorker />
+                    <UpdateDialogs />
+                  </UpdatesProvider>
                 </ComicActionsProvider>
               </OnboardingProvider>
             </ImportProvider>
