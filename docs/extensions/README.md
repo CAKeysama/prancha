@@ -73,8 +73,6 @@ O endereço público é `https://raw.githubusercontent.com/CAKeysama/prancha/mai
 d21e 9bfc dcbb 02e8 14ff d812 dd5e 094a 22db 3660 182a d227 0b52 2c12 b64f 8cd5
 ```
 
-Esse endereço só responde depois que a pasta estiver na `main` do repositório.
-
 ## Para quem desenvolve
 
 - [Desenvolver uma extensão](DEVELOPMENT.md)

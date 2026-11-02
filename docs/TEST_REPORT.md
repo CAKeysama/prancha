@@ -1,6 +1,6 @@
-# Relatório de testes — Prancha 0.2.0 e extensões
+# Relatório de testes — Prancha 0.3.0
 
-Executado em 2026-11-02, com as extensões ainda sem versão publicada, em Windows 11 Pro 10.0.26200, WebView2 156, Rust 1.99.1 e Node 22.23.
+Executado em 2026-11-02, em Windows 11 Pro 10.0.26200, WebView2 156, Rust 1.99.1 e Node 22.23.
 
 ## Resumo
 
@@ -14,14 +14,14 @@ Executado em 2026-11-02, com as extensões ainda sem versão publicada, em Windo
 | Rust — páginas reais | `npm run test:rust`, que roda todas as suítes de Rust | ✅ 6/6, com as páginas reais locais |
 | Frontend — Vitest | `npm test` | ✅ 95/95 |
 | E2E no executável real | `npm run test:e2e` | ✅ 49/49 |
-| Atualização instalada de verdade | `npm run test:update -- --build` | ✅ 23 verificações na 0.2.0; não repetida nas extensões, porque `updates.rs` e `tauri.conf.json` não mudaram |
-| Instalador da 0.2.0 | `npm run tauri build` | ✅ NSIS e MSI gerados, com 2 assinaturas; verificação abaixo |
+| Atualização instalada de verdade | `npm run test:update -- --build` | ⚠️ 6 de 7 execuções passaram nas 23 verificações; 1 falhou no favorito, sem causa encontrada (ver limitações) |
+| Instaladores da 0.3.0 | Automação do GitHub (`release.yml`) | ✅ NSIS e MSI gerados, com 2 assinaturas; conferência abaixo |
 | Build de release com extensões | `npm run tauri build`, sem os artefatos do atualizador | ✅ NSIS e MSI gerados; tamanhos e conferência do executável abaixo |
 | Fluxo em HTTPS público | Executável de release, conferência avulsa | ✅ do repositório de demonstração à leitura, em 6,8 s; detalhes abaixo |
 
 ## Instaladores
 
-Os instaladores da 0.2.0 saem da automação do GitHub, e os SHA-256 deles ficam na própria release. Os das versões anteriores são os das [releases](https://github.com/CAKeysama/prancha/releases), com estes SHA-256:
+Da 0.2.0 em diante, os instaladores saem da automação do GitHub, e os SHA-256 deles ficam na própria release. Os das versões anteriores são os das [releases](https://github.com/CAKeysama/prancha/releases), com estes SHA-256:
 
 | Arquivo | Tamanho | SHA-256 |
 |---|---|---|
@@ -130,6 +130,10 @@ Antes da publicação, esse executável rodou contra o GitHub real, com dados is
 Em 2026-11-02, a v0.2.0 foi conferida pelos endereços públicos. Os instaladores, as assinaturas, o `SHA256SUMS.txt` e o `latest.json` passaram nas mesmas verificações, incluindo as assinaturas contra a chave pública do aplicativo e a recusa de um arquivo adulterado.
 
 O `prancha.exe` extraído do MSI publicado rodou sem instalar, com dados isolados, e leu o `latest.json` publicado. Ele não acusou versão nova nem erro, nenhuma janela abriu, o `updates.log` ficou vazio e a seção Atualizações mostrou as quatro versões, com a v0.2.0 como instalada.
+
+Em 2026-11-02, a v0.3.0 foi conferida pelos endereços públicos, sem login. O `latest.json` traz a versão 0.3.0 e os endereços oficiais, os SHA-256 conferem e as assinaturas das três entradas valem com a chave pública da v0.2.0, que é a dos aplicativos já instalados.
+
+O `prancha.exe` extraído do MSI publicado da v0.2.0 rodou sem instalar, com dados isolados, e abriu a janela de versão nova com v0.2.0, v0.3.0 e o resumo das notas. O botão "Atualizar agora" não foi clicado. Como essa cópia veio do MSI, a janela também avisou da confirmação do Windows.
 
 ## Extensões
 
@@ -263,7 +267,8 @@ Em uma execução do E2E, o leitor avançou páginas sozinho após as teclas (p�
 - **Reaproveitamento de conexões:** vem do cliente único, sem teste próprio.
 - **Telas online em temas e janela pequena:** conferidas no E2E, porque o ambiente do Vitest não calcula layout.
 - **Capturas versionadas:** `artifacts/screenshots` ainda mostra a barra lateral antiga, sem as novas seções.
-- **Atualização pelo GitHub:** nenhum app instalado baixou uma atualização das releases, porque isso exige duas versões publicadas com o atualizador. A primeira oportunidade é a versão seguinte à 0.2.0.
+- **Favorito depois de atualizar:** na primeira execução de `npm run test:update -- --build`, com o código das extensões, o favorito apareceu desmarcado no fim do roteiro, com a biblioteca e o progresso corretos. Os dados dessa execução foram apagados com a instalação de teste. A falha não voltou em mais 6 execuções completas, 5 delas sem nenhuma mudança no tempo dos passos, nem em 25 repetições de marcar o favorito, fechar e reabrir no build de depuração. As repetições que recompilariam os instaladores foram interrompidas antes de dar resultado. No código, só o comando `set_favorite` grava esse campo, então a causa continua desconhecida.
+- **Atualização pelo GitHub:** a v0.2.0 publicada já enxerga a v0.3.0 e abre a janela de versão nova, mas nesta conferência nenhum app baixou nem instalou a atualização a partir das releases.
 - **Atualização por MSI:** nunca executada, porque exige administrador. O caminho testado é o do NSIS. Com o MSI, a confirmação do Windows vem depois que o app fechou, e uma recusa só aparece na abertura seguinte.
 - **Sem espaço em disco e sem permissão:** só a tradução das mensagens de erro foi testada. Falha ao reiniciar foi simulada a partir do estado pendente salvo.
 - **Assinatura do Windows:** os instaladores não têm Authenticode, então o SmartScreen pode pedir confirmação.

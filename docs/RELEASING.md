@@ -14,7 +14,7 @@ Até a 1.0.0, mudanças maiores ainda podem sair em `PATCH` ou `MINOR`, como as 
 
 ## Passo a passo
 
-1. **Suba a versão** nestes arquivos, com o mesmo número: `package.json`, `package-lock.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` e `src-tauri/Cargo.lock`.
+1. **Suba a versão** nestes arquivos, com o mesmo número: `package.json`, `package-lock.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` e `src-tauri/Cargo.lock`. Se as dependências mudaram, rode `npm run licenses`, porque a tela de licenças do app sai desse arquivo.
 2. **Escreva as notas** no topo do `CHANGELOG.md`, no formato `## [X.Y.Z] - AAAA-MM-DD`, com um resumo e as seções `Novidades`, `Melhorias`, `Correções` e `Observações` (só as que tiverem conteúdo). Cada item ocupa uma linha.
 3. **Rode localmente** o que precisa de páginas reais e da janela do app:
 
