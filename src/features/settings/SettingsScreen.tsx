@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { FolderOpen, GraduationCap, HardDrive, ImageMinus, RefreshCw, RotateCcw, ScanSearch, Scale, Trash2 } from "lucide-react";
 import { Button } from "../../components/Button";
 import { ConfirmDialog, Dialog } from "../../components/Dialog";
@@ -39,6 +39,9 @@ const SECTIONS = [
   { id: "atualizacoes", label: "Atualizações" },
   { id: "geral", label: "Geral" },
 ] as const;
+
+/** Onde o topo de uma seção para quando se rola até ela: o `scroll-mt-20` abaixo, com 1px de folga. */
+const SECTION_TOP = 81;
 
 function Section({ id, title, description, children }: { id: string; title: string; description?: string; children: ReactNode }) {
   return (
@@ -375,7 +378,31 @@ export function SettingsScreen() {
   const [licensesOpen, setLicensesOpen] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [active, setActive] = useState<string>("aparencia");
+  const scroller = useRef<HTMLDivElement>(null);
+  // Depois de um clique, a seção escolhida fica destacada até a rolagem terminar, mesmo que não chegue ao topo.
+  const clicked = useRef(false);
   useEffect(() => void api.appInfo().then(setAppInfo).catch(() => undefined), []);
+
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const onScroll = () => {
+      if (clicked.current) return;
+      const line = el.getBoundingClientRect().top + SECTION_TOP;
+      const atEnd = el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
+      const current = atEnd ? SECTIONS.length - 1 : SECTIONS.findLastIndex((s) => document.getElementById(`settings-${s.id}`)!.getBoundingClientRect().top <= line);
+      setActive(SECTIONS[Math.max(0, current)]!.id);
+    };
+    const onScrollEnd = () => {
+      clicked.current = false;
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    el.addEventListener("scrollend", onScrollEnd);
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      el.removeEventListener("scrollend", onScrollEnd);
+    };
+  }, []);
 
   const verify = async () => {
     setVerifying(true);
@@ -390,7 +417,7 @@ export function SettingsScreen() {
   };
 
   return (
-    <div className="h-full overflow-y-auto" id="settings-scroll">
+    <div ref={scroller} className="h-full overflow-y-auto">
       <PageHeader title="Configurações" />
       <div className="mx-auto flex max-w-5xl gap-8 px-6">
         <nav aria-label="Seções das configurações" className="sticky top-20 h-fit w-44 shrink-0 py-6 max-md:hidden">
@@ -401,6 +428,7 @@ export function SettingsScreen() {
                   href={`#settings-${s.id}`}
                   onClick={(e) => {
                     e.preventDefault();
+                    clicked.current = true;
                     setActive(s.id);
                     document.getElementById(`settings-${s.id}`)?.scrollIntoView({ behavior: "smooth" });
                   }}
