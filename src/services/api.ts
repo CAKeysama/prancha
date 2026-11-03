@@ -134,6 +134,7 @@ export const api = {
   updatesCancel: () => call<void>("updates_cancel"),
   updatesHistory: (force: boolean) => call<UpdatesHistory>("updates_history", { force }),
   updatesOpenRelease: (version: string) => call<void>("updates_open_release", { version }),
+  openImprovementForm: () => call<void>("open_improvement_form"),
 
   repositories: () => call<RepositoryInfo[]>("repositories_list"),
   repositoryPreview: (address: string) => call<RepositoryPreview>("repository_preview", { address }),

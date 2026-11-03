@@ -839,6 +839,18 @@ pub async fn updates_open_release(app: AppHandle, version: String) -> AppResult<
     let invalid = || AppError::user("not_found", "Versão desconhecida.");
     semver::Version::parse(&version).map_err(|_| invalid())?;
     let url = updates::release_page(&release_endpoint(&app), &version).ok_or_else(invalid)?;
+    open_in_browser(&app, &url)
+}
+
+/// Endereço fixo: a tela não escolhe o que abrir. O formulário é `.github/ISSUE_TEMPLATE/melhoria.yml`.
+const IMPROVEMENT_FORM: &str = "https://github.com/CAKeysama/prancha/issues/new?template=melhoria.yml";
+
+#[tauri::command]
+pub async fn open_improvement_form(app: AppHandle) -> AppResult<()> {
+    open_in_browser(&app, IMPROVEMENT_FORM)
+}
+
+fn open_in_browser(app: &AppHandle, url: &str) -> AppResult<()> {
     app.opener()
         .open_url(url, None::<&str>)
         .map_err(|e| AppError::user("opener", format!("Não foi possível abrir o navegador ({e}).")))
@@ -1175,4 +1187,15 @@ pub async fn download_retry(state: S<'_>, id: i64) -> AppResult<()> {
 #[tauri::command]
 pub async fn downloads_clear_finished(state: S<'_>) -> AppResult<usize> {
     blocking(&state, |c| downloads::clear_finished(&c.db())).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn improvement_form_points_to_a_template_in_the_repo() {
+        let (_, file) = IMPROVEMENT_FORM.split_once("template=").unwrap();
+        assert!(Path::new(env!("CARGO_MANIFEST_DIR")).join("../.github/ISSUE_TEMPLATE").join(file).is_file());
+    }
 }
