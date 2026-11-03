@@ -8,12 +8,15 @@ import { EmptyState, ErrorState, Spinner } from "../../components/Feedback";
 import { Menu } from "../../components/Menu";
 import { PageHeader } from "../../components/PageHeader";
 import { useToast } from "../../components/Toast";
+import { foldText, isSeries, itemKey, type LibraryItem } from "../../domain/library-items";
 import { comicCountLabel } from "../../domain/progress";
 import type { CollectionInfo } from "../../domain/types";
 import { api, errorMessage } from "../../services/api";
 import { useLibraryData, useLibraryVersion } from "../../app/library-events";
 import { useNav } from "../../app/navigation";
+import { OnlineCover } from "../online/parts";
 import { LibraryScreen } from "./LibraryScreen";
+import { useLibrarySeries } from "./use-library-series";
 
 function NameDialog({
   title,
@@ -171,6 +174,7 @@ export function CollectionsScreen() {
                   <div className="grid grid-cols-4 gap-1.5" aria-hidden>
                     {Array.from({ length: 4 }, (_, i) => {
                       const p = c.preview[i];
+                      if (p?.online) return <OnlineCover key={`obra-${p.id}`} series={{ id: p.id, title: p.title, hasCover: p.coverKind !== "placeholder" }} className="rounded-sm" />;
                       return p ? (
                         <Cover key={p.id} comicId={p.id} title={p.title} kind={p.coverKind} rev={p.coverRev} className="rounded-sm" />
                       ) : (
@@ -202,24 +206,26 @@ export function CollectionsScreen() {
   );
 }
 
-const fold = (s: string) => s.toLocaleLowerCase("pt-BR").normalize("NFD").replace(/\p{M}/gu, "");
-
 function AddComicsToCollection({ collection, onClose }: { collection: CollectionInfo; onClose: () => void }) {
   const toast = useToast();
   const [text, setText] = useState("");
-  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const { data: all } = useLibraryData(() => api.listComics({ sort: "title" }), []);
   const { data: inside } = useLibraryData(() => api.listComics({ collectionId: collection.id }), [collection.id]);
+  const series = useLibrarySeries();
   const insideIds = useMemo(() => new Set((inside ?? []).map((c) => c.id)), [inside]);
+  const everything = useMemo<LibraryItem[]>(() => [...(all ?? []).filter((c) => !insideIds.has(c.id)), ...series.filter((s) => !s.collections.includes(collection.id))], [all, insideIds, series, collection.id]);
   const candidates = useMemo(() => {
-    const q = fold(text.trim());
-    return (all ?? []).filter((c) => !insideIds.has(c.id) && (!q || fold(`${c.title} ${c.fileName} ${c.series ?? ""}`).includes(q)));
-  }, [all, insideIds, text]);
+    const q = foldText(text.trim());
+    return everything.filter((item) => !q || foldText(isSeries(item) ? `${item.title} ${item.sourceName ?? ""}` : `${item.title} ${item.fileName} ${item.series ?? ""}`).includes(q));
+  }, [everything, text]);
   const save = async () => {
     setBusy(true);
     try {
-      await api.addToCollection(collection.id, [...selected]);
+      const chosen = everything.filter((item) => selected.has(itemKey(item)));
+      await api.addToCollection(collection.id, chosen.filter((item) => !isSeries(item)).map((item) => item.id));
+      await api.addSeriesToCollection(collection.id, chosen.filter(isSeries).map((item) => item.id));
       toast.success(`${selected.size} ${selected.size === 1 ? "HQ adicionada" : "HQs adicionadas"} à coleção`);
       onClose();
     } catch (e) {
@@ -231,7 +237,7 @@ function AddComicsToCollection({ collection, onClose }: { collection: Collection
   return (
     <Dialog
       open
-      title={`Adicionar HQs a “${collection.name}”`}
+      title={`Adicionar a “${collection.name}”`}
       onClose={onClose}
       footer={
         <>
@@ -252,17 +258,17 @@ function AddComicsToCollection({ collection, onClose }: { collection: Collection
         <p className="text-sm text-muted">Nenhuma HQ disponível para adicionar.</p>
       ) : (
         <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
-          {candidates.map((c) => (
+          {candidates.map((item) => (
             <Checkbox
-              key={c.id}
-              label={c.title}
-              description={c.series ?? c.fileName}
-              checked={selected.has(c.id)}
+              key={itemKey(item)}
+              label={item.title}
+              description={isSeries(item) ? (item.sourceName ?? undefined) : (item.series ?? item.fileName)}
+              checked={selected.has(itemKey(item))}
               onChange={(v) =>
                 setSelected((s) => {
                   const n = new Set(s);
-                  if (v) n.add(c.id);
-                  else n.delete(c.id);
+                  if (v) n.add(itemKey(item));
+                  else n.delete(itemKey(item));
                   return n;
                 })
               }
@@ -304,7 +310,7 @@ export function CollectionDetailScreen({ id }: { id: number }) {
           emptyText: "Adicione HQs da biblioteca a esta coleção. Elas continuam também na biblioteca principal.",
           emptyActions: (
             <Button variant="primary" icon={Plus} onClick={() => setAdding(true)}>
-              Adicionar HQs
+              Adicionar à coleção
             </Button>
           ),
           headerActions: (
@@ -316,7 +322,7 @@ export function CollectionDetailScreen({ id }: { id: number }) {
                 Excluir coleção
               </Button>
               <Button variant="primary" icon={Plus} onClick={() => setAdding(true)}>
-                Adicionar HQs
+                Adicionar à coleção
               </Button>
             </>
           ),

@@ -6,6 +6,7 @@ import { EmptyState, ErrorState, Spinner } from "../../components/Feedback";
 import { Checkbox, Segmented, Select } from "../../components/Form";
 import { PageHeader } from "../../components/PageHeader";
 import { cn } from "../../components/cn";
+import { mergeItems, seriesMatches } from "../../domain/library-items";
 import { STATUS_LABELS } from "../../domain/progress";
 import { FORMAT_LABELS, type ComicFormat, type LibraryQuery, type ReadStatus, type SortKey } from "../../domain/types";
 import { api } from "../../services/api";
@@ -13,6 +14,7 @@ import { useLibraryData } from "../../app/library-events";
 import { useSettings } from "../../app/settings-context";
 import { AddComicsButtons } from "./AddComicsButtons";
 import { ComicCollectionView } from "./ComicCollectionView";
+import { useLibrarySeries } from "./use-library-series";
 
 interface LibraryPreset {
   title: string;
@@ -185,7 +187,9 @@ export function LibraryScreen({ preset }: { preset: LibraryPreset }) {
     }),
     [preset.base, search, statuses, format, favoritesOnly, sort, desc],
   );
-  const { data, error, loading, reload } = useLibraryData(() => api.listComics(query), [JSON.stringify(query)]);
+  const { data: comics, error, loading, reload } = useLibraryData(() => api.listComics(query), [JSON.stringify(query)]);
+  const series = useLibrarySeries();
+  const data = useMemo(() => comics && mergeItems(comics, series.filter((item) => seriesMatches(item, query)), sort, desc), [comics, series, query, sort, desc]);
   const filtering = Boolean(search.trim() || statuses.length || format || favoritesOnly);
 
   const setSortValue = (value: string) => {
@@ -319,7 +323,7 @@ export function LibraryScreen({ preset }: { preset: LibraryPreset }) {
             Tente outro termo ou remova algum filtro.
           </EmptyState>
         )}
-        {data && data.length > 0 && <ComicCollectionView comics={data} view={view} scrollRef={scrollRef} collectionId={preset.collectionId} />}
+        {data && data.length > 0 && <ComicCollectionView items={data} view={view} scrollRef={scrollRef} collectionId={preset.collectionId} />}
       </div>
     </div>
   );

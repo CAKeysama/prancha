@@ -3349,11 +3349,12 @@ checksum = "494b4379484fc92217cc7d9e3a532375b1d01a61889ec8333025dc3b0377af56"
 
 [[package]]
 name = "prancha"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "base64 0.23.1",
  "blake3",
  "ed25519-dalek",
+ "getrandom 0.4.3",
  "image",
  "log",
  "lopdf",
@@ -3381,6 +3382,7 @@ dependencies = [
  "walkdir",
  "wasmtime",
  "wat",
+ "windows-sys 0.61.2",
  "wit-component 0.263.0",
  "zip",
 ]

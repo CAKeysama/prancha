@@ -21,6 +21,12 @@ export const pageUrl = (id: number, index: number, token = 0) =>
   `${protocolBase()}page/${id}/${index}${token ? `?r=${token}` : ""}`;
 export const fileUrl = (id: number) => `${protocolBase()}file/${id}`;
 export const onlineCoverUrl = (id: number) => `${protocolBase()}online-cover/${id}`;
+export const onlinePageUrl = (chapterId: number, index: number, token = 0) =>
+  `${protocolBase()}online-page/${chapterId}/${index}${token ? `?r=${token}` : ""}`;
+
+/** De onde vem cada página, seja da biblioteca, seja de um capítulo de uma fonte. */
+export type PageSrc = (index: number, token?: number) => string;
+export const comicPageSrc = (id: number): PageSrc => (index, token) => pageUrl(id, index, token);
 
 /** Lê a mensagem de erro do protocolo (o <img> não expõe o motivo da falha). */
 export async function fetchPageError(url: string): Promise<string> {

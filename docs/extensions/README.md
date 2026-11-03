@@ -1,8 +1,10 @@
 # Extensões do Prancha
 
-Extensões acrescentam fontes de leitura à área **Explorar**. O que você baixa vira um CBZ na sua biblioteca, abre no leitor de sempre e continua disponível sem internet.
+Extensões acrescentam fontes de leitura à área **Explorar**. Você lê capítulo por capítulo, sem baixar, e o que decidir baixar vira um CBZ na sua biblioteca e continua disponível sem internet.
 
-> **Extensões são código de terceiros.** Elas rodam isoladas e só fazem o que foi declarado, mas o conteúdo que mostram é responsabilidade de quem as publica. Só adicione repositórios em que você confia. Veja o [modelo de segurança](SECURITY.md).
+Tudo isso é opcional e fica no plugin **Fontes de leitura**, na aba **Plugins**. Sem ele, o menu não tem Explorar, Downloads, Extensões nem Repositórios. Remover o plugin tira esses itens do menu, pausa os downloads e para o que estiver rodando. Biblioteca, extensões e progresso ficam guardados e voltam se você instalar de novo.
+
+> **Extensões são código de terceiros.** As do Prancha rodam isoladas e só fazem o que foi declarado, mas o conteúdo que mostram é responsabilidade de quem as publica. As do [Mihon](COMPATIBILITY.md) rodam **sem isolamento**. Só adicione repositórios em que você confia. Veja o [modelo de segurança](SECURITY.md).
 
 O Prancha não vem com nenhuma fonte de leitura instalada. A biblioteca local, o leitor e a importação de arquivos funcionam sem extensões e sem internet.
 
@@ -11,14 +13,14 @@ O Prancha não vem com nenhuma fonte de leitura instalada. A biblioteca local, o
 | Palavra | O que é |
 |---|---|
 | **Repositório** | Um endereço que publica extensões, com um catálogo assinado por uma chave. |
-| **Extensão** | Um pacote WebAssembly instalado a partir de um repositório. É o código. |
+| **Extensão** | Um pacote instalado a partir de um repositório: WebAssembly nos repositórios do Prancha, Java nos do Mihon. É o código. |
 | **Fonte** | Um lugar de leitura oferecido por uma extensão. Uma extensão pode ter várias, por exemplo uma por idioma. É o que aparece em Explorar. |
 | **Obra** | Uma série encontrada em uma fonte, com seus capítulos. |
 
 ## Adicionar um repositório
 
 1. Abra **Repositórios** e escolha **Adicionar**.
-2. Informe o endereço, que pode ser o do `prancha-repo.json` ou a pasta onde ele está.
+2. Informe o endereço, que pode ser o do `prancha-repo.json` ou a pasta onde ele está. O [link de um repositório do Mihon](COMPATIBILITY.md) também vale.
 3. Confira o que aparece: nome, endereço, site, quantidade de extensões, chave pública e impressão digital.
 4. Se confiar, escolha **Confiar e adicionar**. Nada fica gravado antes disso.
 
@@ -43,11 +45,33 @@ Em **Instaladas** você vê as fontes de cada extensão, atualiza quando há ver
 
 **Explorar** pesquisa em todas as fontes ao mesmo tempo. Os resultados ficam separados por fonte, e cada uma responde no seu tempo: uma lenta ou fora do ar mostra o próprio erro sem atrapalhar as outras. Também dá para filtrar por fonte, idioma e tipo, ver populares e recentes, e carregar mais resultados.
 
-Conteúdo adulto não aparece. Uma fonte adulta ou sem classificação fica desabilitada, e não há opção para mudar isso.
+## Filtro +18
+
+Em **Plugins**, **Esconder conteúdo +18** começa ligado. Enquanto estiver, obras, fontes e extensões adultas ou sem classificação não aparecem em tela nenhuma, e as extensões assim não instalam. Para desligar, você confirma ter 18 anos, e pode ligar de novo quando quiser.
+
+A classificação é a declarada por quem publica, e pode falhar. Nas fontes do Keiyoushi, a marca vem da fonte inteira, e a obra só é reconhecida como +18 pelos gêneros (adulto, hentai, ecchi e parecidos). A lista nem sempre traz os gêneros, então uma obra pode aparecer em Explorar, ser recusada ao abrir e não voltar à lista. Capítulos já baixados continuam na biblioteca, como qualquer arquivo.
+
+## Obras na biblioteca
+
+Na página da obra, **Favoritar** e **Coleções** fazem o mesmo que nas HQs. A obra que você favoritou, guardou em uma coleção, acompanha ou já leu aparece no Início, em Minha biblioteca e nas telas de Continuar lendo, Recentes e Favoritos, mostrando onde você parou. O menu dela marca como concluída ou não lida e remove da biblioteca, o que apaga o progresso, o favorito e as coleções da obra. Capítulos baixados continuam lá.
+
+Sem o plugin, essas obras saem das telas e voltam quando ele é instalado de novo, com tudo no lugar.
+
+## Sites com verificação anti-robô
+
+Quando um site pede uma verificação, o erro vem com o botão **Verificar no site**, e [o resto está aqui](COMPATIBILITY.md#sites-com-verificação-anti-robô). Se não der certo, **Procurar em outras fontes**, no menu da obra, faz a mesma pesquisa nas demais.
+
+## Ler sem baixar
+
+Todo capítulo tem **Ler**. As páginas vêm da fonte conforme você avança, com as mesmas regras de rede dos downloads, e nada vai para a biblioteca nem para a lista de Downloads. A página da obra oferece **Começar a ler** ou **Continuar**, e cada capítulo mostra onde você parou ou **Lido**.
+
+Os capítulos formam uma leitura só. Quando você se aproxima do fim de um, o seguinte já é pedido à fonte, e depois da última página vem a primeira dele, rolando ou virando a página, sem botão. Uma barrinha marca o ponto em que ele começa, e o título no alto acompanha. Os botões « e » pulam de capítulo. Rolar para cima só atravessa os capítulos que já entraram na leitura: para voltar a um anterior ao que você abriu, use «.
+
+Obras em tiras abrem no modo **Webtoon**: uma coluna estreita e contínua, sem espaço entre as imagens. O Prancha reconhece essas obras pelo formato das páginas, pelos gêneros e por capítulos com muitas páginas. É uma estimativa: se errar, troque o modo no leitor, e a escolha fica guardada para a obra. A Leitura Guiada só aparece em capítulos baixados, porque precisa do arquivo na biblioteca.
 
 ## Baixar capítulos
 
-Na página da obra, baixe um capítulo, os selecionados ou todos. Os estados de um capítulo são:
+Baixar só é preciso para ler sem internet. Na página da obra, baixe um capítulo, os selecionados ou todos. Os estados de um capítulo são:
 
 | Estado | O que quer dizer |
 |---|---|

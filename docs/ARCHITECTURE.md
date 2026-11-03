@@ -117,11 +117,21 @@ extensions/downloads.rs         fila persistente → CBZ → import::process_one
 
 **Uma biblioteca só.** Um capítulo baixado é um CBZ importado pelo mesmo caminho de qualquer arquivo. `online_chapters.comic_id` liga o capítulo à biblioteca com `ON DELETE SET NULL`: remover o item da biblioteca, a extensão ou o repositório não apaga o resto. A biblioteca e o leitor não dependem de nenhuma tabela nova.
 
-**Rede.** Tudo que sai em nome de um repositório ou de uma extensão passa por `net.rs`. A interface recebe as capas pelo protocolo do app, em `/online-cover/<id>`, e a CSP continua sem endereços externos.
+**Leitura sem baixar.** `sources::open_chapter` pede a lista de páginas à fonte e guarda só na memória, em `ChapterPages`. Cada imagem chega pelo protocolo do app, com as mesmas regras de rede e de imagem dos downloads. O progresso fica em `chapter_progress`, ligado ao capítulo. O leitor é o mesmo da biblioteca: `ReaderContent` diz de onde vêm as páginas e como salvar a posição. Os capítulos entram em sequência, numa numeração de páginas única que só cresce no fim: `chapterAt` traduz essa numeração para o capítulo e a página de verdade, e por isso rolar para cima não traz capítulos anteriores ao que foi aberto.
+
+**Plugin.** `plugins.online` é um interruptor da interface para código que já vem no app, e não um pacote à parte. Desligar tira as telas do menu e chama `online_stop`, que pausa os downloads e para o Suwayomi. A migração 0004 deixa ligado para quem já tinha repositório ou extensão.
+
+**Obras na biblioteca.** Uma obra guardada não vira HQ: fica em `online_series`, com `favorite` e `series_collections` (migração 0005), e `series_library` devolve as favoritadas, acompanhadas, em coleção ou com progresso online. `domain/library-items.ts` mistura essa lista com a das HQs no Início, na biblioteca e nas coleções, na ordem que a tela pediu. `reading_of` calcula onde a leitura continua. Uma obra guardada nunca é podada, e `remote_id` é o identificador interno do Suwayomi, por isso a pasta `dados` dele não pode ser apagada enquanto houver obras.
+
+**Filtro +18.** `content.adult` é falso por padrão, e `library::adult_allowed` é o que todas as consultas perguntam: catálogo, fontes, resultados, obra aberta, instalação e biblioteca. O filtro esconde sem apagar nada, e `adult` em `online_series` fica marcado de vez quando a fonte classifica a obra assim. As fontes do Mihon não classificam obra por obra, então `suwayomi::rating_from` olha os gêneros, e a obra recusada ao abrir continua registrada para não voltar às listas.
+
+**Verificação anti-robô.** `source_verify` abre a janela `verificacao` no endereço do capítulo, da obra ou da fonte, e espera ela fechar. O Prancha só lê os cookies dali (`cookies_for_url`) e fecha a janela ao ver `cf_clearance`. Depois para o Java, grava `cookie_store.xml` e deixa o próximo uso iniciar o servidor. O protocolo `prancha://` recusa tudo que não venha da janela `main`, porque as respostas dele têm `Access-Control-Allow-Origin: *`.
+
+**Rede.** Tudo que sai em nome de um repositório ou de uma extensão passa por `net.rs`. A interface recebe capas e páginas pelo protocolo do app, em `/online-cover/<id>` e `/online-page/<capítulo>/<índice>`, e a CSP continua sem endereços externos.
 
 **Sem polling.** Os downloads avisam por evento (`downloads:changed`), e a fila usa `Condvar`. A sincronização só roda a pedido, com `ETag`. Pesquisas e obras abertas são canceladas quando a tela muda.
 
-**Limites conhecidos.** A compilação de um componente não pode ser interrompida. Um download que falha recomeça do zero. O comportamento de rede foi provado contra servidores locais, sem uma fonte externa real.
+**Limites conhecidos.** A compilação de um componente não pode ser interrompida. Um download que falha recomeça do zero. O comportamento de rede das extensões nativas foi provado contra servidores locais e, em HTTPS público, só com a demonstração. As fontes do plugin foram conferidas com sites de verdade uma vez, sem teste permanente.
 
 ## Limites de segurança (`formats/mod.rs`)
 

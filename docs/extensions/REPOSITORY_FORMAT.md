@@ -83,7 +83,7 @@ Até 8 MB. O índice é validado por inteiro: uma entrada errada recusa o arquiv
 | `size` | De 1 byte a 32 MB, e o tamanho real é conferido no download. |
 | `sha256` | 64 caracteres hexadecimais minúsculos. |
 | `icon` | Opcional: `data:image/png`, `jpeg` ou `webp` em base64, até 32 KB. |
-| `contentRating` | `general`, `teen`, `adult` ou `unknown`. Entradas `adult` são descartadas ao sincronizar. |
+| `contentRating` | `general`, `teen`, `adult` ou `unknown`. Entradas `adult` só aparecem com o filtro +18 desligado. |
 | `sources` | Ao menos uma. Na instalação, os identificadores e as classificações precisam bater com o que o componente declara. |
 | `supportedKinds` | Até 40 caracteres cada. |
 | `capabilities.network` | Com `true`, `allowedHosts` não pode ser vazio. Com `false`, precisa ser vazio. |

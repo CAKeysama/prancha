@@ -1,5 +1,5 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { DownloadView } from "../domain/online";
+import type { ComponentProgress, DownloadView } from "../domain/online";
 import type { ImportEvent } from "../domain/types";
 
 const EVENTS = {
@@ -7,6 +7,7 @@ const EVENTS = {
   library: "library:changed",
   covers: "covers:progress",
   downloads: "downloads:changed",
+  component: "component:progress",
 } as const;
 
 /** Liga um ouvinte do Tauri; devolve a função que o desliga, mesmo antes de ele ficar pronto (segura em StrictMode). */
@@ -34,5 +35,6 @@ const subscribe = <T,>(event: string, handler: (payload: T) => void) => cancella
 export const onImportProgress = (h: (e: ImportEvent) => void) => subscribe<ImportEvent>(EVENTS.import, h);
 export const onLibraryChanged = (h: () => void) => subscribe<unknown>(EVENTS.library, () => h());
 export const onDownloadChanged = (h: (e: DownloadView) => void) => subscribe<DownloadView>(EVENTS.downloads, h);
+export const onComponentProgress = (h: (e: ComponentProgress) => void) => subscribe<ComponentProgress>(EVENTS.component, h);
 export const onCoversProgress = (h: (e: { total: number; done: number }) => void) =>
   subscribe<{ total: number; done: number }>(EVENTS.covers, h);

@@ -30,19 +30,16 @@ function isWide(size: Size | undefined): boolean {
  * Agrupa as páginas em "visões". Página dupla: pares lado a lado; a capa pode ficar sozinha
  * e páginas largas (duplas já digitalizadas juntas) nunca são pareadas.
  */
-export function buildSpreads(count: number, mode: ReaderMode, coverAlone: boolean, sizes: ReadonlyMap<number, Size>): number[][] {
+export function buildSpreads(count: number, mode: ReaderMode, coverAlone: boolean, sizes: ReadonlyMap<number, Size>, chapterStarts: ReadonlySet<number> = new Set()): number[][] {
   if (count <= 0) return [];
   if (mode !== "double") return Array.from({ length: count }, (_, i) => [i]);
   const spreads: number[][] = [];
   let i = 0;
-  if (coverAlone) {
-    spreads.push([0]);
-    i = 1;
-  }
   while (i < count) {
     const a = i;
     const b = i + 1;
-    if (b < count && !isWide(sizes.get(a)) && !isWide(sizes.get(b))) {
+    const cover = coverAlone && (a === 0 || chapterStarts.has(a));
+    if (!cover && b < count && !chapterStarts.has(b) && !isWide(sizes.get(a)) && !isWide(sizes.get(b))) {
       spreads.push([a, b]);
       i += 2;
     } else {
@@ -75,19 +72,67 @@ export function verticalPageWidth(aspect: number, fit: FitMode, zoom: number, vi
   return Math.max(1, Math.floor(base * zoom));
 }
 
+/** Um capítulo dentro da leitura: as páginas de todos formam uma sequência só. */
+export interface ReaderChapter {
+  /** Sem título, é uma HQ inteira, sem capítulos para distinguir. */
+  title: string | null;
+  first: number;
+  count: number;
+  /** A Leitura Guiada precisa do arquivo na biblioteca. */
+  guidedComicId: number | null;
+}
+
+export function chapterAt<T extends ReaderChapter>(chapters: T[], page: number): T {
+  return chapters.findLast((chapter) => chapter.first <= page) ?? chapters[0]!;
+}
+
+/** O capítulo que a leitura terminou ao passar de `from` para `to`. Pular por cima de um capítulo não conta como ter lido. */
+export function chapterLeftBehind<T extends ReaderChapter>(chapters: T[], from: number, to: number): T | null {
+  const before = chapterAt(chapters, from);
+  if (chapterAt(chapters, to) !== chapters[chapters.indexOf(before) + 1]) return null;
+  const last = before.first + before.count - 1;
+  return from >= last - Math.max(1, Math.floor(before.count / 10)) ? before : null;
+}
+
+/** Modos em que as páginas ficam numa rolagem só, em vez de virar uma a uma. */
+export function isContinuous(mode: ReaderMode): boolean {
+  return mode === "vertical" || mode === "webtoon";
+}
+
+/** A largura em que os webtoons costumam ser publicados. Numa tela grande, esticar mais só cansa a leitura. */
+const WEBTOON_WIDTH = 800;
+
+/** Largura da coluna do modo webtoon: não acompanha a janela, só o zoom. */
+export function webtoonWidth(zoom: number, viewportWidth: number): number {
+  return Math.max(1, Math.floor(Math.min(viewportWidth, WEBTOON_WIDTH * zoom)));
+}
+
+/** Pelo menos metade das páginas conhecidas bem mais altas que largas. Uma página alta solta num mangá não conta. */
+export function hasTallPages(sizes: ReadonlyMap<number, Size>): boolean {
+  const known = [...sizes.values()].filter((s) => s.width > 0);
+  const tall = known.filter((s) => s.height >= s.width * 2);
+  return tall.length > 0 && tall.length * 2 >= known.length;
+}
+
+/** Pistas antes de ver a primeira página. Capítulos em tiras costumam vir cortados em muitos pedaços. */
+export function webtoonHint(genres: string[], pageCount: number): boolean {
+  return pageCount >= 40 || genres.some((genre) => /webtoon|manhwa|manhua|long ?strip/i.test(genre));
+}
+
 export function clampPage(page: number, count: number): number {
   if (count <= 0) return 0;
   return Math.min(Math.max(0, Math.round(page)), count - 1);
 }
 
 export function nextMode(mode: ReaderMode): ReaderMode {
-  return mode === "single" ? "double" : mode === "double" ? "vertical" : "single";
+  return mode === "single" ? "double" : mode === "double" ? "vertical" : mode === "vertical" ? "webtoon" : "single";
 }
 
 export const MODE_LABELS: Record<ReaderMode, string> = {
   single: "Página única",
   double: "Página dupla",
   vertical: "Rolagem vertical",
+  webtoon: "Webtoon",
 };
 
 export const FIT_LABELS: Record<FitMode, string> = {

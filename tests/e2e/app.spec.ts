@@ -223,6 +223,8 @@ test.describe.serial("biblioteca, formatos e leitor", () => {
     await expect(page.getByRole("button", { name: /atual: Rolagem vertical/ })).toBeVisible();
     await waitPageLoaded(page, 2);
     await shot(page, "09b-leitor-rolagem-vertical");
+    await page.keyboard.press("m");
+    await expect(page.getByRole("button", { name: /atual: Webtoon/ })).toBeVisible();
     await page.keyboard.press("m"); // volta para página única
     await page.keyboard.press("End");
     await expect(await indicator(page)).toHaveText("Página 14 de 14");
@@ -638,6 +640,8 @@ test.describe.serial("Leitura Guiada em páginas reais", () => {
     await leave(page);
     await expect(page.getByRole("button", { name: /atual: Rolagem vertical/ })).toBeVisible();
     await expect(await indicator(page)).toHaveText(of(plan.dense));
+    await page.keyboard.press("m");
+    await expect(page.getByRole("button", { name: /atual: Webtoon/ })).toBeVisible();
     await page.keyboard.press("m");
     await expect(await indicator(page)).toHaveText(of(plan.dense));
   });

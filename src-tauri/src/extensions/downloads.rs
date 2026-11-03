@@ -17,9 +17,9 @@ use zip::{CompressionMethod, DateTime, ZipWriter};
 
 use super::install;
 use super::net::{Access, Cancel, Limits, NetError, Request};
-use super::runtime::Page;
+use super::runtime::{Installed, Page};
 use super::signing::sha256_hex;
-use super::sources;
+use super::{sources, suwayomi};
 use crate::core::Core;
 use crate::covers;
 use crate::db;
@@ -139,12 +139,12 @@ impl Downloads {
         self.wake.notify_all();
     }
 
-    fn next_request_of(&self, source: &str) -> Instant {
-        self.next_request.lock().unwrap_or_else(|e| e.into_inner()).get(source).copied().unwrap_or_else(Instant::now)
-    }
-
-    fn delay_source(&self, source: &str, until: Instant) {
-        self.next_request.lock().unwrap_or_else(|e| e.into_inner()).insert(source.to_string(), until);
+    /// Reserva a próxima vez desta fonte. Quem baixa e quem lê online dividem o mesmo intervalo.
+    fn reserve_request(&self, source: &str, interval: Duration) -> Instant {
+        let mut next = self.next_request.lock().unwrap_or_else(|e| e.into_inner());
+        let slot = next.get(source).copied().unwrap_or_else(Instant::now).max(Instant::now());
+        next.insert(source.to_string(), slot + interval);
+        slot
     }
 }
 
@@ -460,6 +460,30 @@ fn page_error(position: usize, error: NetError) -> AppError {
 }
 
 /// Espera o intervalo da fonte, sem deixar de atender a um cancelamento.
+/// Espera a vez desta fonte, respeitando o intervalo que ela pediu.
+pub(super) fn wait_turn(core: &Core, source: &str, min_interval_ms: u64, cancel: &Cancel) -> AppResult<()> {
+    let interval = Duration::from_millis(min_interval_ms).min(MAX_SOURCE_INTERVAL);
+    wait_interval(core.downloads.reserve_request(source, interval), cancel)
+}
+
+/// Busca uma página, com as mesmas regras para quem baixa e para quem lê online. Devolve a imagem e a extensão real dela.
+pub(super) fn fetch_page(core: &Core, extension: &Installed, page: &Page, position: usize, cancel: Option<&Cancel>) -> AppResult<(Vec<u8>, &'static str)> {
+    let headers: Vec<(String, String)> = page.headers.iter().map(|h| (h.name.clone(), h.value.clone())).collect();
+    let limits = Limits { max_bytes: MAX_PAGE_BYTES, timeout: PAGE_TIMEOUT };
+    let fetched = if extension.bridged {
+        suwayomi::image(core, &page.url, limits, cancel)
+    } else {
+        core.net.get(&page.url, Access::Hosts(&extension.grant.allowed_hosts), limits, Request { headers: &headers, cancel, check_content_type: true, ..Default::default() })
+    };
+    let response = fetched.map_err(|e| page_error(position, e))?;
+    if !response.is_success() {
+        return Err(AppError::user("download_network", format!("Página {}: o servidor respondeu {}.", position + 1, response.status)));
+    }
+    let extension_name = image_extension(&response.body).ok_or_else(|| AppError::user("download_page", format!("Página {}: o arquivo recebido não é uma imagem.", position + 1)))?;
+    covers::decode_limited(&response.body).map_err(|why| AppError::user("download_page", format!("Página {}: imagem inválida ({why}).", position + 1)))?;
+    Ok((response.body, extension_name))
+}
+
 fn wait_interval(next: Instant, cancel: &Cancel) -> AppResult<()> {
     while Instant::now() < next {
         if cancel.load(Ordering::Relaxed) {
@@ -488,10 +512,10 @@ fn download(core: &Arc<Core>, job: &Job) -> AppResult<()> {
     let info = chapter_info(&core.db(), id)?;
     let extension = install::runnable(core, &info.extension_id)?;
     let source = sources::source_row(&core.db(), &info.extension_id, &info.source_id)?;
-    if !install::rating_is_available(&source.rating) {
+    if !install::rating_is_available(&core.db(), &source.rating) {
         return Err(AppError::user("source_disabled", "Esta fonte está desabilitada."));
     }
-    let pages = ordered_pages(core.engine()?.pages(&extension, Some(&job.cancel), &info.source_id, &info.chapter_remote)?)?;
+    let pages = ordered_pages(if extension.bridged { suwayomi::pages(core, &info.chapter_remote, Some(&job.cancel))? } else { core.engine()?.pages(&extension, Some(&job.cancel), &info.source_id, &info.chapter_remote)? })?;
     let temp = temp_dir(core, id);
     std::fs::create_dir_all(&temp)?;
 
@@ -502,7 +526,6 @@ fn download(core: &Arc<Core>, job: &Job) -> AppResult<()> {
     core.db().execute("UPDATE chapter_downloads SET pages_total = ?2, pages_done = ?3, bytes = ?4, updated_at = ?5 WHERE id = ?1", params![id, total, done, bytes as i64, now_ms()])?;
     notify(core, id);
 
-    let interval = Duration::from_millis(source.min_interval_ms).min(MAX_SOURCE_INTERVAL);
     let mut pages_done = done;
     for (position, page) in pages.iter().enumerate() {
         if stored.contains_key(&(position + 1)) {
@@ -511,30 +534,15 @@ fn download(core: &Arc<Core>, job: &Job) -> AppResult<()> {
         if job.cancel.load(Ordering::Relaxed) {
             return Err(AppError::user("cancelled", "Operação cancelada."));
         }
-        wait_interval(core.downloads.next_request_of(&job.source), &job.cancel)?;
-        core.downloads.delay_source(&job.source, Instant::now() + interval);
-        let headers: Vec<(String, String)> = page.headers.iter().map(|h| (h.name.clone(), h.value.clone())).collect();
-        let response = core
-            .net
-            .get(
-                &page.url,
-                Access::Hosts(&extension.grant.allowed_hosts),
-                Limits { max_bytes: MAX_PAGE_BYTES, timeout: PAGE_TIMEOUT },
-                Request { headers: &headers, cancel: Some(&job.cancel), check_content_type: true, ..Default::default() },
-            )
-            .map_err(|e| page_error(position, e))?;
-        if !response.is_success() {
-            return Err(AppError::user("download_network", format!("Página {}: o servidor respondeu {}.", position + 1, response.status)));
-        }
-        let extension_name = image_extension(&response.body).ok_or_else(|| AppError::user("download_page", format!("Página {}: o arquivo recebido não é uma imagem.", position + 1)))?;
-        covers::decode_limited(&response.body).map_err(|why| AppError::user("download_page", format!("Página {}: imagem inválida ({why}).", position + 1)))?;
-        bytes += response.body.len() as u64;
+        wait_turn(core, &job.source, source.min_interval_ms, &job.cancel)?;
+        let (body, extension_name) = fetch_page(core, &extension, page, position, Some(&job.cancel))?;
+        bytes += body.len() as u64;
         if bytes > MAX_CHAPTER_BYTES {
             return Err(AppError::user("download_page", "O capítulo passa do limite de tamanho."));
         }
         let name = temp.join(format!("{:04}.{extension_name}", position + 1));
         let partial = temp.join(format!("{:04}.part", position + 1));
-        std::fs::write(&partial, &response.body)?;
+        std::fs::write(&partial, &body)?;
         std::fs::rename(&partial, &name)?;
         stored.insert(position + 1, name);
         pages_done += 1;

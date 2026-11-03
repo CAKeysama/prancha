@@ -79,7 +79,7 @@ pub struct CollectionInfo {
     pub comic_count: i64,
     pub created_at: i64,
     pub updated_at: i64,
-    /// Até 4 HQs para a prévia de capas.
+    /// Até 4 itens para a prévia de capas.
     pub preview: Vec<CoverRef>,
 }
 
@@ -90,6 +90,8 @@ pub struct CoverRef {
     pub title: String,
     pub cover_kind: String,
     pub cover_rev: i64,
+    /// Uma obra de uma fonte: a capa vem por outro caminho.
+    pub online: bool,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -718,23 +720,29 @@ fn map_unique(e: rusqlite::Error, name: &str) -> AppError {
 }
 
 pub fn list_collections(conn: &Connection) -> AppResult<Vec<CollectionInfo>> {
-    let mut stmt = conn.prepare(
+    // Obras de fontes só contam com o plugin instalado e dentro do filtro +18.
+    let shown = format!("EXISTS (SELECT 1 FROM settings WHERE key = 'plugins.online' AND value = 'true') AND (o.adult = 0 OR {ADULT_ALLOWED_SQL})");
+    let mut stmt = conn.prepare(&format!(
         "SELECT c.id, c.name, c.created_at, c.updated_at, \
-         (SELECT count(*) FROM comic_collections cc WHERE cc.collection_id = c.id) \
+         (SELECT count(*) FROM comic_collections cc WHERE cc.collection_id = c.id) + \
+         (SELECT count(*) FROM series_collections sc JOIN online_series o ON o.id = sc.series_id WHERE sc.collection_id = c.id AND {shown}) \
          FROM collections c ORDER BY c.name COLLATE NATSORT",
-    )?;
+    ))?;
     let rows: Vec<(i64, String, i64, i64, i64)> = stmt
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?
         .collect::<Result<_, _>>()?;
-    let mut preview_stmt = conn.prepare(
-        "SELECT c.id, c.title, c.cover_kind, c.cover_rev FROM comics c JOIN comic_collections cc ON cc.comic_id = c.id \
-         WHERE cc.collection_id = ? ORDER BY cc.added_at DESC LIMIT 4",
-    )?;
+    let mut preview_stmt = conn.prepare(&format!(
+        "SELECT id, title, cover_kind, cover_rev, online FROM ( \
+           SELECT c.id, c.title, c.cover_kind, c.cover_rev, 0 AS online, cc.added_at FROM comics c JOIN comic_collections cc ON cc.comic_id = c.id WHERE cc.collection_id = ?1 \
+           UNION ALL \
+           SELECT o.id, o.title, CASE WHEN o.cover_url IS NULL THEN 'placeholder' ELSE 'format' END, 0, 1, sc.added_at FROM online_series o JOIN series_collections sc ON sc.series_id = o.id WHERE sc.collection_id = ?1 AND {shown}) \
+         ORDER BY added_at DESC LIMIT 4",
+    ))?;
     rows.into_iter()
         .map(|(id, name, created_at, updated_at, comic_count)| {
             let preview = preview_stmt
                 .query_map([id], |r| {
-                    Ok(CoverRef { id: r.get(0)?, title: r.get(1)?, cover_kind: r.get(2)?, cover_rev: r.get(3)? })
+                    Ok(CoverRef { id: r.get(0)?, title: r.get(1)?, cover_kind: r.get(2)?, cover_rev: r.get(3)?, online: r.get::<_, i64>(4)? != 0 })
                 })?
                 .collect::<Result<_, _>>()?;
             Ok(CollectionInfo { id, name, comic_count, created_at, updated_at, preview })
@@ -818,6 +826,13 @@ pub fn remove_from_collection(conn: &Connection, collection_id: i64, comic_id: i
 // ---------------------------------------------------------------------------
 // Configurações (JSON por chave)
 // ---------------------------------------------------------------------------
+
+/// Verdadeiro em SQL depois que a pessoa desliga o filtro +18, que vem ligado.
+pub const ADULT_ALLOWED_SQL: &str = "EXISTS (SELECT 1 FROM settings WHERE key = 'content.adult' AND value = 'true')";
+
+pub fn adult_allowed(conn: &Connection) -> bool {
+    conn.query_row(&format!("SELECT {ADULT_ALLOWED_SQL}"), [], |r| r.get(0)).unwrap_or(false)
+}
 
 fn valid_key(key: &str) -> bool {
     !key.is_empty() && key.len() <= 64 && key.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))

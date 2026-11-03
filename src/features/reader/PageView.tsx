@@ -5,16 +5,18 @@ import { Button } from "../../components/Button";
 import { Spinner } from "../../components/Feedback";
 import type { Size } from "../../domain/reader";
 import { renderPdfPage } from "../../services/pdf";
-import { fetchPageError, pageUrl } from "../../services/urls";
+import { fetchPageError, type PageSrc } from "../../services/urls";
 
 interface PageViewProps {
-  comicId: number;
+  src: PageSrc;
   index: number;
   /** Tamanho em px CSS em que a página deve aparecer. */
   width: number;
   height: number;
   pdf: PDFDocumentProxy | null;
   onSize: (index: number, size: Size) => void;
+  /** Preenche a caixa inteira: entre tiras, a sobra de um arredondamento apareceria como uma linha. */
+  flush?: boolean;
 }
 
 function PageError({ index, message, onRetry, width, height }: { index: number; message: string; onRetry: () => void; width: number; height: number }) {
@@ -34,11 +36,11 @@ function PageError({ index, message, onRetry, width, height }: { index: number; 
   );
 }
 
-function ImagePage({ comicId, index, width, height, onSize }: Omit<PageViewProps, "pdf">) {
+function ImagePage({ src: srcOf, index, width, height, flush, onSize }: Omit<PageViewProps, "pdf">) {
   const [token, setToken] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
-  const src = pageUrl(comicId, index, token);
+  const src = srcOf(index, token);
   if (error) {
     return (
       <PageError
@@ -73,13 +75,13 @@ function ImagePage({ comicId, index, width, height, onSize }: Omit<PageViewProps
         }}
         onError={() => void fetchPageError(src).then(setError)}
         className="block h-full w-full select-none"
-        style={{ objectFit: "contain" }}
+        style={{ objectFit: flush ? "fill" : "contain" }}
       />
     </div>
   );
 }
 
-function PdfPage({ index, width, height, pdf, onSize }: Omit<PageViewProps, "comicId"> & { pdf: PDFDocumentProxy }) {
+function PdfPage({ index, width, height, pdf, onSize }: Omit<PageViewProps, "src"> & { pdf: PDFDocumentProxy }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -144,8 +146,8 @@ export const PageView = memo(function PageView(props: PageViewProps) {
   return <ImagePage {...props} />;
 });
 
-/** Pré-carrega imagens de páginas vizinhas (limitado) para virar a página sem espera. */
-export function usePreload(comicId: number, pages: number[], enabled: boolean) {
+/** Pré-carrega imagens de páginas vizinhas (limitado) para virar a página sem espera, e já conta o tamanho delas. */
+export function usePreload(src: PageSrc, pages: number[], enabled: boolean, onSize?: (index: number, size: Size) => void) {
   const key = pages.join(",");
   useEffect(() => {
     if (!enabled) return;
@@ -155,11 +157,15 @@ export function usePreload(comicId: number, pages: number[], enabled: boolean) {
       .map((p) => {
         const img = new Image();
         img.decoding = "async";
-        img.src = pageUrl(comicId, Number(p));
+        img.onload = () => onSize?.(Number(p), { width: img.naturalWidth, height: img.naturalHeight });
+        img.src = src(Number(p));
         return img;
       });
     return () => {
-      for (const img of imgs) img.src = "";
+      for (const img of imgs) {
+        img.onload = null;
+        img.src = "";
+      }
     };
-  }, [comicId, key, enabled]);
+  }, [src, key, enabled, onSize]);
 }

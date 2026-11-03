@@ -1,12 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   ArrowLeft,
   ChevronLeft,
   ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   Columns2,
   Eye,
+  GalleryVertical,
   LayoutList,
   MessagesSquare,
   Maximize,
@@ -27,12 +30,16 @@ import {
   FIT_LABELS,
   MODE_LABELS,
   buildSpreads,
+  chapterAt,
   clampPage,
+  hasTallPages,
+  isContinuous,
   nextMode,
   pageIndicator,
   spreadIndexOf,
   zoomIn,
   zoomOut,
+  type ReaderChapter,
   type Size,
 } from "../../domain/reader";
 import { actionForKey, formatKey, keyFromEvent, resolveArrow, type ShortcutAction } from "../../domain/shortcuts";
@@ -40,17 +47,19 @@ import type { FitMode, ReaderMode } from "../../domain/settings";
 import type { ReaderSession } from "../../domain/types";
 import { api, ApiError, errorMessage } from "../../services/api";
 import { openPdf } from "../../services/pdf";
+import { pageUrl, type PageSrc } from "../../services/urls";
 import { useSettings } from "../../app/settings-context";
 import { useNav } from "../../app/navigation";
 import { useOnboarding } from "../onboarding/onboarding-context";
 import { ReaderTip } from "../onboarding/ReaderTip";
+import { useLeaveFullscreenOnClose } from "./fullscreen";
 import { GuidedReader } from "./GuidedReader";
 import { PageIndexPanel, ReaderSettingsPanel, ShortcutsDialog } from "./ReaderPanels";
 import { PagedView, VerticalView, type VerticalHandle } from "./Views";
 import { usePreload } from "./PageView";
 import { useProgressSaver } from "./useProgressSaver";
 
-const MODE_ICONS: Record<ReaderMode, typeof Square> = { single: RectangleVertical, double: Columns2, vertical: LayoutList };
+const MODE_ICONS: Record<ReaderMode, typeof Square> = { single: RectangleVertical, double: Columns2, vertical: LayoutList, webtoon: GalleryVertical };
 const FIT_ICONS: Record<"page" | "width", typeof Square> = { page: Square, width: MoveHorizontal };
 
 function isTyping(target: EventTarget | null): boolean {
@@ -77,12 +86,59 @@ function SideButton({ side, icon: Icon, label, onClick, disabled, visible }: { s
   );
 }
 
+/** O que o leitor mostra. Vem da biblioteca ou de um capítulo de uma fonte, e o leitor é o mesmo. */
+export interface ReaderContent {
+  title: string;
+  pageCount: number;
+  start: { pageIndex: number; scrollRatio: number };
+  pageSrc: PageSrc;
+  saveProgress: (page: number, count: number, ratio: number) => Promise<unknown>;
+  resetProgress: (page: number) => Promise<void>;
+  chapters: ReaderChapter[];
+  backLabel: string;
+  backTitle: string;
+  /** Modo guardado para esta obra. Sem ele, vale o das configurações. */
+  chosenMode: ReaderMode | null;
+  webtoonHint: boolean;
+  /** Sem isto, a escolha do modo vale para todas as leituras. */
+  saveMode?: (mode: ReaderMode) => void;
+  /** A cada página que passa. */
+  onPage?: (page: number) => void;
+  /** Ainda vem mais um capítulo depois da última página. */
+  waitingForNext?: boolean;
+  /** O que aparece depois da última página. */
+  ending?: ReactNode;
+  /** Abrem um capítulo que ainda não está na sequência. */
+  previousChapter?: () => void;
+  nextChapter?: () => void;
+}
+
 export function ReaderScreen({ id }: { id: number }) {
   const nav = useNav();
   const [session, setSession] = useState<ReaderSession | null>(null);
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [pageCount, setPageCount] = useState(0);
+  const zoomState = useState(1);
+  useLeaveFullscreenOnClose();
+
+  const content = useMemo<ReaderContent | null>(
+    () =>
+      session && {
+        title: session.comic.title,
+        pageCount,
+        start: session.start,
+        pageSrc: (index, token) => pageUrl(session.comic.id, index, token),
+        saveProgress: (page, count, ratio) => api.saveProgress(session.comic.id, page, count, ratio),
+        resetProgress: () => api.resetProgress(session.comic.id),
+        chapters: [{ title: null, first: 0, count: pageCount, guidedComicId: session.comic.id }],
+        backLabel: "Biblioteca",
+        backTitle: "Voltar à biblioteca",
+        chosenMode: null,
+        webtoonHint: false,
+      },
+    [session, pageCount],
+  );
 
   useEffect(() => {
     let alive = true;
@@ -144,31 +200,35 @@ export function ReaderScreen({ id }: { id: number }) {
       </div>
     );
   }
-  if (!session || pageCount === 0) {
+  if (!session || !content || pageCount === 0) {
     return (
       <div className="flex h-full items-center justify-center bg-reader text-fg">
         <Spinner size={22} label={session?.comic.format === "pdf" || !session ? "Abrindo HQ…" : "Preparando páginas…"} />
       </div>
     );
   }
-  return <Reader key={session.comic.id} session={session} pageCount={pageCount} pdf={pdf} />;
+  return <Reader key={session.comic.id} content={content} pdf={pdf} zoomState={zoomState} />;
 }
 
-function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount: number; pdf: PDFDocumentProxy | null }) {
+export function Reader({ content, pdf, zoomState: [zoom, setZoom] }: { content: ReaderContent; pdf: PDFDocumentProxy | null; zoomState: [number, Dispatch<SetStateAction<number>>] }) {
   const nav = useNav();
   const toast = useToast();
   const { settings, update } = useSettings();
   const onboarding = useOnboarding();
-  const comic = session.comic;
-  const mode = settings["reader.mode"];
+  const { pageCount, chapters, saveMode, onPage, waitingForNext, nextChapter, previousChapter } = content;
   const direction = settings["reader.direction"];
   const fit = settings["reader.fit"];
   const rtl = direction === "rtl";
   const shortcuts = settings["reader.shortcuts"];
 
-  const [page, setPage] = useState(() => clampPage(session.start.pageIndex, pageCount));
-  const [zoom, setZoom] = useState(1);
+  const [page, setPage] = useState(() => clampPage(content.start.pageIndex, pageCount));
   const [sizes, setSizes] = useState<ReadonlyMap<number, Size>>(new Map());
+  const [chosenMode, setChosenMode] = useState(content.chosenMode);
+  // Só vira: uma obra em tiras não volta a parecer outra coisa no meio da leitura.
+  const [tall, setTall] = useState(false);
+  if (!tall && hasTallPages(sizes)) setTall(true);
+  const mode: ReaderMode = chosenMode ?? (tall || content.webtoonHint ? "webtoon" : settings["reader.mode"]);
+  const continuous = isContinuous(mode);
   const [panel, setPanel] = useState<null | "settings" | "index">(null);
   const [help, setHelp] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
@@ -179,14 +239,18 @@ function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount
   const verticalRef = useRef<VerticalHandle>(null);
   const hideTimer = useRef<number | undefined>(undefined);
   const [activity, setActivity] = useState(0);
-  const [initialRatio] = useState(session.start.scrollRatio);
+  const [initialRatio] = useState(content.start.scrollRatio);
 
-  const { schedule, flush } = useProgressSaver(comic.id, pageCount);
+  const { schedule, flush } = useProgressSaver(content.saveProgress, pageCount);
 
-  const spreads = useMemo(() => buildSpreads(pageCount, mode, settings["reader.coverAlone"], sizes), [pageCount, mode, settings, sizes]);
+  const chapterStarts = useMemo(() => new Map(chapters.slice(1).map((c) => [c.first, c.title ?? ""])), [chapters]);
+  const startSet = useMemo(() => new Set(chapterStarts.keys()), [chapterStarts]);
+  const spreads = useMemo(() => buildSpreads(pageCount, mode, settings["reader.coverAlone"], sizes, startSet), [pageCount, mode, settings, sizes, startSet]);
   const spreadIdx = spreadIndexOf(spreads, page);
   const spread = spreads[spreadIdx] ?? [page];
   const isLast = spreadIdx >= spreads.length - 1;
+  const chapter = chapterAt(chapters, page);
+  const chapterIndex = chapters.indexOf(chapter);
 
   const onSize = useCallback((i: number, s: Size) => {
     setSizes((m) => {
@@ -198,51 +262,58 @@ function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount
     });
   }, []);
 
+  // Uma obra em tiras continua assim nos próximos capítulos, sem precisar descobrir de novo.
+  useEffect(() => {
+    if (tall && chosenMode === null) saveMode?.("webtoon");
+  }, [tall, chosenMode, saveMode]);
+
+  useEffect(() => {
+    onPage?.(page);
+  }, [page, onPage]);
+
   // Grava a posição ao mudar de página (modos paginados).
   useEffect(() => {
-    if (mode !== "vertical") schedule(page, 0);
-  }, [page, mode, schedule]);
+    if (!continuous) schedule(page, 0);
+  }, [page, continuous, schedule]);
 
   // Pré-carrega as próximas duas visões e a anterior.
   const neighbors = useMemo(() => {
-    if (mode === "vertical") return [];
+    if (continuous) return [];
     return [spreads[spreadIdx + 1], spreads[spreadIdx + 2], spreads[spreadIdx - 1]].flat().filter((p): p is number => p !== undefined);
-  }, [spreads, spreadIdx, mode]);
-  usePreload(comic.id, neighbors, !pdf);
+  }, [spreads, spreadIdx, continuous]);
+  usePreload(content.pageSrc, neighbors, !pdf, onSize);
 
   const goToPage = useCallback(
     (p: number) => {
       const target = clampPage(p, pageCount);
       setEndReached(false);
       setPage(target);
-      if (mode === "vertical") verticalRef.current?.scrollToPage(target, 0);
+      if (continuous) verticalRef.current?.scrollToPage(target, 0);
     },
-    [pageCount, mode],
+    [pageCount, continuous],
   );
 
+  const atLastPage = continuous ? page >= pageCount - 1 : isLast;
+
   const next = useCallback(() => {
-    if (mode === "vertical") {
-      if (page >= pageCount - 1) setEndReached(true);
-      else goToPage(page + 1);
+    if (!atLastPage) {
+      goToPage(continuous ? page + 1 : spreads[spreadIdx + 1]![0]!);
       return;
     }
-    if (isLast) {
-      setEndReached(true);
-      if (settings["reader.end"] === "library") {
-        void flush().then(() => nav.back());
-      }
-      return;
+    if (waitingForNext) return;
+    setEndReached(true);
+    if (!continuous && settings["reader.end"] === "library") {
+      void flush().then(() => nav.back());
     }
-    goToPage(spreads[spreadIdx + 1]![0]!);
-  }, [mode, page, pageCount, isLast, spreads, spreadIdx, goToPage, settings, flush, nav]);
+  }, [atLastPage, continuous, page, spreads, spreadIdx, goToPage, waitingForNext, settings, flush, nav]);
 
   const prev = useCallback(() => {
-    if (mode === "vertical") {
+    if (continuous) {
       goToPage(page - 1);
       return;
     }
     if (spreadIdx > 0) goToPage(spreads[spreadIdx - 1]![0]!);
-  }, [mode, page, spreadIdx, spreads, goToPage]);
+  }, [continuous, page, spreadIdx, spreads, goToPage]);
 
   const back = useCallback(() => {
     void flush();
@@ -260,25 +331,27 @@ function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount
     }
   }, [toast]);
 
-  // Sai da tela cheia ao fechar o leitor.
-  useEffect(
-    () => () => {
-      try {
-        void getCurrentWindow()
-          .setFullscreen(false)
-          .catch(() => undefined);
-      } catch {
-        /* fora do Tauri */
-      }
-    },
-    [],
-  );
+  // Trocar de capítulo recria o leitor, e a tela cheia continua.
+  useEffect(() => {
+    try {
+      void getCurrentWindow()
+        .isFullscreen()
+        .then(setFullscreen)
+        .catch(() => undefined);
+    } catch {
+      /* fora do Tauri */
+    }
+  }, []);
 
   const setFit = (f: FitMode) => {
     setZoom(1);
     void update("reader.fit", f);
   };
-  const setMode = (m: ReaderMode) => void update("reader.mode", m);
+  const setMode = (m: ReaderMode) => {
+    setChosenMode(m);
+    if (saveMode) saveMode(m);
+    else void update("reader.mode", m);
+  };
   const togglePanel = (name: "settings" | "index") => setPanel((p) => (p === name ? null : name));
 
   // ---- Controles: ocultar automaticamente, com forma clara de reaparecer ----
@@ -314,9 +387,9 @@ function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount
         case "prev":
           return prev();
         case "first":
-          return goToPage(0);
+          return goToPage(chapter.first);
         case "last":
-          return goToPage(pageCount - 1);
+          return goToPage(chapter.first + chapter.count - 1);
         case "zoomIn":
           return setZoom((z) => zoomIn(z));
         case "zoomOut":
@@ -340,6 +413,7 @@ function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount
         case "pageIndex":
           return togglePanel("index");
         case "guided":
+          if (chapter.guidedComicId === null) return;
           setPanel(null);
           return setGuided(true);
         case "help":
@@ -349,7 +423,7 @@ function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [next, prev, goToPage, pageCount, mode, rtl, toggleFullscreen, back, update],
+    [next, prev, goToPage, chapter, mode, rtl, toggleFullscreen, back, update],
   );
 
   useEffect(() => {
@@ -364,8 +438,8 @@ function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount
       const key = keyFromEvent(e);
       if (!key) return;
       // No modo vertical, setas para cima/baixo e espaço rolam normalmente.
-      if (mode === "vertical" && ["ArrowUp", "ArrowDown", "Space", "Shift+Space"].includes(key)) return;
-      const action = resolveArrow(actionForKey(shortcuts, key), key, rtl && mode !== "vertical");
+      if (continuous && ["ArrowUp", "ArrowDown", "Space", "Shift+Space"].includes(key)) return;
+      const action = resolveArrow(actionForKey(shortcuts, key), key, rtl && !continuous);
       if (!action) return;
       // Botões e links focados mantêm Espaço/Enter.
       if ((key === "Space" || key === "Enter") && (e.target as HTMLElement)?.closest?.("button, a")) return;
@@ -375,7 +449,7 @@ function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [guided, shortcuts, rtl, mode, panel, fullscreen, run, toggleFullscreen, showControls]);
+  }, [guided, shortcuts, rtl, continuous, panel, fullscreen, run, toggleFullscreen, showControls]);
 
   // Ctrl + roda do mouse: zoom.
   useEffect(() => {
@@ -387,7 +461,7 @@ function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount
     };
     window.addEventListener("wheel", onWheel, { passive: false });
     return () => window.removeEventListener("wheel", onWheel);
-  }, [guided]);
+  }, [guided, setZoom]);
 
   const wheelLock = useRef(0);
   const onWheelEdge = useCallback(
@@ -419,23 +493,34 @@ function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount
   );
 
   const resetProgress = () => {
-    void api
-      .resetProgress(comic.id)
+    void content
+      .resetProgress(page)
       .then(() => {
-        goToPage(0);
+        goToPage(chapter.first);
         toast.success("Progresso reiniciado");
       })
       .catch((e) => toast.error("Não foi possível reiniciar o progresso", errorMessage(e)));
   };
 
-  const indicator = mode === "vertical" ? pageIndicator([page], pageCount) : pageIndicator(spread, pageCount);
+  const indicator = pageIndicator((continuous ? [page] : spread).map((p) => p - chapter.first), chapter.count);
+  const firstShown = continuous ? page : spread[0]!;
+  const chapterBefore = chapters[chapterIndex - 1];
+  const chapterAfter = chapters[chapterIndex + 1];
+  const toPreviousChapter = () => {
+    if (chapterBefore) goToPage(chapterBefore.first);
+    else if (previousChapter) void flush().then(previousChapter);
+  };
+  const toNextChapter = () => {
+    if (chapterAfter) goToPage(chapterAfter.first);
+    else if (nextChapter) void flush().then(nextChapter);
+  };
   const ModeIcon = MODE_ICONS[mode];
   const tour = tipActive ? "ring-2 ring-accent ring-offset-2 ring-offset-elevated rounded-md" : "";
   const prevLabel = "Página anterior";
   const nextLabel = "Próxima página";
   const k = (a: ShortcutAction) => (shortcuts[a][0] ? formatKey(shortcuts[a][0]!) : undefined);
 
-  const sideButtons = mode !== "vertical" && (
+  const sideButtons = !continuous && (
     <>
       <SideButton side="left-3" icon={ChevronLeft} label={rtl ? nextLabel : prevLabel} onClick={rtl ? next : prev} disabled={!rtl && spreadIdx === 0} visible={visible} />
       <SideButton side="right-3" icon={ChevronRight} label={rtl ? prevLabel : nextLabel} onClick={rtl ? prev : next} disabled={rtl && spreadIdx === 0} visible={visible} />
@@ -443,7 +528,7 @@ function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount
   );
 
   return (
-    <div className="relative flex h-full flex-col overflow-hidden bg-reader text-fg" onMouseMove={showControls} aria-label={`Leitor: ${comic.title}`}>
+    <div className="relative flex h-full flex-col overflow-hidden bg-reader text-fg" onMouseMove={showControls} aria-label={`Leitor: ${content.title}`}>
       {/* Barra superior */}
       <header
         inert={guided}
@@ -454,21 +539,23 @@ function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount
         onMouseEnter={() => window.clearTimeout(hideTimer.current)}
       >
         <span className={tour} data-tour="reader-back">
-          <Button variant="ghost" size="sm" icon={ArrowLeft} onClick={back} title={`Voltar à biblioteca (${k("back") ?? ""})`}>
-            Biblioteca
+          <Button variant="ghost" size="sm" icon={ArrowLeft} onClick={back} title={`${content.backTitle} (${k("back") ?? ""})`}>
+            {content.backLabel}
           </Button>
         </span>
         <div className="min-w-0 flex-1 px-2">
-          <p className="truncate text-sm font-semibold">{comic.title}</p>
+          <p className="truncate text-sm font-semibold">{chapter.title ? `${content.title} · ${chapter.title}` : content.title}</p>
           <p className="text-xs text-muted" aria-live="polite">
             {indicator}
           </p>
         </div>
-        <div className="flex items-center gap-0.5 max-md:hidden" role="group" aria-label="Ajuste da imagem">
-          {(["page", "width"] as FitMode[]).map((f) => (
-            <IconButton key={f} icon={FIT_ICONS[f as "page" | "width"]} label={FIT_LABELS[f]} shortcut={k(f === "page" ? "fitPage" : "fitWidth")} pressed={fit === f} onClick={() => setFit(f)} size="sm" />
-          ))}
-        </div>
+        {mode !== "webtoon" && (
+          <div className="flex items-center gap-0.5 max-md:hidden" role="group" aria-label="Ajuste da imagem">
+            {(["page", "width"] as FitMode[]).map((f) => (
+              <IconButton key={f} icon={FIT_ICONS[f as "page" | "width"]} label={FIT_LABELS[f]} shortcut={k(f === "page" ? "fitPage" : "fitWidth")} pressed={fit === f} onClick={() => setFit(f)} size="sm" />
+            ))}
+          </div>
+        )}
         <div className={cn("flex items-center gap-0.5", tour)} role="group" aria-label="Zoom" data-tour="reader-zoom">
           <IconButton icon={ZoomOut} label="Diminuir zoom" shortcut={k("zoomOut")} onClick={() => setZoom(zoomOut)} size="sm" />
           <button
@@ -483,15 +570,17 @@ function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount
           <IconButton icon={ZoomIn} label="Aumentar zoom" shortcut={k("zoomIn")} onClick={() => setZoom(zoomIn)} size="sm" />
         </div>
         <span className="mx-1 h-5 w-px bg-border" aria-hidden />
-        <Button
-          variant="ghost"
-          size="sm"
-          icon={MessagesSquare}
-          title={`Ler balão por balão (${k("guided") ?? ""})`}
-          onClick={() => run("guided")}
-        >
-          <span className="max-lg:sr-only">Leitura Guiada</span>
-        </Button>
+        {chapter.guidedComicId !== null && (
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={MessagesSquare}
+            title={`Ler balão por balão (${k("guided") ?? ""})`}
+            onClick={() => run("guided")}
+          >
+            <span className="max-lg:sr-only">Leitura Guiada</span>
+          </Button>
+        )}
         <IconButton icon={ModeIcon} label={`Alternar modo de exibição (atual: ${MODE_LABELS[mode]})`} shortcut={k("cycleMode")} onClick={() => setMode(nextMode(mode))} size="sm" />
         <IconButton icon={ListOrdered} label="Abrir índice de páginas" shortcut={k("pageIndex")} pressed={panel === "index"} onClick={() => togglePanel("index")} size="sm" />
         <IconButton icon={Settings2} label="Configurações de leitura" pressed={panel === "settings"} onClick={() => togglePanel("settings")} size="sm" />
@@ -499,27 +588,38 @@ function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount
       </header>
 
       {/* Área de leitura (com controles fixos, reserva espaço para não cobrir a página) */}
-      <div inert={guided} className={cn("relative flex-1 overflow-hidden", (mode !== "vertical" || settings["reader.controls"] === "always") && "pt-[45px] pb-[49px]")}>
-        {mode === "vertical" ? (
+      <div inert={guided} className={cn("relative flex-1 overflow-hidden", (!continuous || settings["reader.controls"] === "always") && "pt-[45px] pb-[49px]")}>
+        {continuous ? (
           <VerticalView
             ref={verticalRef}
-            comicId={comic.id}
+            pageSrc={content.pageSrc}
+            webtoon={mode === "webtoon"}
+            chapterStarts={chapterStarts}
+            footer={content.ending}
             count={pageCount}
             sizes={sizes}
             fit={fit}
             zoom={zoom}
             pdf={pdf}
             startPage={page}
-            startRatio={page === session.start.pageIndex ? initialRatio : 0}
+            startRatio={page === content.start.pageIndex ? initialRatio : 0}
             onSize={onSize}
             onPosition={onPosition}
           />
         ) : (
-          <PagedView comicId={comic.id} spread={spread} sizes={sizes} fit={fit} zoom={zoom} direction={direction} pdf={pdf} onSize={onSize} onWheelEdge={onWheelEdge} />
+          <PagedView pageSrc={content.pageSrc} spread={spread} sizes={sizes} fit={fit} zoom={zoom} direction={direction} pdf={pdf} onSize={onSize} onWheelEdge={onWheelEdge} />
         )}
+        {!continuous && firstShown === chapter.first && chapterIndex > 0 && (
+          <p role="status" className="p-enter pointer-events-none absolute top-[53px] left-1/2 z-10 max-w-[80%] -translate-x-1/2 truncate rounded-full border border-border bg-elevated/90 px-3 py-1 text-xs text-muted shadow-overlay">
+            A partir daqui: {chapter.title}
+          </p>
+        )}
+        {!continuous && atLastPage && waitingForNext && <div className="absolute inset-x-0 bottom-16 z-10 flex justify-center">{content.ending}</div>}
         {sideButtons}
         {panel === "settings" && (
           <ReaderSettingsPanel
+            mode={mode}
+            onMode={setMode}
             onClose={() => setPanel(null)}
             onResetProgress={resetProgress}
             onShowShortcuts={() => {
@@ -535,12 +635,12 @@ function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount
         )}
         {panel === "index" && (
           <PageIndexPanel
-            comicId={comic.id}
-            count={pageCount}
-            current={mode === "vertical" ? [page] : spread}
+            pageSrc={(index, token) => content.pageSrc(chapter.first + index, token)}
+            count={chapter.count}
+            current={(continuous ? [page] : spread).map((p) => p - chapter.first)}
             isPdf={!!pdf}
             onSelect={(p) => {
-              goToPage(p);
+              goToPage(chapter.first + p);
               setPanel(null);
             }}
             onClose={() => setPanel(null)}
@@ -548,14 +648,14 @@ function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount
         )}
         {endReached && (
           <div role="status" className="p-enter absolute bottom-20 left-1/2 z-20 -translate-x-1/2 rounded-lg border border-border bg-elevated px-4 py-3 text-center shadow-overlay">
-            <p className="font-semibold">Você chegou ao fim de “{comic.title}”</p>
+            <p className="font-semibold">Você chegou ao fim de “{content.title}”</p>
             <p className="text-sm text-muted">A leitura foi marcada como concluída.</p>
             <div className="mt-2 flex justify-center gap-2">
               <Button size="sm" onClick={() => setEndReached(false)}>
                 Continuar aqui
               </Button>
               <Button size="sm" variant="primary" onClick={back}>
-                Voltar à biblioteca
+                {content.backTitle}
               </Button>
             </div>
           </div>
@@ -584,7 +684,8 @@ function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount
         onMouseEnter={() => window.clearTimeout(hideTimer.current)}
       >
         <div className={cn("flex flex-1 items-center gap-3", rtl && "flex-row-reverse", tour)} data-tour="reader-nav">
-          <Button size="sm" icon={rtl ? ChevronRight : ChevronLeft} onClick={prev} disabled={mode !== "vertical" ? spreadIdx === 0 : page === 0} title={`${prevLabel} (${k("prev") ?? ""})`}>
+          {(chapterBefore || previousChapter) && <IconButton icon={rtl ? ChevronsRight : ChevronsLeft} label="Capítulo anterior" variant="secondary" size="sm" onClick={toPreviousChapter} />}
+          <Button size="sm" icon={rtl ? ChevronRight : ChevronLeft} onClick={prev} disabled={!continuous ? spreadIdx === 0 : page === 0} title={`${prevLabel} (${k("prev") ?? ""})`}>
             <span className="max-sm:sr-only">{prevLabel}</span>
           </Button>
           <label htmlFor="reader-progress" className="sr-only">
@@ -594,9 +695,9 @@ function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount
             id="reader-progress"
             type="range"
             min={1}
-            max={pageCount}
-            value={(mode === "vertical" ? page : spread[0]!) + 1}
-            onChange={(e) => goToPage(Number(e.target.value) - 1)}
+            max={chapter.count}
+            value={firstShown - chapter.first + 1}
+            onChange={(e) => goToPage(chapter.first + Number(e.target.value) - 1)}
             dir={rtl ? "rtl" : "ltr"}
             aria-valuetext={indicator}
             className="h-1.5 flex-1 cursor-pointer accent-[var(--color-accent)]"
@@ -604,20 +705,21 @@ function Reader({ session, pageCount, pdf }: { session: ReaderSession; pageCount
           <Button size="sm" trailingIcon={rtl ? ChevronLeft : ChevronRight} onClick={next} title={`${nextLabel} (${k("next") ?? ""})`}>
             <span className="max-sm:sr-only">{nextLabel}</span>
           </Button>
+          {(chapterAfter || nextChapter) && <IconButton icon={rtl ? ChevronsLeft : ChevronsRight} label="Próximo capítulo" variant="secondary" size="sm" onClick={toNextChapter} />}
         </div>
       </footer>
 
-      {guided && (
+      {guided && chapter.guidedComicId !== null && (
         <GuidedReader
-          comicId={comic.id}
-          page={page}
-          pageCount={pageCount}
+          comicId={chapter.guidedComicId}
+          page={page - chapter.first}
+          pageCount={chapter.count}
           pdf={pdf}
           rtl={rtl}
           shortcuts={shortcuts}
           natural={sizes.get(page)}
-          onSize={onSize}
-          onPage={goToPage}
+          onSize={(i, s) => onSize(chapter.first + i, s)}
+          onPage={(p) => goToPage(chapter.first + p)}
           onExit={() => setGuided(false)}
         />
       )}

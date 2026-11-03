@@ -5,6 +5,7 @@
 //! - `/page/<id>/<i>`     página `i` (0-based) de HQs de imagens
 //! - `/file/<id>`         o PDF original, com suporte a `Range` para o PDF.js
 //! - `/online-cover/<id>` miniatura de uma obra de uma fonte, baixada aqui e guardada em cache
+//! - `/online-page/<id>/<i>` página de um capítulo de uma fonte: do arquivo, se estiver baixado, ou da fonte
 
 use std::io::{Read, Seek, SeekFrom};
 
@@ -42,6 +43,10 @@ fn status_for(code: &str) -> StatusCode {
     }
 }
 
+pub fn forbidden() -> Resp {
+    base(StatusCode::FORBIDDEN).body(Vec::new()).expect("resposta válida")
+}
+
 pub fn handle(core: &Core, req: &Request<Vec<u8>>) -> Resp {
     if req.method() == tauri::http::Method::OPTIONS {
         return base(StatusCode::NO_CONTENT)
@@ -58,7 +63,8 @@ pub fn handle(core: &Core, req: &Request<Vec<u8>>) -> Resp {
         ("page", Some(id), Some(index)) => page(core, id, index),
         ("file", Some(id), _) => pdf_file(core, id, req),
         ("online-cover", Some(id), _) => online_cover(core, id),
-        ("cover" | "page" | "file" | "online-cover", ..) => return error(StatusCode::BAD_REQUEST, "bad_request", "Requisição inválida."),
+        ("online-page", Some(id), Some(index)) => online_page(core, id, index),
+        ("cover" | "page" | "file" | "online-cover" | "online-page", ..) => return error(StatusCode::BAD_REQUEST, "bad_request", "Requisição inválida."),
         _ => return error(StatusCode::NOT_FOUND, "not_found", "Recurso não encontrado."),
     };
     served.unwrap_or_else(|e| error(status_for(e.code()), e.code(), &e.to_string()))
@@ -94,6 +100,11 @@ fn online_cover(core: &Core, id: i64) -> AppResult<Resp> {
         Some(bytes) => base(StatusCode::OK).header(header::CONTENT_TYPE, "image/jpeg").header(header::CACHE_CONTROL, "public, max-age=3600").body(bytes).unwrap(),
         None => error(StatusCode::NOT_FOUND, "no_cover", "Esta obra não possui capa disponível."),
     })
+}
+
+fn online_page(core: &Core, id: i64, index: usize) -> AppResult<Resp> {
+    let (bytes, mime) = sources::chapter_page(core, id, index)?;
+    Ok(base(StatusCode::OK).header(header::CONTENT_TYPE, mime).header(header::CACHE_CONTROL, "private, max-age=3600").body(bytes).unwrap())
 }
 
 fn page(core: &Core, id: i64, index: usize) -> AppResult<Resp> {

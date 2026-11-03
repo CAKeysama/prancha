@@ -2,6 +2,8 @@
 
 Extensões são código de terceiros. O objetivo é que uma extensão ruim, ou um repositório comprometido, não consiga passar do que foi declarado e aceito, e que o pior resultado seja uma fonte que não funciona.
 
+**Nada disto vale para extensões do Mihon.** Elas rodam no Suwayomi, sem isolamento, com acesso aos seus arquivos e à internet, e sem conferência de assinatura do pacote. Veja a [seção própria](#extensões-do-mihon).
+
 ## Em que você confia
 
 Ao confiar em um repositório, você aceita que quem tem a chave privada pode publicar extensões para você instalar. Isso **não** dá acesso aos seus arquivos ou à sua biblioteca. Mas a extensão escolhe o que aparece na fonte dela: o Prancha não confere o conteúdo das imagens, nem se a pessoa tem o direito de distribuí-las.
@@ -30,7 +32,7 @@ Assinaturas inválidas não têm opção de "ignorar".
 
 ## Rede
 
-Toda requisição passa pelo módulo `src-tauri/src/extensions/net.rs`, inclusive as de repositórios, capas e páginas.
+Toda requisição passa pelo módulo `src-tauri/src/extensions/net.rs`, inclusive as de repositórios, capas e páginas. As duas exceções são o download do componente, de um endereço fixo no código, e as chamadas ao Suwayomi em `127.0.0.1`, que o próprio Prancha iniciou.
 
 - Só HTTPS na porta 443, sem proxy e sem credenciais no endereço.
 - Extensões só alcançam os hosts de `allowedHosts`, e o mesmo vale para as URLs de capas e páginas que elas devolvem.
@@ -42,7 +44,30 @@ A exceção de loopback usada nos testes existe em duas formas: `Net::new(true)`
 
 ## O que nunca é permitido
 
-Conteúdo adulto, execução de comandos, acesso irrestrito a arquivos ou à rede, execução de APKs, contorno de DRM, paywall, CAPTCHA ou login. Nenhuma configuração muda isso.
+Execução de APKs, contorno de DRM, paywall, CAPTCHA ou login. Nenhuma configuração muda isso. Conteúdo adulto só aparece com o [filtro +18](README.md#filtro-18) desligado, depois de a pessoa confirmar a idade. Execução de comandos e acesso irrestrito a arquivos ou à rede também não são permitidos, exceto nas extensões do Mihon, que o Prancha não tem como limitar.
+
+## Extensões do Mihon
+
+Quando a pessoa adiciona um repositório no formato do Keiyoushi, e só com o aviso na tela, o Prancha baixa o Suwayomi-Server, e é ele quem roda as extensões. O que o Prancha garante:
+
+- O pacote do Suwayomi é baixado de um endereço fixo e só é usado se o SHA-256 for o esperado.
+- O servidor escuta só em `127.0.0.1`, com porta livre e senha aleatória a cada início. Sem a senha, a API e as imagens respondem 401, o que importa porque ele aceita pedidos de qualquer origem.
+- O processo termina junto com o Prancha, mesmo em uma falha, por um Job Object do Windows.
+- A impressão digital fica fixada como em qualquer repositório: se o `repo.json` anunciar outra, a sincronização para e a instalação é recusada até a nova confirmação. Antes de instalar, o Prancha também confere se o Suwayomi leu a mesma.
+- Só extensões e fontes marcadas exatamente como `SAFE` são registradas. O que o servidor devolve passa pelos mesmos limites de texto, e o CBZ é conferido antes de entrar na biblioteca.
+- WebUI, bandeja, navegador embutido e FlareSolverr ficam desligados.
+
+O que o Prancha **não** garante:
+
+- **Isolamento.** A extensão é Java, com o acesso da pessoa aos arquivos, à rede e aos outros programas. Pode ler a biblioteca e o banco do Prancha.
+- **Procedência do pacote.** Nem o Prancha nem o Suwayomi conferem a assinatura de cada `.jar`: a impressão digital é só comparada com o que o repositório anuncia, e o `.jar` vem do `jarUrl` do índice, em HTTPS. Quem controlar o repositório pode publicar outro código.
+- **Limites.** Não há limite de memória por extensão além de 512 MB para o Java todo, nem de hosts, nem de tempo de CPU. O tempo de resposta é limitado só do lado do Prancha.
+- **Atualizações do Suwayomi.** A versão muda com novas versões do Prancha, e correções de segurança dele chegam só assim.
+
+
+### Janela de verificação
+
+**Verificar no site** mostra um site de terceiros, então a janela não recebe permissão nenhuma do aplicativo, e o protocolo interno recusa qualquer pedido que não venha da janela principal. Ela abre em modo anônimo, recusa janelas novas e downloads, e os únicos dados que saem dela são os cookies daquele site, que vão para o arquivo de cookies do Suwayomi. O Prancha não clica, não preenche e não responde a nada nessa janela.
 
 ## Atualizações
 

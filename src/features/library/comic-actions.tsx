@@ -19,13 +19,22 @@ import { Checkbox, TextArea, TextField } from "../../components/Form";
 import type { MenuEntry } from "../../components/Menu";
 import { Spinner } from "../../components/Feedback";
 import { useToast } from "../../components/Toast";
+import type { LibrarySeries } from "../../domain/online";
 import { comicCountLabel, readActionLabel } from "../../domain/progress";
 import type { CollectionInfo, ComicDetails, ComicSummary, FieldSource, MetadataPatch } from "../../domain/types";
 import { api, errorMessage } from "../../services/api";
 import { useNav } from "../../app/navigation";
 import { useLibraryVersion } from "../../app/library-events";
 
+/** O que as ações precisam saber de uma obra, venha ela da biblioteca ou da página da obra. */
+type SeriesItem = Pick<LibrarySeries, "id" | "title" | "favorite" | "readStatus" | "resume">;
+
 interface ComicActionsApi {
+  readSeries: (s: SeriesItem) => void;
+  openSeries: (s: SeriesItem) => void;
+  toggleSeriesFavorite: (s: SeriesItem) => Promise<void>;
+  seriesCollections: (id: number) => void;
+  seriesMenu: (s: SeriesItem, opts?: { collectionId?: number; inDetails?: boolean }) => MenuEntry[];
   read: (c: ComicSummary) => void;
   openDetails: (c: ComicSummary) => void;
   toggleFavorite: (c: ComicSummary) => Promise<void>;
@@ -194,7 +203,7 @@ function EditMetadataDialog({ id, onClose }: { id: number; onClose: () => void }
   );
 }
 
-function CollectionsDialog({ id, onClose }: { id: number; onClose: () => void }) {
+function CollectionsDialog({ target, onClose }: { target: { kind: "comic" | "series"; id: number }; onClose: () => void }) {
   const [all, setAll] = useState<CollectionInfo[] | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [title, setTitle] = useState("");
@@ -204,18 +213,22 @@ function CollectionsDialog({ id, onClose }: { id: number; onClose: () => void })
 
   useEffect(() => {
     let alive = true;
-    Promise.all([api.collections(), api.comic(id)])
+    const current =
+      target.kind === "series"
+        ? api.seriesStored(target.id).then((s) => ({ title: s.title, ids: s.collections }))
+        : api.comic(target.id).then((c) => ({ title: c.title, ids: c.collections.map((x) => x.id) }));
+    Promise.all([api.collections(), current])
       .then(([cols, d]) => {
         if (!alive) return;
         setAll(cols);
         setTitle(d.title);
-        setSelected(new Set(d.collections.map((c) => c.id)));
+        setSelected(new Set(d.ids));
       })
       .catch((e) => alive && setError(errorMessage(e)));
     return () => {
       alive = false;
     };
-  }, [id]);
+  }, [target]);
 
   const create = async () => {
     setError(null);
@@ -232,7 +245,7 @@ function CollectionsDialog({ id, onClose }: { id: number; onClose: () => void })
   const save = async () => {
     setSaving(true);
     try {
-      await api.setComicCollections(id, [...selected]);
+      await (target.kind === "series" ? api.seriesSetCollections(target.id, [...selected]) : api.setComicCollections(target.id, [...selected]));
       onClose();
     } catch (e) {
       setError(errorMessage(e));
@@ -355,6 +368,28 @@ function RemoveDialog({ comic, onClose, onRemoved }: { comic: ComicSummary; onCl
   );
 }
 
+function RemoveSeriesDialog({ series, onClose, onRemoved }: { series: SeriesItem; onClose: () => void; onRemoved: () => void }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const confirm = async () => {
+    setBusy(true);
+    try {
+      await api.seriesForget(series.id);
+      toast.success("Removida da biblioteca", series.title);
+      onRemoved();
+      onClose();
+    } catch (e) {
+      toast.error("Não foi possível remover", errorMessage(e));
+      setBusy(false);
+    }
+  };
+  return (
+    <ConfirmDialog open destructive title={`Remover “${series.title}” da biblioteca?`} confirmLabel="Remover da biblioteca" busy={busy} onConfirm={confirm} onCancel={onClose}>
+      O progresso de leitura, o favorito e as coleções desta obra saem do Prancha. Capítulos baixados continuam na biblioteca.
+    </ConfirmDialog>
+  );
+}
+
 // ---------------------------------------------------------------------------
 
 export function ComicActionsProvider({ children }: { children: ReactNode }) {
@@ -362,8 +397,9 @@ export function ComicActionsProvider({ children }: { children: ReactNode }) {
   const toast = useToast();
   const { bump } = useLibraryVersion();
   const [editing, setEditing] = useState<number | null>(null);
-  const [collecting, setCollecting] = useState<number | null>(null);
+  const [collecting, setCollecting] = useState<{ kind: "comic" | "series"; id: number } | null>(null);
   const [removing, setRemoving] = useState<ComicSummary | null>(null);
+  const [removingSeries, setRemovingSeries] = useState<SeriesItem | null>(null);
 
   const read = useCallback((c: ComicSummary) => nav.navigate({ name: "reader", id: c.id }), [nav]);
   const openDetails = useCallback((c: ComicSummary) => nav.navigate({ name: "comic", id: c.id }), [nav]);
@@ -399,7 +435,7 @@ export function ComicActionsProvider({ children }: { children: ReactNode }) {
         items.push({ kind: "separator" });
         items.push({ label: c.favorite ? "Remover dos favoritos" : "Adicionar aos favoritos", icon: c.favorite ? StarOff : Star, onSelect: () => void toggleFavorite(c) });
         items.push({ label: "Editar informações", icon: Pencil, onSelect: () => setEditing(c.id) });
-        items.push({ label: "Organizar em coleções…", icon: FolderPlus, onSelect: () => setCollecting(c.id) });
+        items.push({ label: "Organizar em coleções…", icon: FolderPlus, onSelect: () => setCollecting({ kind: "comic", id: c.id }) });
       }
       if (opts?.collectionId !== undefined) {
         const cid = opts.collectionId;
@@ -431,24 +467,86 @@ export function ComicActionsProvider({ children }: { children: ReactNode }) {
     [read, openDetails, toggleFavorite, setStatus, toast],
   );
 
+  const readSeries = useCallback((s: SeriesItem) => nav.navigate(s.resume ? { name: "chapter", id: s.resume.chapterId } : { name: "series", id: s.id }), [nav]);
+  const openSeries = useCallback((s: SeriesItem) => nav.navigate({ name: "series", id: s.id }), [nav]);
+
+  const toggleSeriesFavorite = useCallback(
+    async (s: SeriesItem) => {
+      try {
+        await api.seriesSetFavorite(s.id, !s.favorite);
+      } catch (e) {
+        toast.error("Não foi possível atualizar os favoritos", errorMessage(e));
+      }
+    },
+    [toast],
+  );
+
+  const seriesMenu = useCallback(
+    (s: SeriesItem, opts?: { collectionId?: number; inDetails?: boolean }): MenuEntry[] => {
+      const items: MenuEntry[] = [];
+      if (!opts?.inDetails) {
+        items.push({ label: readActionLabel({ status: s.readStatus }), icon: BookOpen, onSelect: () => readSeries(s) });
+        items.push({ label: "Ver detalhes", icon: Info, onSelect: () => openSeries(s) });
+        items.push({ kind: "separator" });
+        items.push({ label: s.favorite ? "Remover dos favoritos" : "Adicionar aos favoritos", icon: s.favorite ? StarOff : Star, onSelect: () => void toggleSeriesFavorite(s) });
+        items.push({ label: "Organizar em coleções…", icon: FolderPlus, onSelect: () => setCollecting({ kind: "series", id: s.id }) });
+      }
+      if (opts?.collectionId !== undefined) {
+        const cid = opts.collectionId;
+        items.push({
+          label: "Remover desta coleção",
+          icon: X,
+          onSelect: () =>
+            void api
+              .removeSeriesFromCollection(cid, s.id)
+              .then(() => toast.success("Removida da coleção", s.title))
+              .catch((e) => toast.error("Não foi possível remover da coleção", errorMessage(e))),
+        });
+      }
+      if (items.length > 0) items.push({ kind: "separator" });
+      const setRead = (read: boolean) => void api.seriesSetRead(s.id, read).catch((e) => toast.error("Não foi possível alterar o estado de leitura", errorMessage(e)));
+      if (s.readStatus !== "completed") items.push({ label: "Marcar como concluída", icon: CircleCheck, onSelect: () => setRead(true) });
+      if (s.readStatus !== "unread") items.push({ label: "Marcar como não lida", icon: CircleDashed, onSelect: () => setRead(false) });
+      items.push({ kind: "separator" });
+      items.push({ label: "Remover da biblioteca…", icon: Trash2, danger: true, onSelect: () => setRemovingSeries(s) });
+      return items;
+    },
+    [readSeries, openSeries, toggleSeriesFavorite, toast],
+  );
+
   const value = useMemo<ComicActionsApi>(
     () => ({
       read,
       openDetails,
       toggleFavorite,
       edit: setEditing,
-      collections: setCollecting,
+      collections: (id: number) => setCollecting({ kind: "comic", id }),
       remove: setRemoving,
       menuFor,
+      readSeries,
+      openSeries,
+      toggleSeriesFavorite,
+      seriesCollections: (id: number) => setCollecting({ kind: "series", id }),
+      seriesMenu,
     }),
-    [read, openDetails, toggleFavorite, menuFor],
+    [read, openDetails, toggleFavorite, menuFor, readSeries, openSeries, toggleSeriesFavorite, seriesMenu],
   );
 
   return (
     <Ctx.Provider value={value}>
       {children}
       {editing !== null && <EditMetadataDialog id={editing} onClose={() => setEditing(null)} />}
-      {collecting !== null && <CollectionsDialog id={collecting} onClose={() => setCollecting(null)} />}
+      {collecting !== null && <CollectionsDialog target={collecting} onClose={() => setCollecting(null)} />}
+      {removingSeries && (
+        <RemoveSeriesDialog
+          series={removingSeries}
+          onClose={() => setRemovingSeries(null)}
+          onRemoved={() => {
+            bump();
+            if (nav.route.name === "series" && nav.route.id === removingSeries.id) nav.back();
+          }}
+        />
+      )}
       {removing && (
         <RemoveDialog
           comic={removing}

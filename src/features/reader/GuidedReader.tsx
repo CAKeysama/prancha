@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { ChevronLeft, ChevronRight, Pencil, X } from "lucide-react";
 import { Button, IconButton } from "../../components/Button";
@@ -10,7 +10,7 @@ import type { Size } from "../../domain/reader";
 import { actionForKey, keyFromEvent, resolveArrow, type ShortcutMap } from "../../domain/shortcuts";
 import { api, errorMessage } from "../../services/api";
 import { renderPdfPageImage } from "../../services/pdf";
-import { pageUrl } from "../../services/urls";
+import { comicPageSrc, pageUrl } from "../../services/urls";
 import { PageView, usePreload } from "./PageView";
 import { RegionEditor } from "./RegionEditor";
 import { useViewportSize } from "./Views";
@@ -176,7 +176,8 @@ function GuidedStage({ comicId, page, pageCount, pdf, rtl, shortcuts, natural, o
   useEffect(() => {
     if (ready && hasNextPage && !pdf) void api.guidedPage(comicId, page + 1, rtl).catch(() => undefined);
   }, [ready, hasNextPage, pdf, comicId, page, rtl]);
-  usePreload(comicId, hasNextPage ? [page + 1] : [], !pdf);
+  const pageSrc = useMemo(() => comicPageSrc(comicId), [comicId]);
+  usePreload(pageSrc, hasNextPage ? [page + 1] : [], !pdf);
 
   // Os balões precisam aparecer parados sobre a página antes de saltar: são dois quadros até o navegador registrar.
   useEffect(() => {
@@ -300,7 +301,7 @@ function GuidedStage({ comicId, page, pageCount, pdf, rtl, shortcuts, natural, o
         className="absolute"
         style={{ left: origin.x, top: origin.y, width: fit.width, height: fit.height }}
       >
-        <PageView comicId={comicId} index={page} width={fit.width} height={fit.height} pdf={pdf} onSize={onSize} />
+        <PageView src={pageSrc} index={page} width={fit.width} height={fit.height} pdf={pdf} onSize={onSize} />
       </div>
 
       {balloonImage && regions.map((r, i) => <PoppedBalloon key={r.id} region={r} page={fit} view={room} src={balloonImage} active={showBalloon && i === index} />)}

@@ -1,5 +1,17 @@
 // Repositórios, extensões, fontes e downloads, como chegam do backend.
 
+import type { ReaderChapter } from "./reader";
+import type { ReaderMode } from "./settings";
+import type { ReadStatus } from "./types";
+
+/** Extensões do Mihon rodam no Suwayomi, fora do isolamento do Prancha. */
+export const EXTERNAL_RUNTIME = "suwayomi";
+
+export interface ComponentProgress {
+  stage: "download" | "unpack" | "start";
+  percent: number;
+}
+
 export interface RepositoryPreview {
   url: string;
   id: string;
@@ -10,6 +22,7 @@ export interface RepositoryPreview {
   fingerprint: string;
   extensionCount: number;
   alreadyAdded: boolean;
+  external: boolean;
 }
 
 export type RepositoryStatus = "pending" | "ok" | "error" | "key_changed";
@@ -50,6 +63,7 @@ export interface CatalogItem {
   icon: string | null;
   supportedKinds: string[];
   contentRating: string;
+  runtime: string;
   size: number;
   sources: Array<{ id: string; name: string; language: string; contentRating: string }>;
   capabilities: Capabilities;
@@ -91,6 +105,7 @@ export interface InstalledExtension {
   repositoryId: string;
   repositoryName: string;
   fingerprint: string;
+  runtime: string;
   capabilities: Capabilities;
   enabled: boolean;
   loadError: string | null;
@@ -132,6 +147,7 @@ export interface SeriesCard {
   chapterSort: "asc" | "desc";
   lastCheckedAt: number | null;
   lastUpdateAt: number | null;
+  favorite: boolean;
 }
 
 export interface BrowsePage {
@@ -154,9 +170,50 @@ export interface ChapterView {
   download: { id: number; status: DownloadStatus; pagesDone: number; pagesTotal: number; error: string | null } | null;
 }
 
-export interface SeriesView extends SeriesCard {
+export interface ChapterSession {
+  id: number;
+  seriesId: number;
+  seriesTitle: string;
+  title: string;
+  pageCount: number;
+  start: { pageIndex: number; pageCount: number; scrollRatio: number; updatedAt: number };
+  previousId: number | null;
+  nextId: number | null;
+  comicId: number | null;
+  genres: string[];
+  readerMode: ReaderMode | null;
+}
+
+export interface SeriesResume {
+  chapterId: number;
+  title: string;
+  progress: { pageIndex: number; pageCount: number } | null;
+}
+
+/** Até onde a pessoa leu e onde a obra está guardada. Quem decide onde a leitura continua é o backend. */
+export interface SeriesReading {
+  readStatus: ReadStatus;
+  chapterCount: number;
+  chaptersRead: number;
+  resume: SeriesResume | null;
+  collections: number[];
+}
+
+export interface SeriesView extends SeriesCard, SeriesReading {
   chapters: ChapterView[];
   sourceError: string | null;
+  /** A fonte pediu uma verificação anti-robô, que a pessoa pode passar no site. */
+  sourceProtected: boolean;
+}
+
+export interface LibrarySeries extends SeriesReading {
+  id: number;
+  title: string;
+  hasCover: boolean;
+  sourceName: string | null;
+  favorite: boolean;
+  addedAt: number;
+  lastOpenedAt: number | null;
 }
 
 export interface ComicOrigin {
@@ -230,6 +287,20 @@ export function groupedFingerprint(fingerprint: string): string {
 export function sortedChapters(chapters: ChapterView[], sort: "asc" | "desc"): ChapterView[] {
   const ordered = [...chapters].sort((a, b) => a.order - b.order || a.id - b.id);
   return sort === "asc" ? ordered : ordered.reverse();
+}
+
+/** Capítulos abertos em sequência, cada um começando onde o anterior termina. */
+export function chapterStream(sessions: ChapterSession[]): Array<ReaderChapter & { id: number }> {
+  let first = 0;
+  return sessions.map((session) => {
+    const chapter = { id: session.id, title: session.title, first, count: session.pageCount, guidedComicId: session.comicId };
+    first += session.pageCount;
+    return chapter;
+  });
+}
+
+export function chapterFinished(chapter: ChapterView): boolean {
+  return !!chapter.progress && chapter.progress.pageIndex >= chapter.progress.pageCount - 1;
 }
 
 const HISTORY_LIMIT = 8;

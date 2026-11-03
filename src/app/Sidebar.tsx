@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BookOpen, Boxes, Compass, Download, FolderHeart, History, House, Library, Puzzle, Settings, Star } from "lucide-react";
+import { Blocks, BookOpen, Boxes, Compass, Download, FolderHeart, History, House, Library, Puzzle, Settings, Star } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "../components/cn";
 import { Logo } from "../components/Logo";
@@ -7,6 +7,7 @@ import { Tooltip } from "../components/Tooltip";
 import { UpdateIndicator } from "../features/updates/UpdateIndicator";
 import { APP_NAME } from "./config";
 import { useNav, type Route } from "./navigation";
+import { useSettings } from "./settings-context";
 
 const ITEMS: Array<{ route: Route; label: string; icon: LucideIcon }> = [
   { route: { name: "home" }, label: "Início", icon: House },
@@ -36,6 +37,7 @@ function useNarrow(breakpoint = 960): boolean {
 
 export function Sidebar({ current }: { current: Route["name"] }) {
   const nav = useNav();
+  const { settings } = useSettings();
   const narrow = useNarrow();
   const item = (r: Route, label: string, Icon: LucideIcon) => {
     const selected = current === r.name;
@@ -78,14 +80,17 @@ export function Sidebar({ current }: { current: Route["name"] }) {
             <li key={i.route.name}>{item(i.route, i.label, i.icon)}</li>
           ))}
         </ul>
-        <ul className="mt-3 flex flex-col gap-0.5 border-t border-border pt-3">
-          {ONLINE_ITEMS.map((i) => (
-            <li key={i.route.name}>{item(i.route, i.label, i.icon)}</li>
-          ))}
-        </ul>
+        {settings["plugins.online"] && (
+          <ul className="mt-3 flex flex-col gap-0.5 border-t border-border pt-3">
+            {ONLINE_ITEMS.map((i) => (
+              <li key={i.route.name}>{item(i.route, i.label, i.icon)}</li>
+            ))}
+          </ul>
+        )}
       </div>
       <div className="mt-3 border-t border-border pt-3">
         <UpdateIndicator narrow={narrow} />
+        {item({ name: "plugins" }, "Plugins", Blocks)}
         {item({ name: "settings" }, "Configurações", Settings)}
       </div>
     </nav>

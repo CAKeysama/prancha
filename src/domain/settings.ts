@@ -2,7 +2,7 @@ import type { SortKey } from "./types";
 import { DEFAULT_SHORTCUTS, type ShortcutMap, sanitizeShortcuts } from "./shortcuts";
 
 type ThemePreference = "dark" | "light" | "system";
-export type ReaderMode = "single" | "double" | "vertical";
+export type ReaderMode = "single" | "double" | "vertical" | "webtoon";
 export type ReadingDirection = "ltr" | "rtl";
 export type FitMode = "page" | "width" | "height";
 export type WheelBehavior = "page" | "scroll";
@@ -36,6 +36,10 @@ export interface Settings {
   "reader.end": EndBehavior;
   "reader.controls": ControlsBehavior;
   "reader.shortcuts": ShortcutMap;
+  /** Plugin de fontes de leitura: sem ele, nada de Explorar, extensões ou repositórios. */
+  "plugins.online": boolean;
+  /** Ligado por quem confirma ter 18 anos: o filtro +18 vem ativo. */
+  "content.adult": boolean;
   onboarding: OnboardingState;
 }
 
@@ -57,6 +61,8 @@ export const DEFAULT_SETTINGS: Settings = {
   "reader.end": "stay",
   "reader.controls": "autohide",
   "reader.shortcuts": DEFAULT_SHORTCUTS,
+  "plugins.online": false,
+  "content.adult": false,
   onboarding: { status: "active", step: 1, comicId: null },
 };
 
@@ -67,7 +73,7 @@ const ENUMS: Partial<Record<SettingKey, readonly string[]>> = {
   "library.view": ["grid", "list"],
   "library.sort": ["title", "added", "opened", "progress"],
   "library.duplicates": ["skip", "allow"],
-  "reader.mode": ["single", "double", "vertical"],
+  "reader.mode": ["single", "double", "vertical", "webtoon"],
   "reader.direction": ["ltr", "rtl"],
   "reader.fit": ["page", "width", "height"],
   "reader.wheel": ["page", "scroll"],

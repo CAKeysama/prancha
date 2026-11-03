@@ -8,7 +8,7 @@ import { useLibraryData } from "../../app/library-events";
 import { useNav } from "../../app/navigation";
 import { KIND_LABELS, languageName, nextHistory, runLimited, type BrowsePage, type SeriesCard, type SourceSummary } from "../../domain/online";
 import { ApiError, api, errorMessage } from "../../services/api";
-import { GridSkeleton, SeriesGrid } from "./parts";
+import { GridSkeleton, SeriesGrid, VerifySiteButton } from "./parts";
 
 type Mode = "popular" | "latest" | "following";
 
@@ -20,6 +20,8 @@ interface Section {
   hasMore: boolean;
   loadingMore: boolean;
   error: string | null;
+  /** O site pediu uma verificação anti-robô. */
+  protected: boolean;
 }
 
 const HISTORY_KEY = "online.searchHistory";
@@ -29,6 +31,11 @@ const keyOf = (source: SourceSummary) => `${source.extensionId}/${source.sourceI
 
 // Volta da página de uma obra para a mesma pesquisa.
 const memory = { mode: "popular" as Mode, query: "", source: "", language: "", kind: "" };
+
+/** Quando uma fonte não abre a obra: Explorar já chega com a pesquisa feita em todas. */
+export function searchAcrossSources(title: string) {
+  Object.assign(memory, { mode: "popular", query: title, source: "" });
+}
 
 let requestCounter = 0;
 
@@ -106,7 +113,7 @@ export function ExploreScreen() {
   useEffect(() => {
     if (showingFollowing) return;
     let alive = true;
-    setSections(selected.map((source) => ({ source, status: "loading", results: [], page: 1, hasMore: false, loadingMore: false, error: null })));
+    setSections(selected.map((source) => ({ source, status: "loading", results: [], page: 1, hasMore: false, loadingMore: false, error: null, protected: false })));
     const patch = (source: SourceSummary, change: Partial<Section>) => {
       if (alive) setSections((all) => all.map((section) => (keyOf(section.source) === keyOf(source) ? { ...section, ...change } : section)));
     };
@@ -118,7 +125,7 @@ export function ExploreScreen() {
           const page = await fetchPage(id, source, mode, query, 1, kind);
           patch(source, { status: "ready", results: page.results, hasMore: page.hasMore });
         } catch (e) {
-          if (!isCancelled(e)) patch(source, { status: "failed", error: errorMessage(e) });
+          if (!isCancelled(e)) patch(source, { status: "failed", error: errorMessage(e), protected: e instanceof ApiError && e.code === "source_protected" });
         } finally {
           inFlight.current.delete(id);
         }
@@ -248,7 +255,7 @@ export function ExploreScreen() {
                 <option value="">Todas as fontes</option>
                 {sources.map((source) => (
                   <option key={keyOf(source)} value={keyOf(source)}>
-                    {source.name}
+                    {languages.length > 1 ? `${source.name} · ${languageName(source.language)}` : source.name}
                   </option>
                 ))}
               </Select>
@@ -319,6 +326,7 @@ export function ExploreScreen() {
               {section.status === "failed" && (
                 <p role="alert" className="flex flex-wrap items-center gap-2 text-sm text-danger">
                   {section.error}
+                  {section.protected && <VerifySiteButton size="sm" site={{ sourceId: section.source.sourceId }} onDone={() => setAttempt((n) => n + 1)} />}
                   <Button size="sm" onClick={() => setAttempt((n) => n + 1)}>
                     Tentar de novo
                   </Button>
