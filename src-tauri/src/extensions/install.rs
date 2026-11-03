@@ -10,10 +10,11 @@ use serde::Serialize;
 use super::net::{Access, Limits, NetError, Request};
 use super::repository::{self, Capabilities, ExtensionEntry, MAX_ARTIFACT_BYTES};
 use super::runtime::{ContentKind, ContentRating, Grant, Installed, ReadingDirection, SourceInfo};
-use super::signing;
+use super::{signing, suwayomi};
 use crate::core::Core;
 use crate::db::now_ms;
 use crate::error::{AppError, AppResult};
+use crate::library;
 
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(120);
 const MAX_SIGNATURE_BYTES: u64 = 1024;
@@ -68,6 +69,7 @@ pub struct InstalledExtension {
     pub repository_id: String,
     pub repository_name: String,
     pub fingerprint: String,
+    pub runtime: String,
     pub capabilities: Capabilities,
     pub enabled: bool,
     pub load_error: Option<String>,
@@ -89,7 +91,7 @@ fn sources_of(conn: &Connection, extension_id: &str) -> AppResult<Vec<InstalledS
             language: r.get(2)?,
             description: r.get(3)?,
             kinds: serde_json::from_str(&r.get::<_, String>(4)?).unwrap_or_default(),
-            available: rating_is_available(&rating),
+            available: rating_is_available(conn, &rating),
             rating,
             direction: r.get(6)?,
             supports_latest: r.get::<_, i64>(7)? != 0,
@@ -99,8 +101,9 @@ fn sources_of(conn: &Connection, extension_id: &str) -> AppResult<Vec<InstalledS
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
-pub fn rating_is_available(rating: &str) -> bool {
-    matches!(rating, "general" | "teen")
+/// Adulto ou sem classificação só com o filtro +18 desligado.
+pub fn rating_is_available(conn: &Connection, rating: &str) -> bool {
+    matches!(rating, "general" | "teen") || library::adult_allowed(conn)
 }
 
 fn extension_from_row(conn: &Connection, row: &Row) -> AppResult<InstalledExtension> {
@@ -124,6 +127,7 @@ fn extension_from_row(conn: &Connection, row: &Row) -> AppResult<InstalledExtens
         repository_id,
         repository_name: row.get(2)?,
         fingerprint: row.get(3)?,
+        runtime: entry.runtime,
         capabilities: entry.capabilities,
         enabled: row.get::<_, i64>(7)? != 0,
         load_error: row.get(8)?,
@@ -184,6 +188,7 @@ pub fn runnable(core: &Core, id: &str) -> AppResult<Installed> {
         file: extensions_dir(core).join(file_name),
         sha256,
         grant: Grant { network: capabilities.network, storage: capabilities.storage, allowed_hosts: capabilities.allowed_hosts },
+        bridged: entry.runtime == suwayomi::RUNTIME,
     })
 }
 
@@ -194,6 +199,7 @@ pub fn runnable(core: &Core, id: &str) -> AppResult<Installed> {
 struct CatalogRow {
     entry: ExtensionEntry,
     repository_name: String,
+    repository_url: String,
     public_key: String,
     fingerprint: String,
     status: String,
@@ -202,16 +208,16 @@ struct CatalogRow {
 fn catalog_row(conn: &Connection, repository_id: &str, extension_id: &str) -> AppResult<CatalogRow> {
     let row = conn
         .query_row(
-            "SELECT e.entry, s.name, s.public_key, s.key_fingerprint, s.status FROM repository_extensions e JOIN source_repositories s ON s.id = e.repository_id WHERE e.repository_id = ?1 AND e.extension_id = ?2",
+            "SELECT e.entry, s.name, s.url, s.public_key, s.key_fingerprint, s.status FROM repository_extensions e JOIN source_repositories s ON s.id = e.repository_id WHERE e.repository_id = ?1 AND e.extension_id = ?2",
             [repository_id, extension_id],
-            |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?, r.get::<_, String>(4)?)),
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?, r.get::<_, String>(4)?, r.get::<_, String>(5)?)),
         )
         .optional()?;
-    let Some((json, repository_name, public_key, fingerprint, status)) = row else {
+    let Some((json, repository_name, repository_url, public_key, fingerprint, status)) = row else {
         return Err(refused("extension_not_found", "Essa extensão não está mais no catálogo do repositório."));
     };
     let entry = serde_json::from_str(&json).map_err(|e| refused("extension_data", e.to_string()))?;
-    Ok(CatalogRow { entry, repository_name, public_key, fingerprint, status })
+    Ok(CatalogRow { entry, repository_name, repository_url, public_key, fingerprint, status })
 }
 
 fn name_of_rating(rating: ContentRating) -> &'static str {
@@ -268,14 +274,14 @@ fn check_declared_sources(entry: &ExtensionEntry, found: &[SourceInfo]) -> AppRe
     Ok(())
 }
 
-/// Baixa e confere tudo. Só depois disto algo é gravado em disco.
-fn fetch_verified(core: &Core, row: &CatalogRow, repository_id: &str) -> AppResult<(Vec<u8>, Vec<SourceInfo>)> {
+/// O que vale para qualquer extensão, antes de baixar qualquer coisa.
+fn check_allowed(row: &CatalogRow, adult_allowed: bool) -> AppResult<()> {
     let entry = &row.entry;
     if row.status == "key_changed" {
         return Err(refused("extension_provenance", "A chave deste repositório mudou. Revise a chave nova antes de instalar."));
     }
-    if entry.content_rating == "adult" {
-        return Err(refused("extension_rating", "O Prancha não oferece conteúdo adulto."));
+    if entry.content_rating == "adult" && !adult_allowed {
+        return Err(refused("extension_rating", "Esta extensão é +18. Para instalar, desligue o filtro +18 em Plugins."));
     }
     if let Some(reason) = repository::incompatibility(entry, env!("CARGO_PKG_VERSION")) {
         return Err(refused("extension_incompatible", reason));
@@ -283,6 +289,12 @@ fn fetch_verified(core: &Core, row: &CatalogRow, repository_id: &str) -> AppResu
     if entry.capabilities.authentication {
         return Err(refused("extension_incompatible", "Esta extensão exige login, e o Prancha não oferece suporte a isso."));
     }
+    Ok(())
+}
+
+/// Baixa e confere tudo. Só depois disto algo é gravado em disco.
+fn fetch_verified(core: &Core, row: &CatalogRow, repository_id: &str) -> AppResult<(Vec<u8>, Vec<SourceInfo>)> {
+    let entry = &row.entry;
     let key = signing::parse_public_key(&row.public_key).ok_or_else(|| refused("extension_provenance", "A chave registrada do repositório não é válida."))?;
     let get = |url: &str, max_bytes: u64| {
         let response = core.net.get(url, Access::Public, Limits { max_bytes, timeout: DOWNLOAD_TIMEOUT }, Request::default()).map_err(network_error)?;
@@ -318,6 +330,25 @@ fn store_package(core: &Core, wasm: &[u8], sha256: &str) -> AppResult<String> {
     Ok(name)
 }
 
+struct Package {
+    file_name: String,
+    sha256: String,
+    sources: Vec<SourceInfo>,
+}
+
+/// O pacote pronto para registrar. Uma extensão do Suwayomi fica com ele: aqui ela não tem arquivo.
+fn fetch_package(core: &Core, row: &CatalogRow, repository_id: &str, updating: bool) -> AppResult<Package> {
+    check_allowed(row, library::adult_allowed(&core.db()))?;
+    if row.entry.runtime == suwayomi::RUNTIME {
+        let mut sources = suwayomi::install_extension(core, &row.repository_url, &row.fingerprint, &row.entry.id, updating)?;
+        sources.retain(|source| repository::is_valid_id(&source.id) && source_is_presentable(source));
+        return Ok(Package { file_name: String::new(), sha256: String::new(), sources });
+    }
+    let (wasm, sources) = fetch_verified(core, row, repository_id)?;
+    let file_name = store_package(core, &wasm, &row.entry.sha256)?;
+    Ok(Package { file_name, sha256: row.entry.sha256.clone(), sources })
+}
+
 fn write_sources(conn: &Connection, extension_id: &str, sources: &[SourceInfo]) -> AppResult<()> {
     conn.execute("DELETE FROM extension_sources WHERE extension_id = ?1", [extension_id])?;
     let mut insert = conn.prepare(
@@ -325,10 +356,6 @@ fn write_sources(conn: &Connection, extension_id: &str, sources: &[SourceInfo]) 
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
     )?;
     for source in sources {
-        // Uma fonte adulta nem chega a ser registrada.
-        if matches!(source.rating, ContentRating::Adult) {
-            continue;
-        }
         let kinds = serde_json::to_string(&source.kinds.iter().map(|k| name_of_kind(*k)).collect::<Vec<_>>()).unwrap_or_else(|_| "[]".into());
         insert.execute(params![
             extension_id,
@@ -361,8 +388,7 @@ pub fn install(core: &Core, repository_id: &str, extension_id: &str) -> AppResul
             refused("extension_provenance", "Esta extensão já está instalada a partir de outro repositório. Remova-a antes de instalar deste.")
         });
     }
-    let (wasm, sources) = fetch_verified(core, &row, repository_id)?;
-    let file_name = store_package(core, &wasm, &row.entry.sha256)?;
+    let package = fetch_package(core, &row, repository_id, false)?;
     let outcome = (|| -> AppResult<()> {
         let mut conn = core.db();
         let tx = conn.transaction()?;
@@ -371,14 +397,14 @@ pub fn install(core: &Core, repository_id: &str, extension_id: &str) -> AppResul
         tx.execute(
             "INSERT INTO installed_extensions (id, repository_id, repository_name, public_key, key_fingerprint, name, version, entry, file_name, sha256, installed_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)",
-            params![row.entry.id, repository_id, row.repository_name, row.public_key, row.fingerprint, row.entry.name, row.entry.version, json, file_name, row.entry.sha256, now],
+            params![row.entry.id, repository_id, row.repository_name, row.public_key, row.fingerprint, row.entry.name, row.entry.version, json, package.file_name, package.sha256, now],
         )?;
-        write_sources(&tx, &row.entry.id, &sources)?;
+        write_sources(&tx, &row.entry.id, &package.sources)?;
         tx.commit()?;
         Ok(())
     })();
     if let Err(error) = outcome {
-        remove_package_if_unused(core, &file_name);
+        remove_package_if_unused(core, &package.file_name);
         return Err(error);
     }
     get(&core.db(), extension_id)
@@ -402,17 +428,17 @@ pub fn update(core: &Core, extension_id: &str) -> AppResult<InstalledExtension> 
     if !is_newer(&row.entry.version, &version) {
         return Err(refused("extension_current", "Esta já é a versão mais recente."));
     }
-    let (wasm, sources) = fetch_verified(core, &row, &repository_id)?;
-    let file_name = store_package(core, &wasm, &row.entry.sha256)?;
+    let package = fetch_package(core, &row, &repository_id, true)?;
+    let file_name = package.file_name;
     let outcome = (|| -> AppResult<()> {
         let mut conn = core.db();
         let tx = conn.transaction()?;
         let json = serde_json::to_string(&row.entry).map_err(|e| refused("extension_data", e.to_string()))?;
         tx.execute(
             "UPDATE installed_extensions SET name = ?2, version = ?3, entry = ?4, file_name = ?5, sha256 = ?6, load_error = NULL, updated_at = ?7 WHERE id = ?1",
-            params![extension_id, row.entry.name, row.entry.version, json, file_name, row.entry.sha256, now_ms()],
+            params![extension_id, row.entry.name, row.entry.version, json, file_name, package.sha256, now_ms()],
         )?;
-        write_sources(&tx, extension_id, &sources)?;
+        write_sources(&tx, extension_id, &package.sources)?;
         tx.commit()?;
         Ok(())
     })();
@@ -432,6 +458,9 @@ pub fn update(core: &Core, extension_id: &str) -> AppResult<InstalledExtension> 
 }
 
 fn remove_package_if_unused(core: &Core, file_name: &str) {
+    if file_name.is_empty() {
+        return;
+    }
     let in_use = core.db().query_row("SELECT 1 FROM installed_extensions WHERE file_name = ?1", [file_name], |_| Ok(())).optional().ok().flatten().is_some();
     if !in_use {
         if let Err(error) = std::fs::remove_file(extensions_dir(core).join(file_name)) {
@@ -444,6 +473,9 @@ fn remove_package_if_unused(core: &Core, file_name: &str) {
 pub fn remove(core: &Core, id: &str) -> AppResult<()> {
     let found: Option<(String, String)> = core.db().query_row("SELECT file_name, sha256 FROM installed_extensions WHERE id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?))).optional()?;
     let Some((file_name, sha256)) = found else { return Ok(()) };
+    if file_name.is_empty() {
+        suwayomi::uninstall_extension(core, id);
+    }
     core.db().execute("DELETE FROM installed_extensions WHERE id = ?1", [id])?;
     remove_package_if_unused(core, &file_name);
     if let Ok(engine) = core.engine() {

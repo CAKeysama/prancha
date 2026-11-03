@@ -89,4 +89,4 @@ Publique com a chave nova. Cada pessoa verá um aviso em Repositórios e precisa
 
 ## Regras de conteúdo
 
-Um repositório não pode oferecer conteúdo adulto: essas entradas são descartadas. Só publique o que você tem o direito de publicar, e não inclua uma fonte que contorne login, paywall, DRM ou CAPTCHA.
+Declare a classificação real: entradas adultas só aparecem para quem desligou o filtro +18. Só publique o que você tem o direito de publicar, e não inclua uma fonte que contorne login, paywall, DRM ou CAPTCHA.

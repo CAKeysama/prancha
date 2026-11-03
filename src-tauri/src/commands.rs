@@ -8,7 +8,8 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use tauri::ipc::Channel;
 use tauri::utils::config::BundleType;
-use tauri::{AppHandle, State};
+use tauri::webview::NewWindowResponse;
+use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_updater::{Error as UpdaterError, Update, UpdaterExt};
@@ -20,7 +21,8 @@ use crate::extensions::downloads::{self, DownloadView};
 use crate::extensions::install::{self, InstalledExtension};
 use crate::extensions::net::Cancel;
 use crate::extensions::repository::{self, CatalogItem, CatalogQuery, RepositoryInfo, RepositoryPreview};
-use crate::extensions::sources::{self, BrowsePage, ComicOrigin, SeriesCard, SeriesView, SourceSummary};
+use crate::extensions::sources::{self, BrowsePage, ChapterSession, ComicOrigin, SeriesCard, SeriesView, SourceSummary};
+use crate::extensions::suwayomi;
 use crate::formats::{self, COMIC_EXTENSIONS};
 use crate::guided::{self, store::{self, GuidedPage, GuidedRegion}};
 use crate::import::{self, EVENT_LIBRARY};
@@ -981,9 +983,146 @@ pub async fn series_set_following(state: S<'_>, id: i64, following: bool) -> App
     blocking(&state, move |c| sources::set_following(&c.db(), id, following)).await
 }
 
+const VERIFICATION_WINDOW: &str = "verificacao";
+const MAIN_WINDOW: &str = "main";
+
+/// Abre o site numa janela, e quem passa pela verificação é a pessoa, à mão. O Prancha não responde
+/// por ninguém: só leva ao servidor das fontes o que o site entregou depois. A janela não tem acesso
+/// a nada do app (as permissões valem só para `main`, e o protocolo recusa as outras), e é anônima
+/// para cada verificação começar do zero.
+fn verify_site(app: &AppHandle, core: &Core, address: &str) -> AppResult<bool> {
+    let refused = |message: String| AppError::user("verification_failed", message);
+    let url: tauri::Url = address.parse().map_err(|_| refused("O endereço deste site não é válido.".into()))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err(refused("O endereço deste site não é válido.".into()));
+    }
+    let window = WebviewWindowBuilder::new(app, VERIFICATION_WINDOW, WebviewUrl::External(url.clone()))
+        .title("Confirme no site e feche esta janela")
+        .inner_size(560.0, 760.0)
+        .user_agent(suwayomi::USER_AGENT)
+        .incognito(true)
+        .on_new_window(|_, _| NewWindowResponse::Deny)
+        .on_download(|_, _| false)
+        .build()
+        .map_err(|e| refused(format!("Não foi possível abrir a janela: {e}")))?;
+
+    let mut cookies = Vec::new();
+    let mut cleared = false;
+    while app.get_webview_window(VERIFICATION_WINDOW).is_some() {
+        if app.get_webview_window(MAIN_WINDOW).is_none() {
+            let _ = window.destroy();
+            return Ok(false);
+        }
+        // A cada volta, porque depois de fechada a janela não responde mais.
+        let pages = [Some(url.clone()), window.url().ok()];
+        let found: Vec<_> = pages.into_iter().flatten().filter_map(|page| Some((page.host_str()?.to_string(), window.cookies_for_url(page).ok()?))).collect();
+        if !found.is_empty() {
+            cookies = found;
+        }
+        // A marca de que o site liberou. Sem ela, a janela fica até a pessoa fechar.
+        cleared = cookies.iter().any(|(_, list)| list.iter().any(|cookie| cookie.name() == "cf_clearance"));
+        if cleared {
+            let _ = window.destroy();
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
+
+    let mut seen = std::collections::HashSet::new();
+    let site: Vec<suwayomi::SiteCookie> = cookies
+        .iter()
+        .flat_map(|(host, list)| list.iter().map(move |cookie| (host, cookie)))
+        .filter(|(host, cookie)| seen.insert((cookie.domain().unwrap_or(host.as_str()).to_string(), cookie.name().to_string())))
+        .map(|(host, cookie)| suwayomi::SiteCookie { domain: cookie.domain().unwrap_or(host).trim_start_matches('.').to_string(), text: cookie.to_string() })
+        .collect();
+    if !site.is_empty() {
+        suwayomi::hand_over_cookies(core, &site)?;
+    }
+    Ok(cleared)
+}
+
+/// Termina quando a janela do site fecha, para a tela que pediu tentar de novo, e diz se o site liberou.
+#[tauri::command]
+pub async fn source_verify(app: AppHandle, state: S<'_>, chapter_id: Option<i64>, series_id: Option<i64>, source_id: Option<String>) -> AppResult<bool> {
+    if let Some(open) = app.get_webview_window(VERIFICATION_WINDOW) {
+        let _ = open.set_focus();
+        return Ok(false);
+    }
+    blocking(&state, move |core| {
+        // Em builds de depuração, um site local faz o papel do site da fonte nos testes.
+        let local = std::env::var("PRANCHA_E2E_VERIFY_URL").ok().filter(|_| cfg!(debug_assertions));
+        let address = match local {
+            Some(address) => address,
+            None => sources::site_to_verify(core, chapter_id, series_id, source_id)?,
+        };
+        verify_site(&app, core, &address)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn series_library(state: S<'_>) -> AppResult<Vec<sources::LibrarySeries>> {
+    blocking(&state, |c| sources::library_series(&c.db())).await
+}
+
+#[tauri::command]
+pub async fn series_set_favorite(state: S<'_>, id: i64, favorite: bool) -> AppResult<()> {
+    changing(&state, move |c| sources::set_favorite(&c.db(), id, favorite)).await
+}
+
+#[tauri::command]
+pub async fn series_set_collections(state: S<'_>, id: i64, collection_ids: Vec<i64>) -> AppResult<()> {
+    changing(&state, move |c| sources::set_series_collections(&mut c.db(), id, &collection_ids)).await
+}
+
+#[tauri::command]
+pub async fn series_add_to_collection(state: S<'_>, collection_id: i64, ids: Vec<i64>) -> AppResult<()> {
+    changing(&state, move |c| sources::add_series_to_collection(&mut c.db(), collection_id, &ids)).await
+}
+
+#[tauri::command]
+pub async fn series_remove_from_collection(state: S<'_>, collection_id: i64, id: i64) -> AppResult<()> {
+    changing(&state, move |c| sources::remove_series_from_collection(&c.db(), collection_id, id)).await
+}
+
+#[tauri::command]
+pub async fn series_set_read(state: S<'_>, id: i64, read: bool) -> AppResult<()> {
+    changing(&state, move |c| sources::set_series_read(&mut c.db(), id, read)).await
+}
+
+#[tauri::command]
+pub async fn series_forget(state: S<'_>, id: i64) -> AppResult<()> {
+    changing(&state, move |c| sources::forget_series(c, id)).await
+}
+
 #[tauri::command]
 pub async fn series_set_chapter_sort(state: S<'_>, id: i64, sort: String) -> AppResult<SeriesCard> {
     blocking(&state, move |c| sources::set_chapter_sort(&c.db(), id, &sort)).await
+}
+
+#[tauri::command]
+pub async fn series_set_reader_mode(state: S<'_>, id: i64, mode: String) -> AppResult<()> {
+    blocking(&state, move |c| sources::set_reader_mode(&c.db(), id, &mode)).await
+}
+
+#[tauri::command]
+pub async fn chapter_open(state: S<'_>, request_id: String, id: i64) -> AppResult<ChapterSession> {
+    cancellable(&state, request_id, move |c, cancel| sources::open_chapter(c, id, Some(cancel))).await
+}
+
+#[tauri::command]
+pub async fn chapter_save_progress(state: S<'_>, id: i64, page_index: i64, page_count: i64, scroll_ratio: f64) -> AppResult<()> {
+    changing(&state, move |c| sources::save_chapter_progress(&c.db(), id, page_index, page_count, scroll_ratio)).await
+}
+
+#[tauri::command]
+pub async fn chapter_reset_progress(state: S<'_>, id: i64) -> AppResult<()> {
+    changing(&state, move |c| sources::reset_chapter_progress(&c.db(), id)).await
+}
+
+#[tauri::command]
+pub async fn online_stop(state: S<'_>) -> AppResult<()> {
+    blocking(&state, sources::stop_online).await
 }
 
 #[tauri::command]

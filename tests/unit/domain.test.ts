@@ -1,13 +1,22 @@
 import { describe, expect, it } from "vitest";
+import { homeItems, mergeItems, seriesMatches, seriesProgressLabel, seriesRatio } from "../../src/domain/library-items";
+import type { LibrarySeries } from "../../src/domain/online";
+import type { ComicSummary } from "../../src/domain/types";
 import { formatBytes, progressLabel, progressRatio, readActionLabel, subtitle } from "../../src/domain/progress";
 import {
   buildSpreads,
+  chapterAt,
+  chapterLeftBehind,
   clampPage,
+  hasTallPages,
+  isContinuous,
   nextMode,
   pageIndicator,
   spreadHeight,
   spreadIndexOf,
   verticalPageWidth,
+  webtoonHint,
+  webtoonWidth,
   zoomIn,
   zoomOut,
 } from "../../src/domain/reader";
@@ -59,6 +68,30 @@ describe("visões de página", () => {
     const sizes = new Map([[2, { width: 2000, height: 1400 }]]);
     expect(buildSpreads(5, "double", true, sizes)).toEqual([[0], [1], [2], [3, 4]]);
   });
+  it("página dupla não junta páginas de capítulos diferentes", () => {
+    const starts = new Set([3]);
+    expect(buildSpreads(6, "double", false, none, starts)).toEqual([[0, 1], [2], [3, 4], [5]]);
+    expect(buildSpreads(6, "double", true, none, starts)).toEqual([[0], [1, 2], [3], [4, 5]]);
+    expect(buildSpreads(6, "single", true, none, starts)).toEqual([[0], [1], [2], [3], [4], [5]]);
+  });
+  it("sabe em que capítulo cada página está e quando um foi lido até o fim", () => {
+    const chapter = (first: number, count: number) => ({ title: "c", first, count, guidedComicId: null });
+    const chapters = [chapter(0, 6), chapter(6, 40), chapter(46, 5)];
+    expect(chapterAt(chapters, 0)).toBe(chapters[0]);
+    expect(chapterAt(chapters, 5)).toBe(chapters[0]);
+    expect(chapterAt(chapters, 6)).toBe(chapters[1]);
+    expect(chapterAt(chapters, 99)).toBe(chapters[2]);
+    expect(chapterLeftBehind(chapters, 5, 6)).toBe(chapters[0]);
+    // Página dupla e rolagem rápida não caem exatamente na última página.
+    expect(chapterLeftBehind(chapters, 4, 6)).toBe(chapters[0]);
+    expect(chapterLeftBehind(chapters, 42, 46)).toBe(chapters[1]);
+    // Pular um capítulo, voltar ou andar dentro do mesmo não conta.
+    expect(chapterLeftBehind(chapters, 0, 6)).toBeNull();
+    expect(chapterLeftBehind(chapters, 5, 46)).toBeNull();
+    expect(chapterLeftBehind(chapters, 6, 5)).toBeNull();
+    expect(chapterLeftBehind(chapters, 4, 5)).toBeNull();
+    expect(chapterLeftBehind(chapters, 50, 51)).toBeNull();
+  });
   it("localiza a visão de uma página", () => {
     const s = buildSpreads(6, "double", true, none);
     expect(spreadIndexOf(s, 4)).toBe(2);
@@ -85,7 +118,33 @@ describe("visões de página", () => {
     expect(pageIndicator([0], 20)).toBe("Página 1 de 20");
     expect(clampPage(-3, 10)).toBe(0);
     expect(clampPage(42, 10)).toBe(9);
-    expect(nextMode("vertical")).toBe("single");
+    expect(nextMode("vertical")).toBe("webtoon");
+    expect(nextMode("webtoon")).toBe("single");
+  });
+  it("webtoon é contínuo e numa coluna que não acompanha a janela", () => {
+    expect(isContinuous("webtoon")).toBe(true);
+    expect(isContinuous("vertical")).toBe(true);
+    expect(isContinuous("double")).toBe(false);
+    expect(webtoonWidth(1, 1920)).toBe(800);
+    expect(webtoonWidth(1.5, 1920)).toBe(1200);
+    expect(webtoonWidth(1, 600)).toBe(600);
+    expect(webtoonWidth(1, 0)).toBe(1);
+  });
+  it("reconhece tiras pelas páginas, sem se enganar com uma página alta num mangá", () => {
+    const manga = { width: 800, height: 1200 };
+    const strip = { width: 800, height: 6000 };
+    expect(hasTallPages(new Map())).toBe(false);
+    expect(hasTallPages(new Map([[0, manga], [1, manga], [2, manga], [3, strip]]))).toBe(false);
+    expect(hasTallPages(new Map([[0, strip]]))).toBe(true);
+    expect(hasTallPages(new Map([[0, strip], [1, manga]]))).toBe(true);
+    expect(hasTallPages(new Map([[0, { width: 0, height: 0 }]]))).toBe(false);
+  });
+  it("pistas de webtoon antes da primeira página", () => {
+    expect(webtoonHint(["Ação", "Manhwa"], 12)).toBe(true);
+    expect(webtoonHint(["Long Strip"], 12)).toBe(true);
+    expect(webtoonHint(["Ação"], 77)).toBe(true);
+    expect(webtoonHint(["Ação"], 20)).toBe(false);
+    expect(webtoonHint([], 39)).toBe(false);
   });
 });
 
@@ -135,5 +194,65 @@ describe("configurações", () => {
     expect(resolveTheme("system", true)).toBe("dark");
     expect(resolveTheme("system", false)).toBe("light");
     expect(resolveTheme("light", true)).toBe("light");
+  });
+});
+
+describe("biblioteca com obras das fontes", () => {
+  const comic = (id: number, title: string, overrides: Partial<ComicSummary> = {}) => ({ id, title, addedAt: id, lastOpenedAt: null, status: "unread", progress: null, favorite: false, ...overrides }) as ComicSummary;
+  const series = (id: number, title: string, overrides: Partial<LibrarySeries> = {}): LibrarySeries => ({
+    id,
+    title,
+    hasCover: false,
+    sourceName: "Fonte",
+    favorite: false,
+    addedAt: id,
+    lastOpenedAt: null,
+    readStatus: "unread",
+    chapterCount: 10,
+    chaptersRead: 0,
+    resume: null,
+    collections: [],
+    ...overrides,
+  });
+
+  it("filtra como as HQs, e filtrar por tipo de arquivo deixa só os quadrinhos", () => {
+    const saved = series(1, "Solo Levelling", { favorite: true, readStatus: "reading", lastOpenedAt: 5, collections: [3] });
+    expect(seriesMatches(saved, {})).toBe(true);
+    expect(seriesMatches(saved, { text: "solo fonte" })).toBe(true);
+    expect(seriesMatches(saved, { text: "outra" })).toBe(false);
+    expect(seriesMatches(saved, { favoritesOnly: true, openedOnly: true, statuses: ["reading"], collectionId: 3 })).toBe(true);
+    expect(seriesMatches(saved, { collectionId: 4 })).toBe(false);
+    expect(seriesMatches(series(2, "b"), { favoritesOnly: true })).toBe(false);
+    expect(seriesMatches(series(2, "b"), { openedOnly: true })).toBe(false);
+    expect(seriesMatches(saved, { formats: ["cbz"] })).toBe(false);
+  });
+
+  it("mistura na ordem pedida e sem obras não mexe na ordem do backend", () => {
+    const comics = [comic(2, "Zeta"), comic(1, "Alfa")];
+    expect(mergeItems(comics, [])).toBe(comics);
+    expect(mergeItems(comics, [series(9, "Beta")]).map((item) => item.title)).toEqual(["Alfa", "Beta", "Zeta"]);
+    expect(mergeItems(comics, [series(9, "Beta")], "added", true).map((item) => item.title)).toEqual(["Beta", "Zeta", "Alfa"]);
+  });
+
+  it("mostra onde parou e conta o progresso em capítulos", () => {
+    const resume = { chapterId: 1, title: "Capítulo 3", progress: { pageIndex: 4, pageCount: 20 } };
+    expect(seriesProgressLabel(series(1, "a", { readStatus: "reading", resume }))).toBe("Capítulo 3 · página 5 de 20");
+    expect(seriesProgressLabel(series(1, "a", { readStatus: "reading", resume: { ...resume, progress: null } }))).toBe("Capítulo 3");
+    expect(seriesProgressLabel(series(1, "a"))).toBe("Não iniciado");
+    expect(seriesProgressLabel(series(1, "a", { readStatus: "completed" }))).toBe("Leitura concluída");
+    expect(seriesRatio(series(1, "a", { readStatus: "reading", chaptersRead: 5 }))).toBe(0.5);
+    expect(seriesRatio(series(1, "a"))).toBeNull();
+    expect(seriesRatio(series(1, "a", { readStatus: "completed" }))).toBe(1);
+  });
+
+  it("a tela inicial põe a leitura mais recente na frente, venha de onde vier", () => {
+    const home = { total: 1, continueReading: [comic(1, "HQ", { status: "reading", progress: { updatedAt: 10 } as ComicSummary["progress"] })], recentlyAdded: [comic(1, "HQ")], favorites: [], recentlyOpened: [] };
+    const reading = series(2, "Obra", { readStatus: "reading", lastOpenedAt: 20, favorite: true });
+    const items = homeItems(home, [reading, series(3, "Parada")]);
+    expect(items.total).toBe(3);
+    expect(items.continueReading.map((item) => item.title)).toEqual(["Obra", "HQ"]);
+    expect(items.favorites.map((item) => item.title)).toEqual(["Obra"]);
+    expect(items.recentlyOpened.map((item) => item.title)).toEqual(["Obra"]);
+    expect(items.recentlyAdded.map((item) => item.title)).toEqual(["Parada", "Obra", "HQ"]);
   });
 });

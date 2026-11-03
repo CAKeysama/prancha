@@ -12,6 +12,7 @@ import { FORMAT_LABELS, type ComicDetails, type FieldSource } from "../../domain
 import { api, errorMessage } from "../../services/api";
 import { useLibraryData, useLibraryVersion } from "../../app/library-events";
 import { useNav } from "../../app/navigation";
+import { useSettings } from "../../app/settings-context";
 import { SourceBadge, useComicActions } from "./comic-actions";
 
 const COVER_KIND_TEXT: Record<string, string> = {
@@ -86,6 +87,7 @@ function MissingBanner({ comic }: { comic: ComicDetails }) {
 
 export function DetailsScreen({ id }: { id: number }) {
   const nav = useNav();
+  const { settings } = useSettings();
   const actions = useComicActions();
   const toast = useToast();
   const { data: comic, error } = useLibraryData(() => api.comic(id), [id]);
@@ -169,9 +171,13 @@ export function DetailsScreen({ id }: { id: number }) {
               )}
               {origin && (
                 <Row label="Origem">
-                  <button type="button" onClick={() => nav.navigate({ name: "series", id: origin.seriesId })} className="text-left text-accent-fg hover:underline">
-                    {origin.seriesTitle}
-                  </button>
+                  {settings["plugins.online"] ? (
+                    <button type="button" onClick={() => nav.navigate({ name: "series", id: origin.seriesId })} className="text-left text-accent-fg hover:underline">
+                      {origin.seriesTitle}
+                    </button>
+                  ) : (
+                    origin.seriesTitle
+                  )}
                   <span className="text-muted"> · {origin.sourceName ?? "Fonte não instalada"}</span>
                 </Row>
               )}

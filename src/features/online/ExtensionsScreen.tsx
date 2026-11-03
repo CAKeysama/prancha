@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { MoreHorizontal, Puzzle, RefreshCw, Search, TriangleAlert } from "lucide-react";
 import { Button, IconButton } from "../../components/Button";
 import { ConfirmDialog, Dialog } from "../../components/Dialog";
@@ -9,9 +9,10 @@ import { PageHeader } from "../../components/PageHeader";
 import { useToast } from "../../components/Toast";
 import { useLibraryData } from "../../app/library-events";
 import { useNav } from "../../app/navigation";
-import { groupedFingerprint, languageName, type CatalogItem, type InstalledExtension } from "../../domain/online";
+import { EXTERNAL_RUNTIME, groupedFingerprint, languageName, type CatalogItem, type ComponentProgress, type InstalledExtension } from "../../domain/online";
 import { formatBytes, formatDate } from "../../domain/progress";
 import { api, errorMessage } from "../../services/api";
+import { onComponentProgress } from "../../services/events";
 import { Fact } from "./parts";
 
 const CATALOG_PAGE = 100;
@@ -26,7 +27,8 @@ function Icon({ src }: { src: string | null }) {
   );
 }
 
-function Permissions({ network, hosts, storage }: { network: boolean; hosts: string[]; storage: boolean }) {
+function Permissions({ runtime, network, hosts, storage }: { runtime: string; network: boolean; hosts: string[]; storage: boolean }) {
+  if (runtime === EXTERNAL_RUNTIME) return <Fact label="Permissões">Sem isolamento: acesso aos seus arquivos e à internet</Fact>;
   return (
     <Fact label="Permissões">
       <ul className="flex flex-col gap-0.5">
@@ -37,10 +39,17 @@ function Permissions({ network, hosts, storage }: { network: boolean; hosts: str
   );
 }
 
+function progressText(progress: ComponentProgress): string {
+  if (progress.stage === "download") return `Baixando o componente: ${progress.percent}%`;
+  return progress.stage === "unpack" ? "Preparando o componente…" : "Iniciando o componente…";
+}
+
 function CatalogDialog({ item, onClose, onChanged }: { item: CatalogItem; onClose: () => void; onChanged: () => void }) {
   const toast = useToast();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<ComponentProgress | null>(null);
+  useEffect(() => onComponentProgress(setProgress), []);
   const action = item.updateAvailable && item.installedHere ? "update" : item.installedVersion ? null : "install";
   const { data: installed } = useLibraryData(() => api.extensions(), []);
   const current = action === "update" ? installed?.find((extension) => extension.id === item.id)?.capabilities : undefined;
@@ -86,14 +95,21 @@ function CatalogDialog({ item, onClose, onChanged }: { item: CatalogItem; onClos
         <Fact label="Repositório">{item.repositoryName}</Fact>
         <Fact label="Idiomas">{item.languages.map(languageName).join(", ")}</Fact>
         <Fact label="Fontes">{item.sources.map((s) => s.name).join(", ")}</Fact>
-        <Fact label="Tamanho">{formatBytes(item.size)}</Fact>
-        <Permissions network={item.capabilities.network} hosts={item.capabilities.allowedHosts} storage={item.capabilities.storage} />
+        {item.size > 0 && <Fact label="Tamanho">{formatBytes(item.size)}</Fact>}
+        <Permissions runtime={item.runtime} network={item.capabilities.network} hosts={item.capabilities.allowedHosts} storage={item.capabilities.storage} />
         {item.incompatible && <Fact label="Compatibilidade">{item.incompatible}</Fact>}
       </dl>
       {action === "install" && (
         <p className="mt-4 flex items-start gap-2 text-sm">
           <TriangleAlert size={16} className="mt-0.5 shrink-0 text-danger" aria-hidden />
-          Extensões são código de terceiros. Ela roda isolada, sem acesso aos seus arquivos, e só com as permissões acima.
+          {item.runtime === EXTERNAL_RUNTIME
+            ? "Extensões são código de terceiros. Esta roda sem isolamento: instale só se confiar em quem a publica."
+            : "Extensões são código de terceiros. Ela roda isolada, sem acesso aos seus arquivos, e só com as permissões acima."}
+        </p>
+      )}
+      {busy && progress && (
+        <p role="status" className="mt-2 text-sm text-muted">
+          {progressText(progress)}
         </p>
       )}
       {newAccess.length > 0 && (
@@ -215,12 +231,12 @@ function InstalledDialog({ extension, onClose }: { extension: InstalledExtension
             {extension.sources.map((source) => (
               <li key={source.id}>
                 {source.name} · {languageName(source.language)}
-                {!source.available && <span className="text-muted"> · desabilitada: sem classificação de conteúdo</span>}
+                {!source.available && <span className="text-muted"> · escondida pelo filtro +18</span>}
               </li>
             ))}
           </ul>
         </Fact>
-        <Permissions network={extension.capabilities.network} hosts={extension.capabilities.allowedHosts} storage={extension.capabilities.storage} />
+        <Permissions runtime={extension.runtime} network={extension.capabilities.network} hosts={extension.capabilities.allowedHosts} storage={extension.capabilities.storage} />
         <Fact label="Instalada em">{formatDate(extension.installedAt)}</Fact>
         <Fact label="Atualizada em">{formatDate(extension.updatedAt)}</Fact>
         {extension.loadError && <Fact label="Último erro">{extension.loadError}</Fact>}

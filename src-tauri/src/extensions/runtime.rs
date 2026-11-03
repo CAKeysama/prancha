@@ -79,6 +79,8 @@ pub struct Installed {
     pub file: PathBuf,
     pub sha256: String,
     pub grant: Grant,
+    /// Roda no Suwayomi, não neste motor: sem arquivo e sem as regras de `grant`.
+    pub bridged: bool,
 }
 
 // ---------------------------------------------------------------------------

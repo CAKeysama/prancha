@@ -1,7 +1,11 @@
 import { useState, type ReactNode } from "react";
+import { ShieldCheck } from "lucide-react";
+import { Button } from "../../components/Button";
 import { PlaceholderCover } from "../../components/Cover";
+import { useToast } from "../../components/Toast";
 import { cn } from "../../components/cn";
 import type { SeriesCard } from "../../domain/online";
+import { api, errorMessage, type VerifiableSite } from "../../services/api";
 import { onlineCoverUrl } from "../../services/urls";
 
 export function Fact({ label, children }: { label: string; children: ReactNode }) {
@@ -16,18 +20,18 @@ export function Fact({ label, children }: { label: string; children: ReactNode }
 const COVER_BOX = "relative aspect-[2/3] w-full overflow-hidden rounded-md border border-border bg-surface";
 
 /** A imagem vem pelo protocolo do app: quem fala com o servidor da fonte é o backend. */
-export function OnlineCover({ series, eager }: { series: SeriesCard; eager?: boolean }) {
+export function OnlineCover({ series, eager, className }: { series: Pick<SeriesCard, "id" | "title" | "hasCover">; eager?: boolean; className?: string }) {
   const [failed, setFailed] = useState(false);
   const [loaded, setLoaded] = useState(false);
   if (!series.hasCover || failed) {
     return (
-      <div className={COVER_BOX} role="img" aria-label={`Capa substituta de ${series.title}`}>
+      <div className={cn(COVER_BOX, className)} role="img" aria-label={`Capa substituta de ${series.title}`}>
         <PlaceholderCover title={series.title} />
       </div>
     );
   }
   return (
-    <div className={COVER_BOX}>
+    <div className={cn(COVER_BOX, className)}>
       {!loaded && <div className="p-skeleton absolute inset-0 bg-elevated" aria-hidden />}
       <img
         src={onlineCoverUrl(series.id)}
@@ -40,6 +44,42 @@ export function OnlineCover({ series, eager }: { series: SeriesCard; eager?: boo
         className="absolute inset-0 h-full w-full object-contain"
       />
     </div>
+  );
+}
+
+/** Os sites que já liberaram nesta sessão: se ainda recusam, repetir a verificação não resolve. */
+const released = new Set<string>();
+
+/**
+ * Abre o site numa janela para a pessoa passar pela verificação à mão.
+ * Quando a janela fecha, `onDone` tenta de novo.
+ */
+export function VerifySiteButton({ site, onDone, size }: { site: VerifiableSite; onDone: () => void; size?: "sm" }) {
+  const toast = useToast();
+  const key = JSON.stringify(site);
+  const [waiting, setWaiting] = useState(false);
+  const [refusedAnyway, setRefusedAnyway] = useState(() => released.has(key));
+  const verify = async () => {
+    setWaiting(true);
+    try {
+      if (await api.sourceVerify(site)) {
+        released.add(key);
+        setRefusedAnyway(true);
+      }
+      onDone();
+    } catch (e) {
+      toast.error("Não foi possível abrir o site", errorMessage(e));
+    } finally {
+      setWaiting(false);
+    }
+  };
+  return (
+    <>
+      {refusedAnyway && !waiting && <p className="text-sm text-muted">O site liberou a verificação e mesmo assim recusou o Prancha. Procure esta obra em outra fonte.</p>}
+      <Button variant="primary" size={size} icon={ShieldCheck} loading={waiting} onClick={() => void verify()}>
+        {waiting ? "Aguardando a verificação…" : "Verificar no site"}
+      </Button>
+    </>
   );
 }
 

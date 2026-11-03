@@ -83,8 +83,8 @@ O texto aparece para a pessoa: escreva em português e diga o que aconteceu. Um 
 | Valor | Comportamento |
 |---|---|
 | `general`, `teen` | Disponível. |
-| `unknown` | A fonte fica desabilitada. Declare a classificação real. |
-| `adult` | Nunca aparece. A extensão não instala, e resultados marcados como `adult` são descartados, em qualquer fonte. |
+| `unknown` | Com o filtro +18 ligado, que é o padrão, a fonte fica desabilitada. Declare a classificação real. |
+| `adult` | Com o filtro +18 ligado, a extensão não instala, e resultados marcados como `adult` são descartados, em qualquer fonte. |
 
 ## Limites de execução
 

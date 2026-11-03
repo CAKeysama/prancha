@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 use http::{Reply, serve};
 use prancha_lib::core::Core;
 use prancha_lib::error::AppError;
-use prancha_lib::extensions::{downloads, install, sources};
+use prancha_lib::extensions::{downloads, install, sources, suwayomi};
 use prancha_lib::library;
 use prancha_lib::extensions::net::{Access, Limits, Net, NetError, Request};
 use prancha_lib::extensions::repository::{self, CatalogQuery, MIHON_MESSAGE};
@@ -72,7 +72,7 @@ impl Sandbox {
                 [id, sha256.as_str()],
             )
             .unwrap();
-        Installed { id: id.to_string(), file, sha256, grant }
+        Installed { id: id.to_string(), file, sha256, grant, bridged: false }
     }
 
     fn command(&self, extension: &Installed, query: &str) -> Result<String, AppError> {
@@ -588,13 +588,159 @@ fn a_newer_format_is_reported_as_incompatible() {
     assert_eq!(code(repository::preview(&core, &repo.manifest_url())), "repo_incompatible");
 }
 
-// Único teste com a internet de verdade: prova TLS e DNS reais. Rode com `cargo test --test extensions -- --ignored`.
+// Com a internet de verdade: prova TLS, DNS e o formato atual do Keiyoushi. Rode com `cargo test --test extensions -- --ignored`.
 #[test]
 #[ignore = "depende da internet"]
 fn a_public_https_address_is_really_fetched() {
     let (_dir, core) = core();
-    let error = repository::preview(&core, "https://raw.githubusercontent.com/keiyoushi/extensions/repo/repo.json").unwrap_err();
-    assert_eq!((error.code(), error.to_string().as_str()), ("repo_mihon", MIHON_MESSAGE));
+    let preview = repository::preview(&core, "https://raw.githubusercontent.com/keiyoushi/extensions/repo").unwrap();
+    assert_eq!(preview.name, "Keiyoushi");
+    assert!(preview.external);
+    assert!(preview.extension_count > 100, "{}", preview.extension_count);
+}
+
+// O caminho inteiro com o link de verdade: baixa o Suwayomi (uns 340 MB na primeira vez, depois fica na pasta) e fala com o site da fonte.
+#[test]
+#[ignore = "depende da internet e baixa o Suwayomi"]
+fn a_real_keiyoushi_extension_goes_from_the_link_to_an_image() {
+    let dir = std::env::temp_dir().join("prancha-suwayomi-real");
+    std::fs::create_dir_all(&dir).unwrap();
+    for file in ["prancha.db", "prancha.db-wal", "prancha.db-shm"] {
+        let _ = std::fs::remove_file(dir.join(file));
+    }
+    let core = Core::init(dir, Arc::new(|_, _| {})).unwrap();
+
+    let preview = repository::preview(&core, "https://raw.githubusercontent.com/keiyoushi/extensions/repo").unwrap();
+    let added = repository::add(&core, &preview.url, &preview.fingerprint).unwrap();
+    let extension = install::install(&core, &added.id, "eu.kanade.tachiyomi.extension.all.webtoons").unwrap();
+    let source = extension.sources.iter().find(|s| s.language == "en").unwrap();
+
+    let popular = sources::popular(&core, &extension.id, &source.id, 1, None, None).unwrap();
+    assert!(!popular.results.is_empty());
+    assert!(sources::cover(&core, popular.results[0].id).unwrap().is_some());
+    assert!(!sources::search(&core, &extension.id, &source.id, "love", 1, None, None).unwrap().results.is_empty());
+
+    let series = sources::open_series(&core, popular.results[0].id, None).unwrap();
+    assert_eq!(series.source_error, None);
+    let pages = suwayomi::pages(&core, &series.chapters[0].remote_id, None).unwrap();
+    let image = suwayomi::image(&core, &pages[0].url, Limits { max_bytes: 32 * 1024 * 1024, timeout: Duration::from_secs(60) }, None).unwrap();
+    assert!(image.is_success());
+    assert!(image.body.len() > 1000, "{}", image.body.len());
+
+    install::remove(&core, &extension.id).unwrap();
+    assert!(install::list(&core.db()).unwrap().is_empty());
+}
+
+const MIHON_KEY: &str = "9add655a78e96c4ec7a53ef89dccb557cb5d767489fac5e785d671a5a75d4da2";
+
+fn mihon_extension(id: &str, warning: &str) -> Value {
+    json!({
+        "name": id,
+        "packageName": format!("eu.kanade.tachiyomi.extension.all.{id}"),
+        "resources": { "apkUrl": "https://exemplo.com/x.apk", "iconUrl": "https://exemplo.com/x.png", "jarUrl": "https://exemplo.com/x.jar" },
+        "extensionLib": "1.6",
+        "versionCode": "106003",
+        "versionName": "1.6.3",
+        "contentWarning": warning,
+        "sources": [{ "id": "2522335540328470744", "name": id, "language": "pt-BR", "homeUrl": "https://exemplo.com" }],
+    })
+}
+
+fn put_mihon_key(repo: &TestRepo, fingerprint: &str) {
+    repo.put("/repo.json", json!({ "index_v2": "https://exemplo.com/index.pb", "meta": { "name": "Keiyoushi", "website": "https://keiyoushi.github.io", "signingKeyFingerprint": fingerprint } }).to_string());
+}
+
+/// No formato do Keiyoushi: `repo.json` e `index.json`, com uma extensão de cada classificação.
+fn mihon_repo() -> TestRepo {
+    let repo = TestRepo::new("mihon", 1);
+    put_mihon_key(&repo, MIHON_KEY);
+    let extensions = [mihon_extension("segura", "CONTENT_WARNING_SAFE"), mihon_extension("mista", "CONTENT_WARNING_MIXED"), mihon_extension("adulta", "CONTENT_WARNING_NSFW"), json!({ "name": "quebrada" })];
+    repo.put("/index.json", json!({ "name": "Keiyoushi", "signingKey": MIHON_KEY, "extensionList": { "extensions": extensions } }).to_string());
+    repo
+}
+
+#[test]
+fn a_mihon_repository_lists_only_what_is_marked_safe_until_the_filter_goes_off() {
+    let (_dir, core) = core();
+    let repo = mihon_repo();
+    let preview = repository::preview(&core, &repo.server.base).unwrap();
+    assert!(preview.external);
+    assert_eq!((preview.name.as_str(), preview.fingerprint.as_str(), preview.extension_count), ("Keiyoushi", MIHON_KEY, 1));
+    assert_eq!(preview.website.as_deref(), Some("https://keiyoushi.github.io"));
+
+    // Os endereços que aparecem por aí levam ao mesmo repositório.
+    for path in ["/repo.json", "/index.pb", "/index.min.json", "/"] {
+        let same = repository::preview(&core, &repo.server.url(path)).unwrap();
+        assert_eq!((same.url.as_str(), same.id.as_str()), (repo.server.url("/repo.json").as_str(), preview.id.as_str()), "{path}");
+    }
+
+    let added = repository::add(&core, &preview.url, MIHON_KEY).unwrap();
+    assert_eq!((added.status.as_str(), added.extension_count, added.fingerprint.as_str()), ("ok", 1, MIHON_KEY));
+    let items = repository::catalog(&core.db(), &CatalogQuery::default(), APP_VERSION).unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].entry.id, "eu.kanade.tachiyomi.extension.all.segura");
+    assert_eq!(items[0].entry.runtime, suwayomi::RUNTIME);
+    assert_eq!(items[0].incompatible, None);
+    assert_eq!(repository::catalog_languages(&core.db()).unwrap(), ["pt-BR"]);
+
+    assert_eq!(repository::sync(&core, &added.id).unwrap().status, "ok");
+    assert_eq!(code(repository::add(&core, &preview.url, MIHON_KEY)), "repo_exists");
+}
+
+#[test]
+fn a_mihon_key_change_stops_everything_until_the_person_confirms() {
+    let (_dir, core) = core();
+    let repo = mihon_repo();
+    let added = repository::add(&core, &repo.server.base, MIHON_KEY).unwrap();
+
+    let other = "b".repeat(64);
+    put_mihon_key(&repo, &other);
+    assert_eq!(code(repository::sync(&core, &added.id)), "repo_key_changed");
+    let info = repository::get(&core.db(), &added.id).unwrap();
+    assert_eq!((info.status.as_str(), info.fingerprint.as_str()), ("key_changed", MIHON_KEY));
+    assert_eq!(info.pending_fingerprint.as_deref(), Some(other.as_str()));
+
+    // Recusada antes de baixar o componente: `core` nem tem o Suwayomi.
+    assert_eq!(code(install::install(&core, &added.id, "eu.kanade.tachiyomi.extension.all.segura")), "extension_provenance");
+
+    let accepted = repository::accept_key(&core, &added.id, &other).unwrap();
+    assert_eq!((accepted.status.as_str(), accepted.fingerprint.as_str()), ("ok", other.as_str()));
+}
+
+#[test]
+fn a_component_only_counts_with_the_expected_content() {
+    let server = serve(|seen| if seen.path == "/falta" { Reply::status(404) } else { Reply::ok(vec![7u8; 100]) });
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("pacote");
+    let right = prancha_lib::extensions::signing::sha256_hex(&[7u8; 100]);
+    let fetch = |path: &str, sha256: &str, size: u64| suwayomi::fetch_package(&server.url(path), &file, sha256, size, |_| {});
+
+    fetch("/p", &right, 100).unwrap();
+    assert_eq!(std::fs::read(&file).unwrap(), vec![7u8; 100]);
+    assert_eq!(code(fetch("/p", &"0".repeat(64), 100)), "component_hash");
+    assert_eq!(code(fetch("/p", &right, 99)), "component_download");
+    assert_eq!(code(fetch("/falta", &right, 100)), "component_download");
+}
+
+/// O provedor de TLS é global, então só um processo novo mostra o caso de quem abre o app com o componente já baixado.
+#[test]
+fn starting_the_component_does_not_depend_on_earlier_network_use() {
+    const FRESH: &str = "PRANCHA_TEST_FRESH_PROCESS";
+    if std::env::var_os(FRESH).is_none() {
+        let name = "starting_the_component_does_not_depend_on_earlier_network_use";
+        let run = std::process::Command::new(std::env::current_exe().unwrap()).args(["--exact", name, "--nocapture"]).env(FRESH, "1").output().unwrap();
+        assert!(run.status.success(), "{}", String::from_utf8_lossy(&run.stdout));
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let core = Core::init(dir.path().to_path_buf(), Arc::new(|_, _| {})).unwrap();
+    let component = dir.path().join("suwayomi").join(suwayomi::VERSION);
+    for file in ["jre/bin/javaw.exe", "bin/Suwayomi-Server.jar"] {
+        std::fs::create_dir_all(component.join(file).parent().unwrap()).unwrap();
+        std::fs::write(component.join(file), b"falso").unwrap();
+    }
+    // O arquivo falso não é um programa: o que importa é virar um erro, e não um pânico.
+    assert!(suwayomi::browse(&core, "1", suwayomi::Browse::Popular, 1, None).is_err());
 }
 
 #[test]
@@ -603,17 +749,18 @@ fn mihon_repositories_get_the_exact_message() {
     let mihon_repo = json!({ "index_v2": "https://exemplo.com/index.pb", "meta": { "name": "Exemplo", "website": "https://exemplo.com", "signingKeyFingerprint": "abc" } });
     let mihon_index = json!([{ "name": "X", "pkg": "eu.kanade.tachiyomi.extension.all.x", "apk": "x.apk", "lang": "all", "code": 1, "version": "1.4.1", "nsfw": 0, "sources": [] }]);
 
+    // Quem não tem o formato do Keiyoushi, com chave e `index.json`, continua sem suporte.
     let check = |address: &str| {
         let error = repository::preview(&core, address).unwrap_err();
         assert_eq!((error.code(), error.to_string().as_str()), ("repo_mihon", MIHON_MESSAGE), "{address}");
     };
     // Pelo nome do arquivo, sem consultar a rede.
-    check("https://raw.githubusercontent.com/keiyoushi/extensions/repo/index.min.json");
     check("https://exemplo.com/apk/tachiyomi-all.x-v1.4.1.apk");
 
     let repo = TestRepo::new("mihon", 1);
     repo.put("/repo.json", mihon_repo.to_string());
     check(&repo.server.url("/repo.json"));
+    check(&repo.server.url("/index.min.json"));
     check(&repo.server.base);
 
     let only_index = TestRepo::new("mihon", 1);
@@ -876,7 +1023,7 @@ fn a_valid_extension_installs_and_runs() {
     assert_eq!(installed.fingerprint, repo.fingerprint());
     assert!(installed.enabled);
     let ids: Vec<_> = installed.sources.iter().map(|s| (s.id.as_str(), s.available)).collect();
-    assert_eq!(ids, [("livre", true), ("sem-classificacao", false)], "a adulta não é registrada e a sem classificação fica desabilitada");
+    assert_eq!(ids, [("adulta", false), ("livre", true), ("sem-classificacao", false)], "com o filtro +18 ligado, a adulta e a sem classificação ficam desabilitadas");
     assert_eq!(packages(&core).len(), 1);
 
     let runnable = install::runnable(&core, EXT).unwrap();
@@ -1143,7 +1290,7 @@ fn explore_lists_only_usable_sources() {
     assert_eq!(listed[0].extension_id, EXT);
 
     assert_eq!(code(sources::popular(&core, EXT, "sem-classificacao", 1, None, None)), "source_disabled");
-    assert_eq!(code(sources::search(&core, EXT, "adulta", "x", 1, None, None)), "source_not_found");
+    assert_eq!(code(sources::search(&core, EXT, "adulta", "x", 1, None, None)), "source_disabled");
     assert_eq!(code(sources::popular(&core, EXT, "inexistente", 1, None, None)), "source_not_found");
 
     install::set_enabled(&core.db(), EXT, false).unwrap();
@@ -1237,12 +1384,19 @@ fn opening_a_series_stores_details_and_chapters() {
 }
 
 #[test]
-fn a_series_marked_adult_in_the_details_is_refused_and_forgotten() {
+fn a_series_marked_adult_in_the_details_is_refused_and_stays_out_of_the_lists() {
     let (_dir, core, _repo) = core_with_fixture(&[]);
-    let id = found_series(&core, "adulta");
+    let id = found_series(&core, "obra");
+    let remote: String = core.db().query_row("SELECT remote_id FROM online_series WHERE id = ?1", [id], |r| r.get(0)).unwrap();
     core.db().execute("UPDATE online_series SET remote_id = 'adulta' WHERE id = ?1", [id]).unwrap();
     assert_eq!(code(sources::open_series(&core, id, None)), "source_rating");
-    assert_eq!(code(sources::card(&core.db(), id)), "series_not_found");
+
+    // A lista da fonte não traz a marca: quem lembra é o Prancha.
+    core.db().execute("UPDATE online_series SET remote_id = ?1 WHERE id = ?2", (&remote, id)).unwrap();
+    let listed = || sources::search(&core, EXT, "livre", "obra", 1, None, None).unwrap().results.iter().any(|series| series.id == id);
+    assert!(!listed());
+    prancha_lib::library::set_setting(&core.db(), "content.adult", &json!(true)).unwrap();
+    assert!(listed());
 }
 
 #[test]
@@ -1280,6 +1434,150 @@ fn old_passing_results_are_pruned_but_followed_series_stay() {
     assert_eq!(code(sources::card(&core.db(), old)), "series_not_found");
     assert!(sources::card(&core.db(), followed).is_ok());
     assert!(sources::card(&core.db(), recent).is_ok());
+}
+
+#[test]
+fn a_saved_series_shows_where_the_reading_stopped_and_is_never_pruned() {
+    let (_dir, core, _repo) = core_with_fixture(&[]);
+    let id = found_series(&core, "obra");
+    let chapters = sources::open_series(&core, id, None).unwrap().chapters;
+    assert!(sources::library_series(&core.db()).unwrap().is_empty(), "só vista em uma busca não está na biblioteca");
+
+    sources::set_favorite(&core.db(), id, true).unwrap();
+    let saved = || sources::library_series(&core.db()).unwrap().remove(0);
+    assert!(saved().favorite);
+    assert_eq!((saved().reading.read_status, saved().reading.chapter_count, saved().reading.chapters_read), ("unread", 3, 0));
+    assert_eq!(saved().reading.resume.unwrap().chapter_id, chapters[0].id);
+
+    sources::save_chapter_progress(&core.db(), chapters[1].id, 1, 3, 0.0).unwrap();
+    let reading = saved().reading;
+    assert_eq!((reading.read_status, reading.chapters_read), ("reading", 1));
+    let resume = reading.resume.unwrap();
+    assert_eq!((resume.chapter_id, resume.progress.unwrap().page_index), (chapters[1].id, 1));
+    assert!(saved().last_opened_at.is_some());
+
+    sources::save_chapter_progress(&core.db(), chapters[1].id, 2, 3, 0.0).unwrap();
+    let reading = saved().reading;
+    assert_eq!((reading.read_status, reading.chapters_read), ("reading", 2));
+    let resume = reading.resume.unwrap();
+    assert_eq!(resume.chapter_id, chapters[2].id, "terminado, continua no seguinte");
+    assert!(resume.progress.is_none());
+
+    sources::save_chapter_progress(&core.db(), chapters[2].id, 2, 3, 0.0).unwrap();
+    let reading = saved().reading;
+    assert_eq!((reading.read_status, reading.chapters_read), ("completed", 3));
+    assert_eq!(reading.resume.unwrap().chapter_id, chapters[0].id, "terminada, ler de novo começa do primeiro");
+
+    sources::set_series_read(&mut core.db(), id, false).unwrap();
+    assert_eq!(saved().reading.read_status, "unread");
+    sources::set_series_read(&mut core.db(), id, true).unwrap();
+    assert_eq!(saved().reading.read_status, "completed");
+    assert_eq!(sources::open_chapter(&core, chapters[0].id, None).unwrap().start.page_index, 0, "marcado como lido recomeça do início");
+
+    // Favorita, ela fica mesmo sem progresso e sem nada baixado.
+    sources::set_series_read(&mut core.db(), id, false).unwrap();
+    core.db().execute("UPDATE online_series SET updated_at = 1", []).unwrap();
+    assert_eq!(sources::prune_stale(&core, &core.db()).unwrap(), 0);
+    sources::forget_series(&core, id).unwrap();
+    assert_eq!(code(sources::card(&core.db(), id)), "series_not_found");
+    assert!(sources::library_series(&core.db()).unwrap().is_empty());
+}
+
+#[test]
+fn a_series_in_a_collection_counts_while_the_plugin_is_installed() {
+    let (_dir, core, _repo) = core_with_fixture(&[]);
+    let id = found_series(&core, "obra");
+    let other = found_series(&core, "outra");
+    let folder = prancha_lib::library::create_collection(&core.db(), "Mangás").unwrap();
+    let info = || prancha_lib::library::list_collections(&core.db()).unwrap().remove(0);
+
+    sources::set_series_collections(&mut core.db(), id, &[folder]).unwrap();
+    sources::add_series_to_collection(&mut core.db(), folder, &[other]).unwrap();
+    assert_eq!(info().comic_count, 0, "sem o plugin, as obras não aparecem");
+
+    prancha_lib::library::set_setting(&core.db(), "plugins.online", &json!(true)).unwrap();
+    assert_eq!(info().comic_count, 2);
+    assert_eq!(info().preview.len(), 2);
+    assert!(info().preview.iter().all(|cover| cover.online));
+    assert_eq!(sources::stored_series(&core.db(), id).unwrap().reading.collections, [folder]);
+
+    // Numa coleção, ela fica mesmo sem favorito e sem progresso.
+    core.db().execute("UPDATE online_series SET updated_at = 1", []).unwrap();
+    assert_eq!(sources::prune_stale(&core, &core.db()).unwrap(), 0);
+
+    sources::remove_series_from_collection(&core.db(), folder, other).unwrap();
+    assert_eq!(info().comic_count, 1);
+    sources::set_series_collections(&mut core.db(), id, &[]).unwrap();
+    assert_eq!(info().comic_count, 0);
+
+    // Excluir a coleção não leva a obra junto.
+    sources::set_series_collections(&mut core.db(), id, &[folder]).unwrap();
+    prancha_lib::library::delete_collection(&core.db(), folder).unwrap();
+    assert!(sources::stored_series(&core.db(), id).unwrap().reading.collections.is_empty());
+}
+
+#[test]
+fn the_adult_filter_starts_on_and_decides_what_appears() {
+    let (_dir, core, _repo) = core_with_fixture(&[]);
+    let set_filter = |hide: bool| prancha_lib::library::set_setting(&core.db(), "content.adult", &json!(!hide)).unwrap();
+    let source_ids = || sources::available_sources(&core.db()).unwrap().into_iter().map(|s| s.source_id).collect::<Vec<_>>();
+    assert_eq!(source_ids(), ["livre"]);
+    assert_eq!(code(sources::search(&core, EXT, "adulta", "x", 1, None, None)), "source_disabled");
+
+    set_filter(false);
+    assert_eq!(source_ids(), ["adulta", "livre", "sem-classificacao"]);
+    let found = sources::search(&core, EXT, "adulta", "x", 1, None, None).unwrap();
+    let adult_source = found.results[0].id;
+    assert!(titles(&sources::search(&core, EXT, "livre", "classificados", 1, None, None).unwrap()).contains(&"Adulta"));
+    let marked = found_series(&core, "marcada");
+    core.db().execute("UPDATE online_series SET remote_id = 'adulta' WHERE id = ?1", [marked]).unwrap();
+    sources::open_series(&core, marked, None).unwrap();
+    assert!(install::list(&core.db()).unwrap()[0].sources.iter().all(|source| source.available));
+
+    // Guardadas com o filtro desligado, somem ao ligar e voltam ao desligar.
+    let folder = prancha_lib::library::create_collection(&core.db(), "Pasta").unwrap();
+    prancha_lib::library::set_setting(&core.db(), "plugins.online", &json!(true)).unwrap();
+    for id in [adult_source, marked] {
+        sources::set_favorite(&core.db(), id, true).unwrap();
+        sources::set_following(&core.db(), id, true).unwrap();
+        sources::set_series_collections(&mut core.db(), id, &[folder]).unwrap();
+    }
+    assert_eq!(sources::library_series(&core.db()).unwrap().len(), 2);
+    assert_eq!(sources::list_following(&core.db()).unwrap().len(), 2);
+    assert_eq!(prancha_lib::library::list_collections(&core.db()).unwrap()[0].comic_count, 2);
+
+    set_filter(true);
+    assert!(sources::library_series(&core.db()).unwrap().is_empty());
+    assert!(sources::list_following(&core.db()).unwrap().is_empty());
+    assert_eq!(prancha_lib::library::list_collections(&core.db()).unwrap()[0].comic_count, 0);
+    assert_eq!(source_ids(), ["livre"]);
+    assert_eq!(code(sources::open_series(&core, marked, None)), "source_rating");
+    assert!(sources::card(&core.db(), marked).is_ok(), "uma obra guardada não é esquecida");
+
+    set_filter(false);
+    assert_eq!(sources::library_series(&core.db()).unwrap().len(), 2);
+}
+
+#[test]
+fn the_catalog_shows_adult_extensions_only_with_the_filter_off() {
+    let (_dir, core) = core();
+    let repo = TestRepo::new("com.exemplo.repo", 1);
+    let mut adult = repo.entry("com.exemplo.adulta", "1.0.0", b"a");
+    adult["contentRating"] = json!("adult");
+    adult["languages"] = json!(["ja"]);
+    repo.publish(&[adult, repo.entry("com.exemplo.livre", "1.0.0", b"b")]);
+    repository::add(&core, &repo.manifest_url(), &repo.fingerprint()).unwrap();
+    let ids = || repository::catalog(&core.db(), &CatalogQuery::default(), APP_VERSION).unwrap().into_iter().map(|i| i.entry.id).collect::<Vec<_>>();
+    assert_eq!(ids(), ["com.exemplo.livre"]);
+    assert_eq!(repository::list(&core.db()).unwrap()[0].extension_count, 1);
+    assert_eq!(repository::catalog_languages(&core.db()).unwrap(), ["pt-BR"]);
+    assert_eq!(code(install::install(&core, &repo.id, "com.exemplo.adulta")), "extension_rating");
+
+    prancha_lib::library::set_setting(&core.db(), "content.adult", &json!(true)).unwrap();
+    assert_eq!(ids(), ["com.exemplo.adulta", "com.exemplo.livre"]);
+    assert_eq!(repository::list(&core.db()).unwrap()[0].extension_count, 2);
+    assert_eq!(repository::catalog_languages(&core.db()).unwrap(), ["ja", "pt-BR"]);
+    assert_eq!(repository::preview(&core, &repo.manifest_url()).unwrap().extension_count, 2);
 }
 
 #[test]
@@ -1395,6 +1693,149 @@ fn a_chapter_becomes_a_valid_cbz_in_the_library() {
 
     let chapters = sources::chapters_of(&core.db(), view.series_id).unwrap();
     assert_eq!((chapters[0].state.as_str(), chapters[0].comic_id), ("offline", Some(comic_id)));
+}
+
+// ---------------------------------------------------------------------------
+// Leitura online
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_chapter_is_read_page_by_page_without_writing_anything() {
+    let (_dir, core, _repo) = core_with_fixture(&["127.0.0.1"]);
+    let server = pages_server();
+    let chapter_id = chapter(&core, "obra", &format!("{}|0,1,2", server.base));
+
+    let session = sources::open_chapter(&core, chapter_id, None).unwrap();
+    assert_eq!((session.page_count, session.start.page_index, session.comic_id), (3, 0, None));
+    assert_eq!(session.series_title, "obra");
+    assert!(server.seen().is_empty(), "abrir só pede a lista de páginas");
+
+    let (bytes, mime) = sources::chapter_page(&core, chapter_id, 1).unwrap();
+    assert_eq!((bytes, mime), (common::png(40, 60, 13), "image/png"));
+    assert_eq!(server.seen().iter().map(|s| s.path.as_str()).collect::<Vec<_>>(), ["/1.png"], "só a página pedida");
+    assert_eq!(code(sources::chapter_page(&core, chapter_id, 3)), "page_not_found");
+
+    assert!(!core.paths.data_dir.join("downloads").exists(), "ler não baixa nada");
+    let comics: i64 = core.db().query_row("SELECT count(*) FROM comics", [], |r| r.get(0)).unwrap();
+    assert_eq!(comics, 0, "ler não coloca nada na biblioteca");
+}
+
+#[test]
+fn next_and_previous_follow_the_reading_order_whatever_the_order_on_screen() {
+    let (_dir, core, _repo) = core_with_fixture(&["127.0.0.1"]);
+    let server = pages_server();
+    let first = chapter(&core, "obra", &format!("{}|0", server.base));
+    let second = chapter(&core, "obra", &format!("{}|0,1", server.base));
+    let third = chapter(&core, "obra", &format!("{}|0,1,2", server.base));
+    let conn = core.db();
+    for (id, order) in [(first, 1), (second, 2), (third, 3)] {
+        conn.execute("UPDATE online_chapters SET sort_order = ?2 WHERE id = ?1", [id, order]).unwrap();
+    }
+    conn.execute("UPDATE online_series SET chapter_sort = 'desc'", []).unwrap();
+    drop(conn);
+
+    let open = |id| sources::open_chapter(&core, id, None).unwrap();
+    assert_eq!((open(first).previous_id, open(first).next_id), (None, Some(second)));
+    assert_eq!((open(second).previous_id, open(second).next_id), (Some(first), Some(third)));
+    assert_eq!((open(third).previous_id, open(third).next_id), (Some(second), None));
+}
+
+#[test]
+fn online_reading_continues_where_it_stopped_and_a_finished_chapter_starts_over() {
+    let (_dir, core, _repo) = core_with_fixture(&["127.0.0.1"]);
+    let server = pages_server();
+    let chapter_id = chapter(&core, "obra", &format!("{}|0,1,2", server.base));
+    let series_id: i64 = core.db().query_row("SELECT series_id FROM online_chapters WHERE id = ?1", [chapter_id], |r| r.get(0)).unwrap();
+
+    sources::save_chapter_progress(&core.db(), chapter_id, 1, 3, 0.5).unwrap();
+    let session = sources::open_chapter(&core, chapter_id, None).unwrap();
+    assert_eq!((session.start.page_index, session.start.scroll_ratio), (1, 0.5));
+    let listed = sources::chapters_of(&core.db(), series_id).unwrap();
+    let progress = listed[0].progress.as_ref().unwrap();
+    assert_eq!((progress.page_index, progress.page_count), (1, 3));
+
+    sources::save_chapter_progress(&core.db(), chapter_id, 2, 3, 0.0).unwrap();
+    assert_eq!(sources::open_chapter(&core, chapter_id, None).unwrap().start.page_index, 0);
+
+    sources::reset_chapter_progress(&core.db(), chapter_id).unwrap();
+    assert!(sources::chapters_of(&core.db(), series_id).unwrap()[0].progress.is_none());
+    assert_eq!(code(sources::save_chapter_progress(&core.db(), chapter_id, 0, 0, 0.0)), "invalid");
+}
+
+#[test]
+fn a_series_with_online_progress_is_not_forgotten() {
+    let (_dir, core, _repo) = core_with_fixture(&["127.0.0.1"]);
+    let chapter_id = chapter(&core, "obra", "x|0");
+    sources::save_chapter_progress(&core.db(), chapter_id, 0, 3, 0.0).unwrap();
+    core.db().execute("UPDATE online_series SET updated_at = 1", []).unwrap();
+    assert_eq!(sources::prune_stale(&core, &core.db()).unwrap(), 0);
+}
+
+#[test]
+fn online_pages_follow_the_same_rules_as_downloads() {
+    let (_dir, core, _repo) = core_with_fixture(&["exemplo.com"]);
+    let server = pages_server();
+    let chapter_id = chapter(&core, "fora", &format!("{}|0", server.base));
+    sources::open_chapter(&core, chapter_id, None).unwrap();
+    assert!(sources::chapter_page(&core, chapter_id, 0).is_err(), "host fora da lista");
+    assert!(server.seen().is_empty());
+
+    let (_dir, core, _repo) = core_with_fixture(&["127.0.0.1"]);
+    let server = serve(|seen| match seen.path.as_str() {
+        "/0.png" => Reply::ok("<html>não é imagem</html>").header("Content-Type", "image/png"),
+        _ => Reply::status(500),
+    });
+    let chapter_id = chapter(&core, "ruim", &format!("{}|0,1", server.base));
+    sources::open_chapter(&core, chapter_id, None).unwrap();
+    assert_eq!(code(sources::chapter_page(&core, chapter_id, 0)), "download_page");
+    assert_eq!(code(sources::chapter_page(&core, chapter_id, 1)), "download_network");
+
+    install::set_enabled(&core.db(), EXT, false).unwrap();
+    assert!(sources::open_chapter(&core, chapter_id, None).is_err(), "extensão desabilitada não lê");
+}
+
+#[test]
+fn a_page_list_that_expired_is_asked_again_after_a_failure() {
+    let (_dir, core, _repo) = core_with_fixture(&["127.0.0.1"]);
+    let failing = Arc::new(AtomicBool::new(true));
+    let flag = failing.clone();
+    let server = serve(move |_| if flag.load(Ordering::Relaxed) { Reply::status(403) } else { Reply::ok(common::png(40, 60, 1)).header("Content-Type", "image/png") });
+    let chapter_id = chapter(&core, "obra", &format!("{}|0", server.base));
+    sources::open_chapter(&core, chapter_id, None).unwrap();
+    assert!(sources::chapter_page(&core, chapter_id, 0).is_err());
+    failing.store(false, Ordering::Relaxed);
+    assert!(sources::chapter_page(&core, chapter_id, 0).is_ok());
+}
+
+#[test]
+fn a_downloaded_chapter_opens_from_the_file_and_keeps_the_online_progress() {
+    let (_dir, core, _repo) = core_with_fixture(&["127.0.0.1"]);
+    let server = pages_server();
+    let chapter_id = chapter(&core, "obra", &format!("{}|0,1,2", server.base));
+    sources::save_chapter_progress(&core.db(), chapter_id, 1, 3, 0.25).unwrap();
+    let comic_id = downloaded(&core, chapter_id).comic_id.unwrap();
+
+    install::remove(&core, EXT).unwrap();
+    drop(server);
+    let session = sources::open_chapter(&core, chapter_id, None).unwrap();
+    assert_eq!((session.comic_id, session.page_count, session.start.page_index), (Some(comic_id), 3, 1));
+    assert_eq!(sources::chapter_page(&core, chapter_id, 0).unwrap().1, "image/png");
+
+    sources::save_chapter_progress(&core.db(), chapter_id, 2, 3, 0.0).unwrap();
+    let page: i64 = core.db().query_row("SELECT page_index FROM reading_progress WHERE comic_id = ?1", [comic_id], |r| r.get(0)).unwrap();
+    assert_eq!(page, 2, "o progresso de um capítulo baixado é o da biblioteca");
+}
+
+#[test]
+fn the_reading_mode_is_remembered_per_series() {
+    let (_dir, core, _repo) = core_with_fixture(&["127.0.0.1"]);
+    let server = pages_server();
+    let chapter_id = chapter(&core, "obra", &format!("{}|0", server.base));
+    let session = sources::open_chapter(&core, chapter_id, None).unwrap();
+    assert_eq!(session.reader_mode, None);
+    sources::set_reader_mode(&core.db(), session.series_id, "webtoon").unwrap();
+    assert_eq!(sources::open_chapter(&core, chapter_id, None).unwrap().reader_mode.as_deref(), Some("webtoon"));
+    assert_eq!(code(sources::set_reader_mode(&core.db(), session.series_id, "lado")), "bad_request");
 }
 
 #[test]

@@ -273,28 +273,38 @@ impl Net {
         if let Some(etag) = request.etag.and_then(|e| HeaderValue::from_str(e).ok()) {
             builder = builder.header(IF_NONE_MATCH, etag);
         }
-        let (url_text, check_type, max) = (url.to_string(), request.check_content_type, limits.max_bytes);
-        let (tx, rx) = channel();
-        let task = tauri::async_runtime::spawn(async move {
-            let _ = tx.send(read_response(builder, url_text, check_type, max).await);
-        });
-        loop {
-            match rx.recv_timeout(WAIT_STEP) {
-                Ok(result) => return result,
-                Err(RecvTimeoutError::Timeout) => {
-                    if request.cancel.is_some_and(|c| c.load(Ordering::Relaxed)) {
-                        task.abort();
-                        return Err(NetError::Cancelled);
-                    }
-                    if Instant::now() >= deadline {
-                        task.abort();
-                        return Err(NetError::Timeout);
-                    }
+        wait(read_response(builder, url.to_string(), request.check_content_type, limits.max_bytes), request.cancel, deadline)
+    }
+}
+
+/// Bloqueia a thread até a tarefa terminar, ser cancelada ou estourar o prazo.
+pub fn wait<T: Send + 'static>(work: impl Future<Output = Result<T, NetError>> + Send + 'static, cancel: Option<&Cancel>, deadline: Instant) -> Result<T, NetError> {
+    let (tx, rx) = channel();
+    let task = tauri::async_runtime::spawn(async move {
+        let _ = tx.send(work.await);
+    });
+    loop {
+        match rx.recv_timeout(WAIT_STEP) {
+            Ok(result) => return result,
+            Err(RecvTimeoutError::Timeout) => {
+                if cancel.is_some_and(|c| c.load(Ordering::Relaxed)) {
+                    task.abort();
+                    return Err(NetError::Cancelled);
                 }
-                Err(RecvTimeoutError::Disconnected) => return Err(NetError::Network("a requisição foi interrompida".into())),
+                if Instant::now() >= deadline {
+                    task.abort();
+                    return Err(NetError::Timeout);
+                }
             }
+            Err(RecvTimeoutError::Disconnected) => return Err(NetError::Network("a requisição foi interrompida".into())),
         }
     }
+}
+
+/// Uma requisição já montada, sem as conferências de destino: só para o servidor local que o próprio Prancha iniciou.
+pub fn send_local(request: reqwest::RequestBuilder, limits: Limits, cancel: Option<&Cancel>) -> Result<Response, NetError> {
+    let (_, _, response) = wait(read_response(request, String::new(), false, limits.max_bytes), cancel, Instant::now() + limits.timeout)?;
+    response.ok_or_else(|| NetError::Network("redirecionamento inesperado".into()))
 }
 
 async fn read_response(builder: reqwest::RequestBuilder, url: String, check_type: bool, max: u64) -> Result<(StatusCode, Option<String>, Option<Response>), NetError> {

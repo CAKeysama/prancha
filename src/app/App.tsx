@@ -15,8 +15,10 @@ import { OnboardingWizard } from "../features/onboarding/OnboardingWizard";
 import { DownloadsScreen } from "../features/online/DownloadsScreen";
 import { ExploreScreen } from "../features/online/ExploreScreen";
 import { ExtensionsScreen } from "../features/online/ExtensionsScreen";
+import { PluginsScreen } from "../features/online/PluginsScreen";
 import { RepositoriesScreen } from "../features/online/RepositoriesScreen";
 import { SeriesScreen } from "../features/online/SeriesScreen";
+import { ChapterReaderScreen } from "../features/reader/ChapterReaderScreen";
 import { ReaderScreen } from "../features/reader/ReaderScreen";
 import { SettingsScreen } from "../features/settings/SettingsScreen";
 import { UpdateDialogs } from "../features/updates/UpdateDialogs";
@@ -107,10 +109,14 @@ function Screen({ route }: { route: Route }) {
       return <ExtensionsScreen />;
     case "repositories":
       return <RepositoriesScreen />;
+    case "plugins":
+      return <PluginsScreen />;
     case "settings":
       return <SettingsScreen />;
     case "reader":
       return <ReaderScreen key={route.id} id={route.id} />;
+    case "chapter":
+      return <ChapterReaderScreen key={route.id} id={route.id} />;
   }
 }
 
@@ -131,7 +137,7 @@ function Shell() {
       </div>
     );
   }
-  if (route.name === "reader") {
+  if (route.name === "reader" || route.name === "chapter") {
     return (
       <main className="h-full">
         <Screen route={route} />

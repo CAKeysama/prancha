@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useRef } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { api } from "../../services/api";
 import { cancellable } from "../../services/events";
 
 /**
  * Persiste a posição de leitura sem gravar a cada evento: agrupa mudanças (debounce)
  * e força a gravação ao sair do leitor, trocar de HQ, ocultar ou fechar a janela.
  */
-export function useProgressSaver(comicId: number, pageCount: number) {
+export function useProgressSaver(save: (page: number, count: number, ratio: number) => Promise<unknown>, pageCount: number) {
   const pending = useRef<{ page: number; ratio: number } | null>(null);
   const timer = useRef<number | undefined>(undefined);
   const lastSaved = useRef<string>("");
@@ -21,11 +20,11 @@ export function useProgressSaver(comicId: number, pageCount: number) {
     if (key === lastSaved.current) return;
     lastSaved.current = key;
     try {
-      await api.saveProgress(comicId, p.page, pageCount, p.ratio);
+      await save(p.page, pageCount, p.ratio);
     } catch {
       lastSaved.current = "";
     }
-  }, [comicId, pageCount]);
+  }, [save, pageCount]);
 
   const schedule = useCallback(
     (page: number, ratio = 0, delay = 700) => {

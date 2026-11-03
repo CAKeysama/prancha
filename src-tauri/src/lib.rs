@@ -41,6 +41,11 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(updates::Session::default())
         .register_asynchronous_uri_scheme_protocol("prancha", |ctx, request, responder| {
+            // A janela de verificação mostra um site de terceiros, que não pode ler nada da biblioteca.
+            if ctx.webview_label() != "main" {
+                responder.respond(protocol::forbidden());
+                return;
+            }
             let app = ctx.app_handle().clone();
             std::thread::spawn(move || {
                 let core = app.state::<Arc<Core>>();
@@ -159,7 +164,20 @@ pub fn run() {
             commands::series_stored,
             commands::series_open,
             commands::series_set_following,
+            commands::source_verify,
+            commands::series_library,
+            commands::series_set_favorite,
+            commands::series_set_collections,
+            commands::series_add_to_collection,
+            commands::series_remove_from_collection,
+            commands::series_set_read,
+            commands::series_forget,
             commands::series_set_chapter_sort,
+            commands::series_set_reader_mode,
+            commands::chapter_open,
+            commands::chapter_save_progress,
+            commands::chapter_reset_progress,
+            commands::online_stop,
             commands::series_following,
             commands::comic_origin,
             commands::downloads_list,

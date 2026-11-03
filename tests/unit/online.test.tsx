@@ -5,7 +5,7 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import userEvent from "@testing-library/user-event";
 import { clearMocks, mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { App } from "../../src/app/App";
-import { nextHistory, runLimited, sortedChapters, type CatalogItem, type ChapterView, type DownloadView, type RepositoryInfo, type SeriesCard, type SourceSummary } from "../../src/domain/online";
+import { chapterFinished, chapterStream, nextHistory, runLimited, sortedChapters, type CatalogItem, type ChapterView, type DownloadView, type RepositoryInfo, type SeriesCard, type SourceSummary } from "../../src/domain/online";
 
 const MIHON_MESSAGE = "Este repositório distribui extensões para Mihon e não possui pacotes compatíveis com o Prancha.";
 const FINGERPRINT = "6660b9881c97baa88baa6554bd13968143242814febe85825bc8a69b736ff054";
@@ -43,6 +43,7 @@ function catalogItem(overrides: Partial<CatalogItem> = {}): CatalogItem {
     icon: null,
     supportedKinds: ["comic"],
     contentRating: "general",
+    runtime: "wasm-component",
     size: 1024,
     sources: [{ id: "a", name: "Fonte A", language: "pt-BR", contentRating: "general" }],
     capabilities: { network: true, storage: false, authentication: false, allowedHosts: ["exemplo.test"] },
@@ -91,6 +92,7 @@ function card(id: number, title: string, overrides: Partial<SeriesCard> = {}): S
     chapterSort: "desc",
     lastCheckedAt: null,
     lastUpdateAt: null,
+    favorite: false,
     ...overrides,
   };
 }
@@ -109,7 +111,7 @@ function reject(code: string, message: string): never {
 beforeEach(() => {
   calls = [];
   handlers = {
-    get_settings: () => ({ onboarding: { status: "completed", step: 4, comicId: null } }),
+    get_settings: () => ({ "plugins.online": true, onboarding: { status: "completed", step: 4, comicId: null } }),
     set_setting: () => null,
     get_home: () => ({ total: 0, continueReading: [], recentlyAdded: [], favorites: [], recentlyOpened: [] }),
     list_comics: () => [],
@@ -141,6 +143,30 @@ async function open(section: string) {
   await userEvent.click(await screen.findByRole("button", { name: section }));
 }
 
+describe("Plugins", () => {
+  const ONLINE = ["Explorar", "Downloads", "Extensões", "Repositórios"];
+
+  it("sem o plugin o menu não tem nada das fontes, e instalar traz tudo de volta", async () => {
+    handlers.get_settings = () => ({ onboarding: { status: "completed", step: 4, comicId: null } });
+    await open("Plugins");
+    for (const name of ONLINE) expect(screen.queryByRole("button", { name })).toBeNull();
+    await userEvent.click(await screen.findByRole("button", { name: "Instalar" }));
+    expect(await screen.findByRole("button", { name: "Explorar" })).toBeTruthy();
+    expect(calls.find((c) => c.cmd === "set_setting" && c.args.key === "plugins.online")?.args.value).toBe(true);
+  });
+
+  it("remover pergunta antes, tira do menu e para o que estava rodando", async () => {
+    handlers.online_stop = () => null;
+    await open("Plugins");
+    await userEvent.click(await screen.findByRole("button", { name: "Remover" }));
+    expect(calls.some((c) => c.cmd === "online_stop")).toBe(false);
+    await userEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Remover" }));
+    await waitFor(() => expect(calls.some((c) => c.cmd === "online_stop")).toBe(true));
+    for (const name of ONLINE) expect(screen.queryByRole("button", { name })).toBeNull();
+    expect(calls.find((c) => c.cmd === "set_setting" && c.args.key === "plugins.online")?.args.value).toBe(false);
+  });
+});
+
 describe("Repositórios", () => {
   it("recusa um endereço Mihon, com o motivo, sem apagar o que foi digitado", async () => {
     handlers.repository_preview = () => reject("repo_mihon", MIHON_MESSAGE);
@@ -165,6 +191,7 @@ describe("Repositórios", () => {
       fingerprint: FINGERPRINT,
       extensionCount: 3,
       alreadyAdded: false,
+      external: false,
     });
     handlers.repository_add = () => repository();
     await open("Repositórios");
@@ -180,6 +207,31 @@ describe("Repositórios", () => {
 
     await userEvent.click(within(dialog).getByRole("button", { name: "Confiar e adicionar" }));
     await waitFor(() => expect(calls.find((c) => c.cmd === "repository_add")?.args.fingerprint).toBe(FINGERPRINT));
+  });
+
+  it("avisa que um repositório do Mihon roda sem isolamento antes de confiar", async () => {
+    handlers.repository_preview = () => ({
+      url: "https://exemplo.test/repo.json",
+      id: "mihon-abc",
+      name: "Keiyoushi",
+      description: null,
+      website: null,
+      publicKey: FINGERPRINT,
+      fingerprint: FINGERPRINT,
+      extensionCount: 564,
+      alreadyAdded: false,
+      external: true,
+    });
+    await open("Repositórios");
+    await userEvent.click((await screen.findAllByRole("button", { name: "Adicionar" }))[0]!);
+    await userEvent.type(await screen.findByLabelText("Endereço"), "https://exemplo.test");
+    await userEvent.click(screen.getByRole("button", { name: "Continuar" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Confiar neste repositório?" });
+    expect(within(dialog).getByText(/sem o isolamento do Prancha/)).toBeTruthy();
+    expect(within(dialog).getByText(/340 MB/)).toBeTruthy();
+    expect(within(dialog).queryByText("Chave pública")).toBeNull();
+    expect(within(dialog).getByTestId("fingerprint").textContent).toContain("6660 b988");
   });
 
   it("avisa sobre a troca de chave e não aceita sozinho", async () => {
@@ -219,6 +271,19 @@ describe("Extensões", () => {
     expect(within(dialog).getByText(/código de terceiros/)).toBeTruthy();
     await userEvent.click(within(dialog).getByRole("button", { name: "Instalar" }));
     await waitFor(() => expect(calls.find((c) => c.cmd === "extension_install")?.args).toEqual({ repositoryId: "repo", extensionId: "ext" }));
+  });
+
+  it("uma extensão do Mihon diz que roda sem isolamento, e não promete o contrário", async () => {
+    handlers.repositories_list = () => [repository()];
+    handlers.extension_catalog = () => [catalogItem({ runtime: "suwayomi", size: 0, capabilities: { network: true, storage: false, authentication: false, allowedHosts: [] } })];
+    await open("Extensões");
+    await userEvent.click(await screen.findByRole("radio", { name: "Disponíveis" }));
+    await userEvent.click(await screen.findByRole("button", { name: /Extensão de teste/ }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Sem isolamento: acesso aos seus arquivos e à internet")).toBeTruthy();
+    expect(within(dialog).getByText(/Esta roda sem isolamento/)).toBeTruthy();
+    expect(within(dialog).queryByText(/roda isolada/)).toBeNull();
+    expect(within(dialog).queryByText("Tamanho")).toBeNull();
   });
 
   it("atualizar mostra as duas versões e o acesso novo antes de aplicar", async () => {
@@ -323,7 +388,18 @@ describe("Explorar", () => {
 });
 
 describe("Obra e capítulos", () => {
-  const view = (chapters: ChapterView[], overrides = {}) => ({ ...card(1, "Obra"), chapters, sourceError: null, ...overrides });
+  const view = (chapters: ChapterView[], overrides = {}) => ({
+    ...card(1, "Obra"),
+    chapters,
+    readStatus: "unread",
+    chapterCount: chapters.length,
+    chaptersRead: 0,
+    resume: chapters[0] ? { chapterId: chapters[0].id, title: chapters[0].title, progress: null } : null,
+    collections: [],
+    sourceError: null,
+    sourceProtected: false,
+    ...overrides,
+  });
 
   async function openSeries() {
     handlers.sources_list = () => [source("a", "Fonte A")];
@@ -358,6 +434,22 @@ describe("Obra e capítulos", () => {
     expect(screen.getByRole("button", { name: "Ler" })).toBeTruthy();
   });
 
+  it("todo capítulo tem Ler, sem precisar baixar, e a obra continua de onde parou", async () => {
+    const chapters = [chapter(1, "Um", { order: 0, progress: { pageIndex: 4, pageCount: 5 } }), chapter(2, "Dois", { order: 1 }), chapter(3, "Três", { order: 2 })];
+    const reading = { readStatus: "reading", chaptersRead: 1, resume: { chapterId: 2, title: "Dois", progress: null } };
+    handlers.series_stored = () => view(chapters, reading);
+    handlers.series_open = () => view(chapters, reading);
+    handlers.chapter_open = () => reject("source_error", "Fora do ar.");
+    await openSeries();
+    const rows = await screen.findAllByTestId("chapter");
+    for (const row of rows) expect(within(row).getByRole("button", { name: "Ler" })).toBeTruthy();
+    expect(rows.map((row) => row.textContent).join("|")).toContain("Lido");
+    await userEvent.click(screen.getByRole("button", { name: "Continuar" }));
+    await waitFor(() => expect(calls.find((c) => c.cmd === "chapter_open")?.args.id).toBe(2));
+    expect(calls.some((c) => c.cmd === "downloads_enqueue")).toBe(false);
+    expect(await screen.findByText("Fora do ar.")).toBeTruthy();
+  });
+
   it("baixa um capítulo, só os selecionados ou todos", async () => {
     const chapters = [chapter(1, "Um"), chapter(2, "Dois"), chapter(3, "Três")];
     handlers.series_stored = () => view(chapters);
@@ -372,12 +464,56 @@ describe("Obra e capítulos", () => {
     await waitFor(() => expect(calls.filter((c) => c.cmd === "downloads_enqueue").at(-1)?.args.chapterIds).toEqual([2]));
   });
 
-  it("uma obra adulta recusada não aparece", async () => {
+  it("uma obra +18 fica de fora enquanto o filtro está ligado", async () => {
+    const refused = "Esta obra é +18. Para ver, desligue o filtro +18 em Plugins.";
     handlers.series_stored = () => view([]);
-    handlers.series_open = () => reject("source_rating", "O Prancha não oferece conteúdo adulto.");
+    handlers.series_open = () => reject("source_rating", refused);
     await openSeries();
-    expect(await screen.findByText("O Prancha não oferece conteúdo adulto.")).toBeTruthy();
+    expect(await screen.findByText(refused)).toBeTruthy();
     expect(screen.queryByTestId("chapter")).toBeNull();
+  });
+
+  it("favoritar e guardar em pasta valem para a obra, como para uma HQ", async () => {
+    const chapters = [chapter(1, "Um")];
+    handlers.series_stored = () => view(chapters);
+    handlers.series_open = () => view(chapters);
+    handlers.series_set_favorite = () => null;
+    handlers.list_collections = () => [{ id: 7, name: "Lendo agora", comicCount: 0, preview: [], createdAt: 1, updatedAt: 1 }];
+    handlers.series_set_collections = () => null;
+    await openSeries();
+    await userEvent.click(await screen.findByRole("button", { name: "Favoritar" }));
+    expect(calls.find((c) => c.cmd === "series_set_favorite")?.args).toEqual({ id: 1, favorite: true });
+    expect(await screen.findByRole("button", { name: "Favorito" })).toBeTruthy();
+
+    await userEvent.click(within(screen.getByRole("main")).getByRole("button", { name: "Coleções" }));
+    await userEvent.click(await screen.findByRole("checkbox", { name: /Lendo agora/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Salvar coleções" }));
+    await waitFor(() => expect(calls.find((c) => c.cmd === "series_set_collections")?.args).toEqual({ id: 1, collectionIds: [7] }));
+  });
+
+  it("se o site liberar e recusar mesmo assim, diz que repetir não resolve", async () => {
+    const chapters = [chapter(1, "Um")];
+    handlers.series_stored = () => view(chapters);
+    handlers.series_open = () => view(chapters, { sourceError: "Este site pede uma verificação anti-robô, que só você pode passar.", sourceProtected: true });
+    handlers.source_verify = () => true;
+    await openSeries();
+    await userEvent.click(await screen.findByRole("button", { name: "Verificar no site" }));
+    expect(await screen.findByText(/mesmo assim recusou o Prancha/)).toBeTruthy();
+  });
+
+  it("um site com verificação oferece abrir o site, e tenta de novo quando a janela fecha", async () => {
+    const chapters = [chapter(1, "Um")];
+    let protectedNow = true;
+    handlers.series_stored = () => view(chapters);
+    handlers.series_open = () => (protectedNow ? view(chapters, { sourceError: "Este site pede uma verificação anti-robô, que só você pode passar.", sourceProtected: true }) : view(chapters));
+    handlers.source_verify = () => {
+      protectedNow = false;
+      return null;
+    };
+    await openSeries();
+    await userEvent.click(await screen.findByRole("button", { name: "Verificar no site" }));
+    await waitFor(() => expect(calls.find((c) => c.cmd === "source_verify")?.args).toEqual({ seriesId: 1 }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Verificar no site" })).toBeNull());
   });
 });
 
@@ -422,6 +558,22 @@ describe("regras puras", () => {
     const chapters = [chapter(2, "b", { order: 1 }), chapter(1, "a", { order: 0 }), chapter(3, "c", { order: 2 })];
     expect(sortedChapters(chapters, "asc").map((c) => c.title)).toEqual(["a", "b", "c"]);
     expect(sortedChapters(chapters, "desc").map((c) => c.title)).toEqual(["c", "b", "a"]);
+  });
+
+  it("capítulos em sequência começam onde o anterior termina", () => {
+    const session = (id: number, pageCount: number, comicId: number | null = null) => ({ id, seriesId: 1, seriesTitle: "Obra", title: `Cap ${id}`, pageCount, start: { pageIndex: 0, pageCount, scrollRatio: 0, updatedAt: 0 }, previousId: null, nextId: null, comicId, genres: [], readerMode: null });
+    expect(chapterStream([session(7, 6), session(8, 5, 3), session(9, 2)])).toEqual([
+      { id: 7, title: "Cap 7", first: 0, count: 6, guidedComicId: null },
+      { id: 8, title: "Cap 8", first: 6, count: 5, guidedComicId: 3 },
+      { id: 9, title: "Cap 9", first: 11, count: 2, guidedComicId: null },
+    ]);
+  });
+
+  it("um capítulo só termina na última página", () => {
+    const read = (pageIndex: number) => ({ progress: { pageIndex, pageCount: 5 } });
+    expect(chapterFinished(chapter(1, "a", read(4)))).toBe(true);
+    expect(chapterFinished(chapter(1, "a", read(3)))).toBe(false);
+    expect(chapterFinished(chapter(1, "a"))).toBe(false);
   });
 
   it("limita as tarefas simultâneas e continua depois de uma falha", async () => {

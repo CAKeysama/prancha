@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowDownNarrowWide, ArrowUpNarrowWide, Bell, BellOff, BookOpen, CloudOff, Download, RefreshCw, X } from "lucide-react";
+import { ArrowDownNarrowWide, ArrowUpNarrowWide, Bell, BellOff, BookOpen, CloudOff, Download, FolderPlus, MoreHorizontal, RefreshCw, Search, Star, X } from "lucide-react";
 import { Button, IconButton } from "../../components/Button";
 import { ErrorState, ProgressBar, Spinner } from "../../components/Feedback";
 import { Checkbox } from "../../components/Form";
+import { Menu } from "../../components/Menu";
 import { PageHeader } from "../../components/PageHeader";
 import { useToast } from "../../components/Toast";
 import { useLibraryVersion } from "../../app/library-events";
@@ -11,6 +12,7 @@ import {
   CHAPTER_STATE_LABELS,
   DOWNLOAD_STATUS_LABELS,
   SERIES_STATUS_LABELS,
+  chapterFinished,
   languageName,
   sortedChapters,
   type ChapterView,
@@ -19,7 +21,9 @@ import {
 import { formatDate } from "../../domain/progress";
 import { ApiError, api, errorMessage } from "../../services/api";
 import { onDownloadChanged } from "../../services/events";
-import { Fact, OnlineCover } from "./parts";
+import { useComicActions } from "../library/comic-actions";
+import { searchAcrossSources } from "./ExploreScreen";
+import { Fact, OnlineCover, VerifySiteButton } from "./parts";
 
 let requestCounter = 0;
 
@@ -43,7 +47,7 @@ function ChapterRow({
   onSelect: (selected: boolean) => void;
   onDownload: () => void;
   onCancel: (id: number) => void;
-  onRead: (comicId: number) => void;
+  onRead: () => void;
 }) {
   const download = chapter.download;
   const active = isActive(chapter);
@@ -51,7 +55,7 @@ function ChapterRow({
   const details = [
     chapter.publishedAt ? publishedDate(chapter.publishedAt) : null,
     CHAPTER_STATE_LABELS[chapter.state],
-    chapter.progress ? `Página ${chapter.progress.pageIndex + 1} de ${chapter.progress.pageCount}` : null,
+    chapterFinished(chapter) ? "Lido" : chapter.progress ? `Página ${chapter.progress.pageIndex + 1} de ${chapter.progress.pageCount}` : null,
   ].filter(Boolean);
   return (
     <li data-testid="chapter" className="flex items-center gap-3 border-b border-border py-2.5 last:border-b-0">
@@ -73,17 +77,11 @@ function ChapterRow({
         )}
         {failed && download?.error && <p className="mt-1 text-sm text-danger">{download.error}</p>}
       </div>
-      {chapter.comicId !== null && (
-        <Button icon={BookOpen} onClick={() => onRead(chapter.comicId!)}>
-          Ler
-        </Button>
-      )}
       {active && download && <IconButton icon={X} label={`Cancelar download de ${chapter.title}`} variant="ghost" onClick={() => onCancel(download.id)} />}
-      {chapter.state !== "offline" && !active && (
-        <Button icon={failed ? RefreshCw : Download} onClick={onDownload}>
-          {failed ? "Tentar de novo" : "Baixar"}
-        </Button>
-      )}
+      {chapter.state !== "offline" && !active && <IconButton icon={failed ? RefreshCw : Download} label={failed ? "Tentar de novo" : "Baixar"} variant="ghost" onClick={onDownload} />}
+      <Button icon={BookOpen} onClick={onRead}>
+        Ler
+      </Button>
     </li>
   );
 }
@@ -91,6 +89,7 @@ function ChapterRow({
 export function SeriesScreen({ id }: { id: number }) {
   const nav = useNav();
   const toast = useToast();
+  const actions = useComicActions();
   const { version } = useLibraryVersion();
   const [view, setView] = useState<SeriesView | null>(null);
   const [fatal, setFatal] = useState<string | null>(null);
@@ -101,7 +100,7 @@ export function SeriesScreen({ id }: { id: number }) {
   const readStored = useCallback(() => {
     api
       .seriesStored(id)
-      .then((stored) => setView((current) => (current ? { ...stored, sourceError: current.sourceError } : stored)))
+      .then((stored) => setView((current) => (current ? { ...stored, sourceError: current.sourceError, sourceProtected: current.sourceProtected } : stored)))
       .catch(() => undefined);
   }, [id]);
 
@@ -175,6 +174,11 @@ export function SeriesScreen({ id }: { id: number }) {
       toast.error("Não foi possível alterar o acompanhamento", errorMessage(e));
     }
   };
+  const toggleFavorite = async () => {
+    if (!view) return;
+    setView({ ...view, favorite: !view.favorite });
+    await actions.toggleSeriesFavorite(view);
+  };
   const toggleSort = async () => {
     if (!view) return;
     const sort = view.chapterSort === "asc" ? "desc" : "asc";
@@ -202,15 +206,49 @@ export function SeriesScreen({ id }: { id: number }) {
 
   const downloadable = chapters.filter((chapter) => chapter.state !== "offline" && !isActive(chapter));
   const SortIcon = view.chapterSort === "asc" ? ArrowUpNarrowWide : ArrowDownNarrowWide;
+  const { resume } = view;
+  const retry = () => {
+    setRefreshing(true);
+    setAttempt((n) => n + 1);
+  };
   return (
     <div className="h-full overflow-y-auto">
       <PageHeader
         title={view.title}
         onBack={nav.back}
         actions={
-          <Button icon={view.following ? BellOff : Bell} onClick={() => void toggleFollowing()} aria-pressed={view.following}>
-            {view.following ? "Acompanhando" : "Acompanhar"}
-          </Button>
+          <>
+            <Button icon={Star} onClick={() => void toggleFavorite()} aria-pressed={view.favorite}>
+              {view.favorite ? "Favorito" : "Favoritar"}
+            </Button>
+            <Button icon={FolderPlus} onClick={() => actions.seriesCollections(view.id)}>
+              Coleções
+            </Button>
+            <Button icon={view.following ? BellOff : Bell} onClick={() => void toggleFollowing()} aria-pressed={view.following}>
+              {view.following ? "Acompanhando" : "Acompanhar"}
+            </Button>
+            {resume && (
+              <Button variant="primary" icon={BookOpen} onClick={() => nav.navigate({ name: "chapter", id: resume.chapterId })}>
+                {view.readStatus === "reading" ? "Continuar" : view.readStatus === "completed" ? "Ler novamente" : "Começar a ler"}
+              </Button>
+            )}
+            <Menu
+              label={`Ações para ${view.title}`}
+              items={[
+                {
+                  label: "Procurar em outras fontes",
+                  icon: Search,
+                  onSelect: () => {
+                    searchAcrossSources(view.title);
+                    nav.navigate({ name: "explore" });
+                  },
+                },
+                { kind: "separator" },
+                ...actions.seriesMenu(view, { inDetails: true }),
+              ]}
+              trigger={(p) => <IconButton {...p} icon={MoreHorizontal} label={`Mais ações para ${view.title}`} />}
+            />
+          </>
         }
       />
       <div className="mx-auto max-w-5xl px-6 py-6">
@@ -221,14 +259,8 @@ export function SeriesScreen({ id }: { id: number }) {
               <p className="font-semibold">A fonte não respondeu</p>
               <p className="mt-0.5 text-sm text-muted">{view.sourceError} O que está aqui é o último conhecido, e os capítulos da biblioteca abrem normalmente.</p>
             </div>
-            <Button
-              icon={RefreshCw}
-              onClick={() => {
-                setRefreshing(true);
-                setAttempt((n) => n + 1);
-              }}
-              loading={refreshing}
-            >
+            {view.sourceProtected && <VerifySiteButton site={{ seriesId: view.id }} onDone={retry} />}
+            <Button icon={RefreshCw} onClick={retry} loading={refreshing}>
               Tentar de novo
             </Button>
           </div>
@@ -279,7 +311,7 @@ export function SeriesScreen({ id }: { id: number }) {
                   }
                   onDownload={() => void enqueue([chapter.id])}
                   onCancel={(downloadId) => void cancel(downloadId)}
-                  onRead={(comicId) => nav.navigate({ name: "reader", id: comicId })}
+                  onRead={() => nav.navigate({ name: "chapter", id: chapter.id })}
                 />
               ))}
             </ul>
