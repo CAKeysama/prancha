@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { ShieldCheck } from "lucide-react";
+import { RefreshCw, Search, ShieldCheck } from "lucide-react";
 import { Button } from "../../components/Button";
 import { PlaceholderCover } from "../../components/Cover";
 import { useToast } from "../../components/Toast";
@@ -47,40 +47,76 @@ export function OnlineCover({ series, eager, className }: { series: Pick<SeriesC
   );
 }
 
-/** Os sites que já liberaram nesta sessão: se ainda recusam, repetir a verificação não resolve. */
-const released = new Set<string>();
+/** As fontes que liberaram a verificação e seguem recusando nesta sessão: repetir não resolve. */
+const refusedSites = new Set<string>();
+
+/** A fonte voltou a responder: se pedir a verificação outra vez, vale tentar. */
+export function siteAnswered(sourceId: string) {
+  refusedSites.delete(sourceId);
+}
+
+const REFUSED_MESSAGE = "Este site recusa o Prancha, mesmo depois da verificação. Verificar de novo não resolve.";
 
 /**
- * Abre o site numa janela para a pessoa passar pela verificação à mão.
- * Quando a janela fecha, `onDone` tenta de novo.
+ * O que dizer e oferecer quando uma fonte não abre, sem repetir o que já falhou.
+ * Com `site`, o site pediu uma verificação: a janela abre para a pessoa passar à mão e, ao fechar, `onRetry` tenta de novo.
  */
-export function VerifySiteButton({ site, onDone, size }: { site: VerifiableSite; onDone: () => void; size?: "sm" }) {
+export function SourceTrouble({
+  message,
+  site,
+  sourceId,
+  onRetry,
+  retrying,
+  elsewhere,
+  size,
+  center,
+  children,
+}: {
+  message: string;
+  site?: VerifiableSite | undefined;
+  /** Vale para a fonte inteira quando informado, e não só para a obra ou o capítulo em `site`. */
+  sourceId?: string;
+  onRetry: () => void;
+  retrying?: boolean;
+  elsewhere?: (() => void) | undefined;
+  size?: "sm";
+  center?: boolean;
+  children: (text: string, actions: ReactNode) => ReactNode;
+}) {
   const toast = useToast();
-  const key = JSON.stringify(site);
   const [waiting, setWaiting] = useState(false);
-  const [refusedAnyway, setRefusedAnyway] = useState(() => released.has(key));
+  const key = sourceId ?? JSON.stringify(site);
+  const refused = !!site && refusedSites.has(key);
   const verify = async () => {
+    if (!site) return;
     setWaiting(true);
     try {
-      if (await api.sourceVerify(site)) {
-        released.add(key);
-        setRefusedAnyway(true);
-      }
-      onDone();
+      if (await api.sourceVerify(site)) refusedSites.add(key);
+      onRetry();
     } catch (e) {
       toast.error("Não foi possível abrir o site", errorMessage(e));
     } finally {
       setWaiting(false);
     }
   };
-  return (
-    <>
-      {refusedAnyway && !waiting && <p className="text-sm text-muted">O site liberou a verificação e mesmo assim recusou o Prancha. Procure esta obra em outra fonte.</p>}
-      <Button variant="primary" size={size} icon={ShieldCheck} loading={waiting} onClick={() => void verify()}>
-        {waiting ? "Aguardando a verificação…" : "Verificar no site"}
+  const actions = (
+    <div className={cn("flex flex-wrap gap-2", center && "justify-center")}>
+      {site && !refused && (
+        <Button variant="primary" size={size} icon={ShieldCheck} loading={waiting} onClick={() => void verify()}>
+          {waiting ? "Aguardando a verificação…" : "Verificar no site"}
+        </Button>
+      )}
+      {elsewhere && (
+        <Button variant={refused ? "primary" : "secondary"} size={size} icon={Search} onClick={elsewhere}>
+          Procurar em outras fontes
+        </Button>
+      )}
+      <Button size={size} icon={RefreshCw} loading={retrying} onClick={onRetry}>
+        Tentar de novo
       </Button>
-    </>
+    </div>
   );
+  return <>{children(refused ? REFUSED_MESSAGE : message, actions)}</>;
 }
 
 export const SERIES_GRID = "grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-4";

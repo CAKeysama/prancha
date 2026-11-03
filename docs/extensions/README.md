@@ -43,7 +43,9 @@ Em **Instaladas** você vê as fontes de cada extensão, atualiza quando há ver
 
 ## Pesquisar e navegar
 
-**Explorar** pesquisa em todas as fontes ao mesmo tempo. Os resultados ficam separados por fonte, e cada uma responde no seu tempo: uma lenta ou fora do ar mostra o próprio erro sem atrapalhar as outras. Também dá para filtrar por fonte, idioma e tipo, ver populares e recentes, e carregar mais resultados.
+**Explorar** pesquisa em todas as fontes ao mesmo tempo e mostra cada obra com as fontes onde ela está, cada uma com a sua capa. Só títulos iguais ficam juntos, sem contar maiúsculas, acentos e pontuação. Título igual não prova que é a mesma obra, por isso vale conferir as capas, e a mesma obra pode ter outro título em outra fonte.
+
+Cada fonte responde no seu tempo. Uma lenta não segura as outras, e a que falhar aparece no topo com o motivo e o que dá para fazer, sem contar como se a obra não estivesse lá. Com uma fonte só, e fora da pesquisa, os resultados ficam em grade, separados por fonte. Também dá para filtrar por fonte, idioma e tipo, ver populares e recentes, e carregar mais resultados.
 
 ## Filtro +18
 
@@ -59,7 +61,7 @@ Sem o plugin, essas obras saem das telas e voltam quando ele é instalado de nov
 
 ## Sites com verificação anti-robô
 
-Quando um site pede uma verificação, o erro vem com o botão **Verificar no site**, e [o resto está aqui](COMPATIBILITY.md#sites-com-verificação-anti-robô). Se não der certo, **Procurar em outras fontes**, no menu da obra, faz a mesma pesquisa nas demais.
+Quando um site pede uma verificação, o erro vem com o botão **Verificar no site**, e [o resto está aqui](COMPATIBILITY.md#sites-com-verificação-anti-robô). Se o site liberar e continuar recusando, o botão some até você abrir o Prancha de novo, porque repetir não resolve. **Procurar em outras fontes**, no próprio aviso e no menu da obra, faz a mesma pesquisa nas demais.
 
 ## Ler sem baixar
 

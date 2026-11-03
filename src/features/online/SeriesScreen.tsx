@@ -23,7 +23,7 @@ import { ApiError, api, errorMessage } from "../../services/api";
 import { onDownloadChanged } from "../../services/events";
 import { useComicActions } from "../library/comic-actions";
 import { searchAcrossSources } from "./ExploreScreen";
-import { Fact, OnlineCover, VerifySiteButton } from "./parts";
+import { Fact, OnlineCover, SourceTrouble, siteAnswered } from "./parts";
 
 let requestCounter = 0;
 
@@ -114,7 +114,11 @@ export function SeriesScreen({ id }: { id: number }) {
       .catch((e: unknown) => alive && setFatal(errorMessage(e)));
     api
       .seriesOpen(requestId, id)
-      .then((fresh) => alive && setView(fresh))
+      .then((fresh) => {
+        if (!alive) return;
+        setView(fresh);
+        if (!fresh.sourceError) siteAnswered(fresh.sourceId);
+      })
       .catch((e: unknown) => {
         if (alive && !(e instanceof ApiError && e.code === "extension_cancelled")) setFatal(errorMessage(e));
       })
@@ -211,6 +215,10 @@ export function SeriesScreen({ id }: { id: number }) {
     setRefreshing(true);
     setAttempt((n) => n + 1);
   };
+  const searchElsewhere = () => {
+    searchAcrossSources(view.title);
+    nav.navigate({ name: "explore" });
+  };
   return (
     <div className="h-full overflow-y-auto">
       <PageHeader
@@ -238,10 +246,7 @@ export function SeriesScreen({ id }: { id: number }) {
                 {
                   label: "Procurar em outras fontes",
                   icon: Search,
-                  onSelect: () => {
-                    searchAcrossSources(view.title);
-                    nav.navigate({ name: "explore" });
-                  },
+                  onSelect: searchElsewhere,
                 },
                 { kind: "separator" },
                 ...actions.seriesMenu(view, { inDetails: true }),
@@ -253,16 +258,19 @@ export function SeriesScreen({ id }: { id: number }) {
       />
       <div className="mx-auto max-w-5xl px-6 py-6">
         {view.sourceError && (
-          <div role="alert" className="mb-5 flex flex-wrap items-start gap-3 rounded-md border border-border bg-surface px-4 py-3">
+          <div role="alert" className="mb-5 flex items-start gap-3 rounded-md border border-border bg-surface px-4 py-3">
             <CloudOff size={18} className="mt-0.5 shrink-0 text-muted" aria-hidden />
             <div className="min-w-0 flex-1">
               <p className="font-semibold">A fonte não respondeu</p>
-              <p className="mt-0.5 text-sm text-muted">{view.sourceError} O que está aqui é o último conhecido, e os capítulos da biblioteca abrem normalmente.</p>
+              <SourceTrouble message={view.sourceError} site={view.sourceProtected ? { seriesId: view.id } : undefined} sourceId={view.sourceId} onRetry={retry} retrying={refreshing} elsewhere={searchElsewhere}>
+                {(text, actions) => (
+                  <>
+                    <p className="mt-0.5 mb-3 text-sm text-muted">{text} O que está aqui é o último conhecido, e os capítulos da biblioteca abrem normalmente.</p>
+                    {actions}
+                  </>
+                )}
+              </SourceTrouble>
             </div>
-            {view.sourceProtected && <VerifySiteButton site={{ seriesId: view.id }} onDone={retry} />}
-            <Button icon={RefreshCw} onClick={retry} loading={refreshing}>
-              Tentar de novo
-            </Button>
           </div>
         )}
         <div className="flex gap-8 max-md:flex-col">
