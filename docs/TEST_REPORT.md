@@ -1,6 +1,6 @@
 # Relatório de testes — Prancha 0.4.0
 
-Atualizado em 2026-11-03, antes de publicar a 0.4.0, em Windows 11 Pro 10.0.26200, WebView2 156, Rust 1.99.1 e Node 22.23. As seções sobre instaladores e atualização são da 0.2.0, e a do executável de release é da 0.3.0.
+Atualizado em 2026-11-03, com a 0.4.0 publicada, em Windows 11 Pro 10.0.26200, WebView2 156, Rust 1.99.1 e Node 22.23. Cada seção diz a versão a que se refere quando não é a 0.4.0.
 
 ## Resumo
 
@@ -14,15 +14,16 @@ Atualizado em 2026-11-03, antes de publicar a 0.4.0, em Windows 11 Pro 10.0.2620
 | Rust — páginas reais | `npm run test:rust`, que roda todas as suítes de Rust | ✅ 6/6, com as páginas reais locais; não repetida na 0.4.0, porque `formats/` não mudou |
 | Frontend — Vitest | `npm test` | ✅ 114/114 |
 | E2E no executável real | `npm run test:e2e` | ✅ 52/52 |
-| Atualização instalada de verdade | `npm run test:update -- --build` | ✅ 23 verificações na 0.2.0; não repetida depois, porque `updates.rs` não mudou e `tauri.conf.json` só mudou a versão |
-| Instalador da 0.2.0 | `npm run tauri build` | ✅ NSIS e MSI gerados, com 2 assinaturas; verificação abaixo |
-| Build de release com extensões | `npm run tauri build`, sem os artefatos do atualizador | ✅ na 0.3.0: NSIS e MSI gerados, com tamanhos e conferência do executável abaixo. O da 0.4.0 sai da automação da tag |
+| Atualização instalada de verdade | `npm run test:update -- --build` | ⚠️ na 0.3.0, 6 de 7 execuções passaram nas 23 verificações, e 1 falhou no favorito, sem causa encontrada (ver limitações). Não repetida na 0.4.0, porque `updates.rs` não mudou e `tauri.conf.json` só mudou a versão |
+| Instaladores da 0.4.0 | Automação do GitHub (`release.yml`) | ✅ NSIS e MSI gerados, com 2 assinaturas; conferência abaixo |
+| Build de release com extensões | `npm run tauri build`, sem os artefatos do atualizador | ✅ na 0.3.0: NSIS e MSI gerados; tamanhos e conferência do executável abaixo |
 | Fluxo em HTTPS público | Executável de release, conferência avulsa | ✅ na 0.3.0: do repositório de demonstração à leitura, em 6,8 s; detalhes abaixo |
 | Sites de verdade pelo plugin | Build de depuração, conferência avulsa | ✅ duas fontes leem; ⚠️ duas param na verificação anti-robô; detalhes abaixo |
+| Versão publicada, do link à leitura | `prancha.exe` do MSI publicado, conferência avulsa | ✅ em uma fonte; detalhes abaixo |
 
 ## Instaladores
 
-Os instaladores da 0.2.0 saem da automação do GitHub, e os SHA-256 deles ficam na própria release. Os das versões anteriores são os das [releases](https://github.com/CAKeysama/prancha/releases), com estes SHA-256:
+Da 0.2.0 em diante, os instaladores saem da automação do GitHub, e os SHA-256 deles ficam na própria release. Os das versões anteriores são os das [releases](https://github.com/CAKeysama/prancha/releases), com estes SHA-256:
 
 | Arquivo | Tamanho | SHA-256 |
 |---|---|---|
@@ -132,6 +133,12 @@ Em 2026-11-02, a v0.2.0 foi conferida pelos endereços públicos. Os instaladore
 
 O `prancha.exe` extraído do MSI publicado rodou sem instalar, com dados isolados, e leu o `latest.json` publicado. Ele não acusou versão nova nem erro, nenhuma janela abriu, o `updates.log` ficou vazio e a seção Atualizações mostrou as quatro versões, com a v0.2.0 como instalada.
 
+Em 2026-11-02, a v0.3.0 foi conferida pelos endereços públicos, sem login. O `latest.json` traz a versão 0.3.0 e os endereços oficiais, os SHA-256 conferem e as assinaturas das três entradas valem com a chave pública da v0.2.0, que é a dos aplicativos já instalados.
+
+O `prancha.exe` extraído do MSI publicado da v0.2.0 rodou sem instalar, com dados isolados, e abriu a janela de versão nova com v0.2.0, v0.3.0 e o resumo das notas. O botão "Atualizar agora" não foi clicado. Como essa cópia veio do MSI, a janela também avisou da confirmação do Windows.
+
+Em 2026-11-03, a v0.4.0 foi conferida do mesmo jeito, pelos endereços públicos e sem login: o `latest.json` traz a versão 0.4.0 e os endereços oficiais, os SHA-256 conferem e as assinaturas das três entradas valem com a chave pública da v0.2.0. Nenhum app anterior foi aberto para ver a janela de versão nova.
+
 ## Extensões
 
 Na execução normal, nenhum teste depende de site externo. O servidor é local e controlado pelo teste, os componentes WebAssembly são compilados de verdade (`extensions/test-fixture`, `extensions/template` e `extensions/demo`) e as assinaturas usam chaves geradas na hora. Esse servidor só é alcançável pela exceção de rede para `127.0.0.1`, que existe apenas em builds de depuração.
@@ -223,14 +230,16 @@ Na execução normal, estes testes também não dependem de site externo. Leitur
 ### Conferência avulsa com sites de verdade
 Em 2026-11-03, uma vez, o build de depuração percorreu o link da Keiyoushi (`https://raw.githubusercontent.com/keiyoushi/extensions/repo`) com dados isolados e o Suwayomi-Server v2.4.2366. Ela usa a internet e sites de terceiros, por isso não fica no repositório, e nenhuma captura dela foi guardada. Esse build ainda não tinha a classificação +18 por gênero.
 
-- **Link:** repositório validado e catálogo com 1448 extensões em 1,3 s. A primeira extensão levou 18 s para instalar, porque o servidor sobe nessa hora, e as seguintes, 1,9 s.
+- **Link:** repositório validado e catálogo com 1448 extensões em 1,3 s. A primeira extensão levou 18 s para instalar, porque o servidor é baixado e sobe nessa hora, e as seguintes, 1,9 s.
 - **Astratoons:** obra com 137 capítulos. Primeira página 3,3 s depois do clique, modo webtoon escolhido sozinho, coluna de 800 px em uma janela de 1280, barra "A partir daqui: Capítulo 2" e passagem para o capítulo 2 sem clique.
 - **Manga Livre Blog:** obra com 30 capítulos. Primeira página em 4,3 s, modo webtoon escolhido sozinho e passagem do capítulo 91 para o 92 sem clique.
 - **ToonLivre:** lista e obra com 187 capítulos funcionam. As páginas do capítulo param na verificação anti-robô do site, e a tela oferece "Verificar no site". A janela não foi aberta para esse site.
 - **Lycan Toons:** a lista para na verificação. A janela abriu e, em 15 s, fechou sozinha, sem nenhum clique, com a liberação do site gravada. O servidor reiniciou e a nova tentativa recebeu a mesma recusa, então essa fonte continua sem funcionar. A tela agora diz isso em vez de oferecer repetir.
 - **Reabrir depois de encerrar à força:** o início mostra a obra e a página com o Java parado. Explorar voltou em 6,6 s, e a leitura continuou na mesma página. O Java termina com o app e ao remover o plugin.
 
-O filtro +18 foi conferido à parte, com o build final e uma obra sem gênero adulto (Aventura, Ação, Fantasia, Magia): ela abre e aparece com o filtro ligado ou desligado. Nenhuma obra real +18 foi aberta nos testes, então a recusa foi provada só com dados de teste.
+Depois de publicar, o `prancha.exe` extraído do MSI da v0.4.0 fez o caminho uma vez, sem instalar, com dados isolados e só com o Astratoons. Plugin e link em 1,3 s, primeira instalação com o servidor em 15,9 s, populares em 1,9 s, obra com 281 capítulos em 24,3 s e primeira página em 1,4 s. A barra do capítulo seguinte apareceu e o início mostrou a leitura. Nenhuma janela de atualização abriu. A primeira tentativa parou por erro do próprio script, que procurava o seletor de idioma, e esse seletor só existe com fontes em mais de um idioma.
+
+O filtro +18 foi conferido à parte, com o build de depuração final e uma obra sem gênero adulto (Aventura, Ação, Fantasia, Magia): ela abre e aparece com o filtro ligado ou desligado. Nenhuma obra real +18 foi aberta nos testes, então a recusa foi provada só com dados de teste.
 
 ## Validação visual
 
@@ -290,7 +299,8 @@ Em uma execução do E2E, o leitor avançou páginas sozinho após as teclas (p�
 - **Reaproveitamento de conexões:** vem do cliente único, sem teste próprio.
 - **Telas online em temas e janela pequena:** conferidas no E2E, porque o ambiente do Vitest não calcula layout.
 - **Capturas versionadas:** `artifacts/screenshots` ainda mostra a barra lateral antiga, sem as novas seções.
-- **Atualização pelo GitHub:** nenhum app instalado baixou uma atualização das releases, porque isso exige duas versões publicadas com o atualizador. A primeira oportunidade é a versão seguinte à 0.2.0.
+- **Favorito depois de atualizar:** na primeira execução de `npm run test:update -- --build`, com o código das extensões, o favorito apareceu desmarcado no fim do roteiro, com a biblioteca e o progresso corretos. Os dados dessa execução foram apagados com a instalação de teste. A falha não voltou em mais 6 execuções completas, 5 delas sem nenhuma mudança no tempo dos passos, nem em 25 repetições de marcar o favorito, fechar e reabrir no build de depuração. As repetições que recompilariam os instaladores foram interrompidas antes de dar resultado. No código, só o comando `set_favorite` grava esse campo, então a causa continua desconhecida.
+- **Atualização pelo GitHub:** a v0.2.0 publicada enxergou a v0.3.0 e abriu a janela de versão nova, mas nenhum app baixou nem instalou uma atualização a partir das releases, nem na 0.3.0 nem na 0.4.0.
 - **Atualização por MSI:** nunca executada, porque exige administrador. O caminho testado é o do NSIS. Com o MSI, a confirmação do Windows vem depois que o app fechou, e uma recusa só aparece na abertura seguinte.
 - **Sem espaço em disco e sem permissão:** só a tradução das mensagens de erro foi testada. Falha ao reiniciar foi simulada a partir do estado pendente salvo.
 - **Assinatura do Windows:** os instaladores não têm Authenticode, então o SmartScreen pode pedir confirmação.
