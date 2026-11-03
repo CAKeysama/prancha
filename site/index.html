@@ -70,6 +70,12 @@
       }
       html {
         scrollbar-color: var(--border) var(--bg);
+        scroll-padding-top: 72px;
+      }
+      @media (prefers-reduced-motion: no-preference) {
+        html {
+          scroll-behavior: smooth;
+        }
       }
       :focus-visible {
         outline: 2px solid var(--accent);
@@ -83,48 +89,84 @@
       }
 
       header {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        border-bottom: 1px solid var(--border);
+        background: color-mix(in srgb, var(--bg) 90%, transparent);
+        -webkit-backdrop-filter: blur(16px) saturate(160%);
+        backdrop-filter: blur(16px) saturate(160%);
+      }
+      /* A linha só aparece quando há conteúdo passando por baixo da barra. */
+      @keyframes nav-edge {
+        from {
+          border-bottom-color: transparent;
+        }
+      }
+      @supports (animation-timeline: scroll()) {
+        header {
+          animation: nav-edge linear both;
+          animation-timeline: scroll();
+          animation-range: 0 64px;
+        }
+      }
+      header .wrap {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        height: 72px;
-        border-bottom: 1px solid var(--border);
+        height: 56px;
       }
       .brand {
         display: flex;
         align-items: center;
-        gap: 10px;
+        gap: 8px;
         font-weight: 600;
-        font-size: 18px;
+        font-size: 16px;
         letter-spacing: -0.01em;
         text-decoration: none;
       }
       .brand svg {
-        width: 28px;
-        height: 28px;
+        width: 22px;
+        height: 22px;
       }
       header nav {
         display: flex;
         align-items: center;
-        gap: 28px;
+        gap: 24px;
       }
       header nav a {
         color: var(--muted);
         text-decoration: none;
         font-size: 14px;
+        transition: color 120ms ease;
       }
       header nav a:hover {
         color: var(--text);
       }
       header nav .nav-download {
-        padding: 8px 14px;
-        border: 1px solid var(--border);
+        position: relative;
+        padding: 6px 14px;
         border-radius: 999px;
-        color: var(--text);
+        background: var(--accent-emphasis);
+        color: var(--on-emphasis);
+        font-size: 13px;
         font-weight: 600;
-        transition: background 120ms ease;
+        transition:
+          filter 120ms ease,
+          transform 100ms ease;
       }
       header nav .nav-download:hover {
-        background: var(--surface);
+        color: var(--on-emphasis);
+        filter: brightness(1.1);
+      }
+      header nav .nav-download:active {
+        transform: scale(0.98);
+      }
+      /* Área de toque de 44 px sem aumentar o botão. */
+      header nav .nav-download::after {
+        content: "";
+        position: absolute;
+        inset: -6px 0;
       }
 
       .hero {
@@ -418,11 +460,8 @@
         }
       }
       @media (max-width: 720px) {
-        header {
-          height: 64px;
-        }
         header nav {
-          gap: 14px;
+          gap: 16px;
         }
         header nav a:first-child {
           display: none;
@@ -465,21 +504,23 @@
     </style>
   </head>
   <body>
-    <header class="wrap">
-      <a class="brand" href="#" aria-label="Prancha, início">
-        <svg viewBox="0 0 1024 1024" aria-hidden="true">
-          <rect x="64" y="64" width="896" height="896" rx="200" fill="var(--accent-emphasis)" />
-          <rect x="232" y="224" width="250" height="576" rx="36" fill="#fff" />
-          <rect x="542" y="224" width="250" height="258" rx="36" fill="#fff" />
-          <rect x="542" y="542" width="250" height="258" rx="36" fill="#fff" fill-opacity="0.72" />
-        </svg>
-        Prancha
-      </a>
-      <nav aria-label="Atalhos da página">
-        <a href="#recursos">Recursos</a>
-        <a href="downloads">Versões</a>
-        <a class="nav-download" href="#baixar">Baixar</a>
-      </nav>
+    <header>
+      <div class="wrap">
+        <a class="brand" href="#" aria-label="Prancha, início">
+          <svg viewBox="64 64 896 896" aria-hidden="true">
+            <rect x="64" y="64" width="896" height="896" rx="200" fill="var(--accent-emphasis)" />
+            <rect x="232" y="224" width="250" height="576" rx="36" fill="#fff" />
+            <rect x="542" y="224" width="250" height="258" rx="36" fill="#fff" />
+            <rect x="542" y="542" width="250" height="258" rx="36" fill="#fff" fill-opacity="0.72" />
+          </svg>
+          Prancha
+        </a>
+        <nav aria-label="Atalhos da página">
+          <a href="#recursos">Recursos</a>
+          <a href="downloads">Versões</a>
+          <a class="nav-download" href="https://github.com/CAKeysama/prancha/releases/download/v0.4.0/Prancha_0.4.0_x64-setup.exe">Baixar</a>
+        </nav>
+      </div>
     </header>
 
     <main>
