@@ -24,10 +24,8 @@ for (const w of ["400", "600"]) {
   copy(`node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-${w}-normal.woff2`, `fonts/ibm-plex-sans-${w}.woff2`);
 }
 copy("assets/app-icon.svg", "assets/favicon.svg");
-// As imagens de vitrine ficam fora do git e podem ser trocadas à mão: sem elas, usa as capturas dos testes.
-const copyIfMissing = (from, to) => existsSync(join(site, to)) || copy(from, to);
-copyIfMissing("artifacts/screenshots/06-biblioteca-capas-e-progresso.png", "assets/biblioteca.png");
-copyIfMissing("artifacts/screenshots/11b-biblioteca-tema-claro.png", "assets/biblioteca-claro.png");
+// As imagens de vitrine mostram obras de terceiros, então ficam fora do git, em site/assets/prints.
+if (!existsSync(join(site, "assets", "prints", "inicio-dark-2000.webp"))) console.warn("Sem as imagens de vitrine em site/assets/prints: a página sai sem elas.");
 
 let html = readFileSync(join(site, "index.html"), "utf8");
 html = html
