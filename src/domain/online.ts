@@ -312,6 +312,41 @@ export function nextHistory(history: string[], query: string): string[] {
   return [text, ...history.filter((item) => item.toLowerCase() !== text.toLowerCase())].slice(0, HISTORY_LIMIT);
 }
 
+/** Compara títulos sem caixa, acento e pontuação. Os sinais de outras escritas mudam a palavra e ficam. */
+export function titleKey(title: string): string {
+  const key = title
+    .normalize("NFD")
+    .replace(/(\p{Script=Latin})\p{M}+/gu, "$1")
+    .normalize("NFC")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{M}\p{N}]+/gu, " ")
+    .trim();
+  return key || title.trim().toLowerCase();
+}
+
+export interface TitleGroup {
+  key: string;
+  title: string;
+  entries: SeriesCard[];
+}
+
+/**
+ * Junta só títulos iguais: parecido não prova que é a mesma obra, e igual também não, por isso a tela mostra as capas.
+ * O título pesquisado vem primeiro. A ordem não depende de quantas fontes têm a obra, para a lista não pular enquanto elas respondem.
+ */
+export function groupByTitle(cards: SeriesCard[], query: string): TitleGroup[] {
+  const groups = new Map<string, TitleGroup>();
+  for (const card of cards) {
+    const key = titleKey(card.title);
+    const group = groups.get(key);
+    if (group) group.entries.push(card);
+    else groups.set(key, { key, title: card.title, entries: [card] });
+  }
+  const wanted = titleKey(query);
+  const rank = ({ key }: TitleGroup) => (key === wanted ? 0 : key.startsWith(wanted) ? 1 : 2);
+  return [...groups.values()].sort((a, b) => rank(a) - rank(b));
+}
+
 /** Roda as tarefas com um limite de simultâneas. Uma falha não impede as outras. */
 export async function runLimited(tasks: Array<() => Promise<void>>, limit: number): Promise<void> {
   let next = 0;
