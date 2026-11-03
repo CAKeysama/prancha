@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Prancha — leitor de quadrinhos para Windows</title>
-    <meta name="description" content="Organize e leia seus quadrinhos, mangás e graphic novels no Windows. Gratuito, sem conta e sem internet." />
+    <meta name="description" content="Organize e leia HQs, mangás, manhwas e webtoons no Windows. Gratuito e sem conta, com suas HQs e as séries que você acompanha na mesma biblioteca." />
     <meta name="color-scheme" content="dark light" />
     <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
     <style>
@@ -65,6 +65,12 @@
       a {
         color: inherit;
       }
+      ::selection {
+        background: color-mix(in srgb, var(--accent) 35%, transparent);
+      }
+      html {
+        scrollbar-color: var(--border) var(--bg);
+      }
       :focus-visible {
         outline: 2px solid var(--accent);
         outline-offset: 3px;
@@ -123,23 +129,14 @@
 
       .hero {
         text-align: center;
-        padding: 88px 0 48px;
-        background: radial-gradient(ellipse at 50% 0%, rgb(47 129 247 / 0.12), transparent 62%);
-      }
-      .eyebrow {
-        margin: 0 0 18px;
-        color: var(--accent);
-        font-size: 12px;
-        font-weight: 600;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
+        padding: 88px 0 0;
       }
       h1 {
         margin: 0 auto;
         max-width: 16ch;
         font-size: clamp(40px, 6vw, 68px);
         line-height: 1.05;
-        letter-spacing: -0.045em;
+        letter-spacing: -0.04em;
         font-weight: 600;
       }
       h1,
@@ -154,27 +151,8 @@
         color: var(--muted);
       }
 
-      .cta-card {
-        max-width: 620px;
-        margin: 36px auto 0;
-        padding: 24px;
-        border: 1px solid var(--border);
-        border-radius: 18px;
-        background: color-mix(in srgb, var(--surface) 82%, transparent);
-        box-shadow: 0 16px 48px rgb(1 4 9 / 0.12);
-      }
-      .cta-card h2 {
-        margin: 0;
-        font-size: 18px;
-        font-weight: 600;
-        letter-spacing: -0.015em;
-      }
-      .cta-card > p {
-        margin: 4px 0 18px;
-        color: var(--muted);
-        font-size: 14px;
-      }
       .cta-actions {
+        margin-top: 32px;
         display: flex;
         justify-content: center;
         flex-wrap: wrap;
@@ -241,47 +219,104 @@
         height: auto;
       }
 
-      .features {
+      .read {
         display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 14px;
-        padding: 72px 0 24px;
+        grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+        align-items: center;
+        gap: 64px;
+        padding-top: 120px;
       }
-      .section-heading {
-        margin: 0 auto 28px;
-        max-width: 34ch;
-        text-align: center;
-      }
-      .section-heading h2 {
+      .copy h2 {
         margin: 0;
-        font-size: clamp(24px, 3vw, 32px);
-        letter-spacing: -0.03em;
-      }
-      .section-heading p {
-        margin: 8px 0 0;
-        color: var(--muted);
-      }
-      .feature {
-        padding: 24px;
-        border: 1px solid var(--border);
-        border-radius: 16px;
-        background: var(--surface);
-      }
-      .feature h3 {
-        margin: 0 0 6px;
-        font-size: 17px;
+        font-size: clamp(28px, 3.6vw, 40px);
+        line-height: 1.12;
         font-weight: 600;
-        letter-spacing: -0.01em;
+        letter-spacing: -0.03em;
+        text-wrap: balance;
       }
-      .feature p {
-        margin: 0;
+      .copy p {
+        margin: 14px 0 0;
+        max-width: 44ch;
+        font-size: 17px;
         color: var(--muted);
       }
-      .feature svg {
-        width: 24px;
-        height: 24px;
-        color: var(--accent);
-        margin-bottom: 16px;
+
+      /* A tira real do leitor: anda com a rolagem da página e passa pela barra do capítulo seguinte. */
+      .strip {
+        --frame: min(78vh, 720px);
+        height: var(--frame);
+        margin: 0;
+        overflow: clip;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: #05070c;
+        box-shadow: var(--shadow);
+        view-timeline: --strip block;
+      }
+      .strip img {
+        display: block;
+        width: 100%;
+        height: auto;
+        transform: translateY(calc(var(--frame) / 2 - 50%));
+      }
+      @keyframes strip-scroll {
+        from {
+          transform: translateY(0);
+        }
+        to {
+          transform: translateY(calc(var(--frame) - 100%));
+        }
+      }
+      @supports (animation-timeline: view()) {
+        @media (prefers-reduced-motion: no-preference) {
+          .strip img {
+            animation: strip-scroll linear both;
+            animation-timeline: --strip;
+            animation-range: cover 8% cover 92%;
+          }
+        }
+      }
+
+      .split {
+        display: grid;
+        grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
+        align-items: center;
+        gap: 56px;
+        padding-top: 120px;
+      }
+      .split.flip {
+        grid-template-columns: minmax(0, 8fr) minmax(0, 4fr);
+      }
+      .split.flip .copy {
+        order: 2;
+      }
+      .split .shot {
+        margin: 0;
+        max-width: none;
+        box-shadow: none;
+      }
+      .copy .note {
+        font-size: 14px;
+      }
+
+      .more {
+        margin: 120px 0 0;
+        padding: 0;
+        border-top: 1px solid var(--border);
+      }
+      .more div {
+        display: grid;
+        grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
+        gap: 56px;
+        padding: 18px 0;
+        border-bottom: 1px solid var(--border);
+      }
+      .more dt {
+        font-weight: 600;
+      }
+      .more dd {
+        margin: 0;
+        color: var(--muted);
       }
 
       .formats {
@@ -297,12 +332,6 @@
         align-items: center;
         gap: 10px;
       }
-      .formats-label {
-        margin-right: 4px;
-        color: var(--muted);
-        font-size: 14px;
-        font-weight: 600;
-      }
       .formats li {
         border: 1px solid var(--border);
         border-radius: 999px;
@@ -310,21 +339,37 @@
         font-size: 14px;
         color: var(--muted);
       }
+      .formats .formats-label {
+        margin-right: 4px;
+        border: 0;
+        padding: 0;
+        font-weight: 600;
+      }
 
       .closing {
+        margin-top: 96px;
         text-align: center;
-        padding: 88px 0 96px;
+        padding-bottom: 96px;
+      }
+      .closing::before {
+        content: "";
+        display: block;
+        margin-bottom: 88px;
         border-top: 1px solid var(--border);
       }
       .closing h2 {
         margin: 0;
         font-size: clamp(26px, 4vw, 36px);
+        line-height: 1.12;
         letter-spacing: -0.02em;
         font-weight: 600;
       }
       .closing > p {
-        margin: 10px 0 22px;
+        margin: 10px 0 0;
         color: var(--muted);
+      }
+      .closing .cta-actions {
+        margin-top: 22px;
       }
 
       footer {
@@ -342,12 +387,36 @@
       details summary {
         cursor: pointer;
       }
+      .credits {
+        flex-basis: 100%;
+        margin: 8px 0 0;
+        max-width: 92ch;
+      }
       code {
         font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
         font-size: 12px;
         word-break: break-all;
       }
 
+      @media (max-width: 900px) {
+        .read,
+        .split,
+        .split.flip {
+          grid-template-columns: minmax(0, 1fr);
+          gap: 28px;
+          padding-top: 88px;
+        }
+        .split.flip .copy {
+          order: 0;
+        }
+        .more {
+          margin-top: 88px;
+        }
+        .more div {
+          grid-template-columns: minmax(0, 1fr);
+          gap: 2px;
+        }
+      }
       @media (max-width: 720px) {
         header {
           height: 64px;
@@ -361,23 +430,18 @@
         .hero {
           padding-top: 64px;
         }
-        .cta-card {
-          padding: 20px 16px;
-        }
-        .features {
-          grid-template-columns: 1fr;
-          gap: 12px;
-          padding-top: 56px;
-        }
-        .feature {
-          padding: 20px;
+        /* No celular, corta as laterais da tira para a barra continuar legível. */
+        .strip img {
+          width: 140%;
+          margin-left: -20%;
         }
         .formats {
           padding: 18px 14px;
           gap: 8px;
         }
-        .formats-label {
+        .formats .formats-label {
           flex-basis: 100%;
+          margin-right: 0;
           text-align: center;
         }
       }
@@ -420,72 +484,162 @@
 
     <main>
       <section class="hero wrap" id="baixar">
-        <p class="eyebrow">Uma nova casa para sua coleção</p>
         <h1>Seus quadrinhos, num só lugar.</h1>
-        <p class="lede">Organize, leia e retome de onde parou. Sem conta e sem internet.</p>
-        <div class="cta-card">
-          <h2>Comece sua próxima leitura</h2>
-          <p>Instale em instantes e tenha sua coleção sempre à mão.</p>
-          <div class="cta-actions">
-            <a class="button" href="https://github.com/CAKeysama/prancha/releases/download/v0.4.0/Prancha_0.4.0_x64-setup.exe">
+        <p class="lede">As HQs do seu computador e as séries que você acompanha na mesma biblioteca, sempre na página em que você parou.</p>
+        <div class="cta-actions">
+          <a class="button" href="https://github.com/CAKeysama/prancha/releases/download/v0.4.0/Prancha_0.4.0_x64-setup.exe">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M12 3v12" />
               <path d="m7 10 5 5 5-5" />
               <path d="M5 21h14" />
             </svg>
-              Baixar para Windows
-            </a>
-            <a class="button button-secondary" href="https://github.com/CAKeysama/prancha/releases/download/v0.4.0/Prancha_0.4.0_x64_pt-BR.msi">
-              Baixar versão MSI
-            </a>
-          </div>
-          <p class="meta">
-            Gratuito · Windows 10 e 11 (64 bits) · 11,2 MB ·
-            Código aberto (MIT) ·
-            <a href="downloads">Todas as versões</a>
-          </p>
+            Baixar para Windows
+          </a>
+          <a class="button button-secondary" href="https://github.com/CAKeysama/prancha/releases/download/v0.4.0/Prancha_0.4.0_x64_pt-BR.msi">Baixar versão MSI</a>
         </div>
+        <p class="meta">
+          Gratuito · Windows 10 e 11 (64 bits) · 11,2 MB ·
+          Código aberto (MIT) ·
+          <a href="downloads">Todas as versões</a>
+        </p>
         <figure class="shot">
           <picture>
-            <source srcset="assets/biblioteca-claro.png" media="(prefers-color-scheme: light)" />
+            <source media="(prefers-color-scheme: light)" srcset="assets/prints/inicio-light-1000.webp 1000w, assets/prints/inicio-light-2000.webp 2000w" sizes="(max-width: 1008px) 100vw, 960px" />
             <img
-            src="assets/biblioteca.png"
-            width="1528"
-            height="849"
-            alt="Biblioteca do Prancha com capas de quadrinhos e o progresso de leitura de cada um"
-          />
+              src="assets/prints/inicio-dark-1000.webp"
+              srcset="assets/prints/inicio-dark-1000.webp 1000w, assets/prints/inicio-dark-2000.webp 2000w"
+              sizes="(max-width: 1008px) 100vw, 960px"
+              width="2000"
+              height="1250"
+              alt="Início do Prancha: Ultra Equipado em destaque para continuar do capítulo 246, e abaixo as HQs em andamento com o progresso de cada uma"
+              fetchpriority="high" decoding="async"
+            />
           </picture>
         </figure>
       </section>
 
-      <section class="wrap" id="recursos" aria-label="Recursos">
-        <div class="section-heading">
-          <h2>Feito para você mergulhar na leitura.</h2>
-          <p>Menos tempo organizando. Mais tempo virando páginas.</p>
+      <section class="read wrap" id="recursos">
+        <div class="copy">
+          <h2>Clicar, ler, seguir.</h2>
+          <p>Escolha o capítulo e leia na hora, sem baixar nada. No fim dele, uma barra discreta marca onde começa o próximo, e você só continua rolando.</p>
+          <p>Webtoons abrem em coluna estreita e contínua. Nas HQs, a passagem vem ao virar a página.</p>
         </div>
-        <div class="features">
-          <article class="feature">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <rect x="3" y="3" width="7" height="9" rx="1" /><rect x="14" y="3" width="7" height="5" rx="1" /><rect x="14" y="12" width="7" height="9" rx="1" /><rect x="3" y="16" width="7" height="5" rx="1" />
-            </svg>
-            <h3>Organiza sozinho</h3>
-            <p>Capas geradas na hora, busca, favoritos e coleções.</p>
-          </article>
-          <article class="feature">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M2 4h7a3 3 0 0 1 3 3v14a2 2 0 0 0-2-2H2z" /><path d="M22 4h-7a3 3 0 0 0-3 3v14a2 2 0 0 1 2-2h8z" />
-            </svg>
-            <h3>Lê do seu jeito</h3>
-            <p>Página única, dupla ou rolagem contínua. Modo mangá.</p>
-          </article>
-          <article class="feature">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /><path d="M12 7v5l3 2" />
-            </svg>
-            <h3>Lembra onde parou</h3>
-            <p>Feche quando quiser. Na volta, a página certa está lá.</p>
-          </article>
+        <figure class="strip">
+          <img
+            src="assets/prints/leitor-alto-1000.webp"
+            width="1000"
+            height="3500"
+            alt="Leitor do Prancha no fim de um capítulo de Ultra Equipado: a barra “A partir daqui: Capítulo 246” e, logo abaixo, o começo do capítulo seguinte"
+            loading="lazy"
+            decoding="async"
+          />
+        </figure>
+      </section>
+
+      <section class="split wrap">
+        <div class="copy">
+          <h2>Tudo na mesma biblioteca.</h2>
+          <p>Favorite uma série e ela entra junto das suas HQs, com favoritos, coleções e a marcação de onde parou. O início já abre no que você estava lendo.</p>
         </div>
+        <figure class="shot">
+          <picture>
+            <source media="(prefers-color-scheme: light)" srcset="assets/prints/biblioteca-light-1000.webp 1000w, assets/prints/biblioteca-light-2000.webp 2000w" sizes="(max-width: 900px) 100vw, 680px" />
+            <img
+              src="assets/prints/biblioteca-dark-1000.webp"
+              srcset="assets/prints/biblioteca-dark-1000.webp 1000w, assets/prints/biblioteca-dark-2000.webp 2000w"
+              sizes="(max-width: 900px) 100vw, 680px"
+              width="2000"
+              height="1250"
+              alt="Minha biblioteca com Ultra Equipado ao lado de HQs do computador, com estrelas de favorito e o progresso de leitura"
+              loading="lazy" decoding="async"
+            />
+          </picture>
+        </figure>
+      </section>
+
+      <section class="split flip wrap">
+        <div class="copy">
+          <h2>Cada série com sua página.</h2>
+          <p>Capítulos, favorito, coleções e a opção de acompanhar sem baixar nada. Se preferir guardar, baixe um capítulo ou a obra inteira.</p>
+        </div>
+        <figure class="shot">
+          <picture>
+            <source media="(prefers-color-scheme: light)" srcset="assets/prints/obra-light-1000.webp 1000w, assets/prints/obra-light-2000.webp 2000w" sizes="(max-width: 900px) 100vw, 680px" />
+            <img
+              src="assets/prints/obra-dark-1000.webp"
+              srcset="assets/prints/obra-dark-1000.webp 1000w, assets/prints/obra-dark-2000.webp 2000w"
+              sizes="(max-width: 900px) 100vw, 680px"
+              width="2000"
+              height="1250"
+              alt="Página de Ultra Equipado com capa, sinopse, botões de favoritar, coleções e acompanhar, e a lista de capítulos"
+              loading="lazy" decoding="async"
+            />
+          </picture>
+        </figure>
+      </section>
+
+      <section class="split wrap">
+        <div class="copy">
+          <h2>Procure em todas as fontes.</h2>
+          <p>Explorar reúne as fontes que você instalou: populares, recentes e o que você acompanha, com uma busca só.</p>
+        </div>
+        <figure class="shot">
+          <picture>
+            <source media="(prefers-color-scheme: light)" srcset="assets/prints/explorar-light-1000.webp 1000w, assets/prints/explorar-light-2000.webp 2000w" sizes="(max-width: 900px) 100vw, 680px" />
+            <img
+              src="assets/prints/explorar-dark-1000.webp"
+              srcset="assets/prints/explorar-dark-1000.webp 1000w, assets/prints/explorar-dark-2000.webp 2000w"
+              sizes="(max-width: 900px) 100vw, 680px"
+              width="2000"
+              height="1250"
+              alt="Tela Explorar com as obras populares de uma fonte instalada, em uma grade de capas"
+              loading="lazy" decoding="async"
+            />
+          </picture>
+        </figure>
+      </section>
+
+      <section class="split flip wrap">
+        <div class="copy">
+          <h2>Só aparece se você quiser.</h2>
+          <p>O Prancha continua sendo um leitor do que é seu. Ler pelas fontes é um plugin: instale quando quiser e remova quando cansar. O filtro +18 já vem ligado e esconde o que as fontes marcam como adulto ou deixam sem classificação.</p>
+          <p class="note">O app não vem com obras nem fontes. Você escolhe os repositórios, e ele avisa antes de instalar código de terceiros. A primeira fonte externa baixa um programa de terceiros de 343 MB.</p>
+        </div>
+        <figure class="shot">
+          <picture>
+            <source media="(prefers-color-scheme: light)" srcset="assets/prints/plugins-light-1000.webp 1000w, assets/prints/plugins-light-2000.webp 2000w" sizes="(max-width: 900px) 100vw, 680px" />
+            <img
+              src="assets/prints/plugins-dark-1000.webp"
+              srcset="assets/prints/plugins-dark-1000.webp 1000w, assets/prints/plugins-dark-2000.webp 2000w"
+              sizes="(max-width: 900px) 100vw, 680px"
+              width="2000"
+              height="562"
+              alt="Tela Plugins com o plugin Fontes de leitura instalado e a opção Esconder conteúdo +18 ligada"
+              loading="lazy" decoding="async"
+            />
+          </picture>
+        </figure>
+      </section>
+
+      <section class="wrap" aria-label="Mais recursos">
+        <dl class="more">
+          <div>
+            <dt>Do seu jeito</dt>
+            <dd>Página única, dupla, vertical ou webtoon, e modo mangá, da direita para a esquerda.</dd>
+          </div>
+          <div>
+            <dt>Balão por balão</dt>
+            <dd>Na Leitura Guiada, a página fica inteira e cada balão salta para fora, maior, na ordem de leitura.</dd>
+          </div>
+          <div>
+            <dt>Sem surpresa</dt>
+            <dd>O app avisa quando há versão nova e só atualiza se você mandar.</dd>
+          </div>
+          <div>
+            <dt>Sem conta</dt>
+            <dd>Nada de cadastro. Suas HQs ficam no seu computador e abrem sem internet.</dd>
+          </div>
+        </dl>
         <ul class="formats" aria-label="Formatos aceitos">
           <li class="formats-label">Seus formatos favoritos</li>
           <li>CBZ</li>
@@ -515,6 +669,11 @@
           <p>EXE <code>229bcf20e2b5aa1c683bfa04d09d19787b265ab59e7f63f4030ee8d36b9a6d3c</code></p>
           <p>MSI <code>238a02d60ebd05e84e62b5a9707cb17c17f0e09d04580ea525edd6203d40e1d0</code></p>
         </details>
+        <p class="credits">
+          Imagens do próprio app. <em>Ultra Equipado</em> (Overgeared): história de Lee Dong Wook e Park Saenal, arte de Team Argo, estúdio Redice, lida por uma fonte externa.
+          <a href="https://www.peppercarrot.com"><em>Pepper&amp;Carrot</em></a>: David Revoy, <a href="https://creativecommons.org/licenses/by/4.0/deed.pt-br">CC BY 4.0</a>.
+          <em>Dreams of the Rarebit Fiend</em>: Winsor McCay, domínio público. As obras são de seus autores e não acompanham o Prancha.
+        </p>
       </div>
     </footer>
   </body>

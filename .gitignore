@@ -15,4 +15,5 @@ artifacts/installer/
 site/downloads.html
 site/releases.json
 site/assets/biblioteca*.png
+site/assets/prints/
 _site/
