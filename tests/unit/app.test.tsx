@@ -134,6 +134,18 @@ describe("primeira execução", () => {
     expect(await screen.findByRole("dialog", { name: "Bem-vindo ao Prancha" })).toBeInTheDocument();
     expect(settings.onboarding).toEqual({ status: "active", step: 1, comicId: null });
   });
+
+  it("abre o formulário de melhoria pelo backend e avisa se o navegador falhar", async () => {
+    overrides.open_improvement_form = () => {
+      throw { code: "opener", message: "sem navegador" };
+    };
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Configurações" }));
+    await user.click(await screen.findByRole("button", { name: "Abrir formulário" }));
+    expect(calls.some((c) => c.cmd === "open_improvement_form")).toBe(true);
+    expect(await screen.findByText("Não foi possível abrir o navegador")).toBeInTheDocument();
+  });
 });
 
 describe("configurações", () => {

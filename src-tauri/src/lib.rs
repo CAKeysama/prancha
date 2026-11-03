@@ -141,6 +141,7 @@ pub fn run() {
             commands::updates_cancel,
             commands::updates_history,
             commands::updates_open_release,
+            commands::open_improvement_form,
             commands::repositories_list,
             commands::repository_preview,
             commands::repository_add,

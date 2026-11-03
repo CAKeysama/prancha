@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { FolderOpen, GraduationCap, HardDrive, ImageMinus, RefreshCw, RotateCcw, ScanSearch, Scale, Trash2 } from "lucide-react";
+import { ExternalLink, FolderOpen, GraduationCap, HardDrive, ImageMinus, RefreshCw, RotateCcw, ScanSearch, Scale, Trash2 } from "lucide-react";
 import { Button } from "../../components/Button";
 import { ConfirmDialog, Dialog } from "../../components/Dialog";
 import { Kbd, Spinner } from "../../components/Feedback";
@@ -609,6 +609,11 @@ export function SettingsScreen() {
                 }}
               >
                 Abrir tutorial
+              </Button>
+            </SettingRow>
+            <SettingRow label="Sugerir uma melhoria" description="Abre um formulário no GitHub, onde é preciso ter uma conta. A sugestão fica pública.">
+              <Button icon={ExternalLink} onClick={() => void api.openImprovementForm().catch((e) => toast.error("Não foi possível abrir o navegador", errorMessage(e)))}>
+                Abrir formulário
               </Button>
             </SettingRow>
             <SettingRow label="Licenças de terceiros">

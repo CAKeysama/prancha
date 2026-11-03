@@ -1,0 +1,19 @@
+name: Sugerir uma melhoria
+description: Conte o que você gostaria que o Prancha fizesse.
+title: "Melhoria: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: "Esta sugestão fica pública. Não inclua dados pessoais."
+  - type: textarea
+    id: ideia
+    attributes:
+      label: "O que você gostaria que o Prancha fizesse?"
+    validations:
+      required: true
+  - type: textarea
+    id: motivo
+    attributes:
+      label: "Por que isso ajudaria?"
+      description: "Opcional. Conte em que momento você sentiu falta disso."
