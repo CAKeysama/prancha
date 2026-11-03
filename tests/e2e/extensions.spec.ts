@@ -98,6 +98,10 @@ test.describe.serial("extensões: da adição do repositório à leitura offline
     dir = freshDataDir("extensions");
     app = await launchApp(dir);
     await app.page.getByRole("button", { name: "Pular tutorial" }).click();
+    await expect(app.page.getByRole("button", { name: "Explorar", exact: true })).toBeHidden();
+    await nav(app.page, "Plugins");
+    await app.page.getByRole("button", { name: "Instalar", exact: true }).click();
+    await expect(app.page.getByRole("navigation", { name: "Navegação principal" }).getByRole("button", { name: "Explorar", exact: true })).toBeVisible();
   });
 
   test.afterAll(async () => {
@@ -210,6 +214,142 @@ test.describe.serial("extensões: da adição do repositório à leitura offline
     await page.getByRole("button", { name: "Acompanhar", exact: true }).click();
     await expect(page.getByRole("button", { name: "Acompanhando", exact: true })).toBeVisible();
     await page.screenshot({ path: join(SHOTS, "obra.png") });
+  });
+
+  test("clicar, ler e seguir de um capítulo para o outro, sem botão e sem baixar", async () => {
+    const page = app.page;
+    const title = page.locator("header p.font-semibold");
+    const asked = () => page.evaluate(() => (window as unknown as { __TAURI_INTERNALS__: { invoke: (cmd: string, args: unknown) => Promise<unknown[]> } }).__TAURI_INTERNALS__.invoke("downloads_list", { limit: 50 }));
+    await chapterRow(page, "A primeira carta").getByRole("button", { name: "Ler" }).click();
+    await expect(indicator(page)).toHaveText("Página 1 de 6");
+    await expect(title).toHaveText("Farol de Papel · A primeira carta");
+    await imageLoaded(page, 'img[alt="Página 1"]');
+    expect(seen.some((path) => path.includes("/cap-01/"))).toBe(true);
+
+    // Virar a página no fim do capítulo já é o começo do próximo, com a barrinha avisando.
+    for (let n = 2; n <= 6; n++) {
+      await page.keyboard.press("ArrowRight");
+      await expect(indicator(page)).toHaveText(`Página ${n} de 6`);
+    }
+    await expect(page.getByRole("status").filter({ hasText: "A partir daqui" })).toHaveCount(0);
+    await page.keyboard.press("ArrowRight");
+    await expect(indicator(page)).toHaveText("Página 1 de 5");
+    await expect(title).toHaveText("Farol de Papel · Maré de envelopes");
+    await expect(page.getByRole("status").filter({ hasText: "A partir daqui: Maré de envelopes" })).toBeVisible();
+    await imageLoaded(page, 'img[alt="Página 7"]');
+    await page.screenshot({ path: join(SHOTS, "capitulo-seguinte-paginado.png") });
+
+    // Voltar também atravessa, e o capítulo anterior continua na sequência.
+    await page.keyboard.press("ArrowLeft");
+    await expect(indicator(page)).toHaveText("Página 6 de 6");
+    await page.getByRole("button", { name: "Capítulo anterior" }).waitFor({ state: "hidden" });
+    await page.keyboard.press("ArrowRight");
+    await page.getByRole("button", { name: "Capítulo anterior" }).click();
+    await expect(indicator(page)).toHaveText("Página 1 de 6");
+    await page.keyboard.press("ArrowRight");
+    await expect(indicator(page)).toHaveText("Página 2 de 6");
+
+    // Modo webtoon: uma coluna só, sem espaço entre as páginas do capítulo e com a barrinha entre um capítulo e outro.
+    for (let i = 0; i < 3; i++) await page.getByRole("button", { name: /Alternar modo de exibição/ }).click();
+    await expect(page.getByRole("button", { name: /atual: Webtoon/ })).toBeVisible();
+    const strip = page.locator("[data-reader-viewport]");
+    await imageLoaded(page, 'img[alt="Página 2"]');
+    const boxes = await page.locator("[data-page]").evaluateAll((pages) => pages.map((el) => el.getBoundingClientRect()).map((box) => ({ top: box.top, bottom: box.bottom, width: box.width })));
+    for (const box of boxes) expect(box.width).toBeLessThanOrEqual(800);
+    for (let i = 1; i < 6; i++) expect(Math.abs(boxes[i]!.top - boxes[i - 1]!.bottom)).toBeLessThan(1);
+    expect(boxes[6]!.top - boxes[5]!.bottom).toBeGreaterThan(20);
+    await page.screenshot({ path: join(SHOTS, "webtoon.png") });
+
+    const scrollTo = (index: number) => page.locator(`[data-page="${index}"]`).evaluate((el) => el.scrollIntoView());
+    await scrollTo(5);
+    await expect(indicator(page)).toHaveText("Página 6 de 6");
+    await scrollTo(6);
+    await expect(indicator(page)).toHaveText("Página 1 de 5");
+    await expect(title).toHaveText("Farol de Papel · Maré de envelopes");
+    await expect(page.getByTestId("chapter-start").filter({ hasText: "A partir daqui: Maré de envelopes" })).toHaveCount(1);
+    await strip.evaluate((el) => el.scrollBy(0, -120));
+    await expect(page.getByTestId("chapter-start").first()).toBeInViewport();
+    await page.screenshot({ path: join(SHOTS, "capitulo-seguinte-webtoon.png") });
+
+    // Rolando até o fim da obra, os capítulos que faltam vão entrando e nenhum botão aparece no caminho.
+    await expect(async () => {
+      await strip.evaluate((el) => el.scrollTo(0, el.scrollHeight));
+      await expect(page.getByText("Não há mais capítulos")).toBeVisible({ timeout: 500 });
+    }).toPass();
+    await expect(title).toHaveText("Farol de Papel · O remetente");
+
+    await page.getByRole("button", { name: "Capítulos" }).click();
+    await expect(page.getByTestId("chapter")).toHaveCount(3);
+    await expect(chapterRow(page, "A primeira carta")).toContainText("Lido");
+    await expect(page.getByRole("button", { name: "Ler novamente", exact: true })).toBeVisible();
+
+    expect(await asked()).toEqual([]);
+    expect(existsSync(join(dir, "downloads")) ? readdirSync(join(dir, "downloads"), { recursive: true }).filter((name) => String(name).endsWith(".cbz")) : []).toEqual([]);
+  });
+
+  test("a obra guardada vai para o início, a biblioteca e as coleções, e mostra onde parou", async () => {
+    const page = app.page;
+    const title = "O Mapa das Marés";
+    await openSeries(page, "mares", title);
+    await page.getByRole("button", { name: "Favoritar", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Favorito", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Começar a ler", exact: true }).click();
+    await expect(indicator(page)).toHaveText(/^Página 1 de/);
+    await page.keyboard.press("ArrowRight");
+    await expect(indicator(page)).toHaveText(/^Página 2 de/);
+    await page.getByRole("button", { name: "Capítulos" }).click();
+    await expect(page.getByRole("button", { name: "Continuar", exact: true })).toBeVisible();
+
+    // No início, retomar leva de volta ao mesmo ponto.
+    await nav(page, "Início");
+    const hero = page.getByText("Continue de onde parou").locator("..");
+    await expect(hero).toContainText(title);
+    await expect(hero).toContainText("página 2 de");
+    await expect(page.getByRole("region", { name: "Favoritos" }).getByRole("button", { name: `Ver detalhes de ${title}` })).toBeVisible();
+    await page.screenshot({ path: join(SHOTS, "inicio-com-obra.png") });
+    await page.getByRole("button", { name: "Continuar leitura", exact: true }).click();
+    await expect(indicator(page)).toHaveText(/^Página 2 de/);
+    await page.getByRole("button", { name: /^Voltar/ }).click();
+
+    // Na biblioteca, com o mesmo menu das HQs.
+    await nav(page, "Minha biblioteca");
+    const saved = page.locator("[data-series-id]").filter({ hasText: title });
+    await expect(saved).toContainText("página 2 de");
+    await saved.getByRole("button", { name: `Mais ações para ${title}` }).click();
+    await page.getByRole("menuitem", { name: "Organizar em coleções…" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Nova coleção").fill("Fontes");
+    await dialog.getByRole("button", { name: "Criar coleção" }).click();
+    await dialog.getByRole("checkbox", { name: /Fontes/ }).check();
+    await dialog.getByRole("button", { name: "Salvar coleções" }).click();
+    await expect(dialog).toBeHidden();
+
+    await nav(page, "Coleções");
+    await page.getByRole("button", { name: "Abrir coleção Fontes" }).click();
+    await expect(saved).toBeVisible();
+    await page.screenshot({ path: join(SHOTS, "colecao-com-obra.png") });
+    await saved.getByRole("button", { name: `Mais ações para ${title}` }).click();
+    await page.getByRole("menuitem", { name: "Remover desta coleção" }).click();
+    await expect(saved).toHaveCount(0);
+
+    await nav(page, "Favoritos");
+    await expect(saved).toBeVisible();
+
+    // O filtro +18 só muda depois de a pessoa confirmar a idade.
+    await nav(page, "Plugins");
+    const filter = page.getByRole("switch", { name: /Esconder conteúdo \+18/ });
+    await expect(filter).toBeChecked();
+    await filter.click();
+    const confirm = page.getByRole("dialog", { name: "Mostrar conteúdo +18?" });
+    await confirm.getByRole("button", { name: "Cancelar" }).click();
+    await expect(filter).toBeChecked();
+    await filter.click();
+    await confirm.getByRole("button", { name: "Tenho 18 anos ou mais" }).click();
+    await expect(filter).not.toBeChecked();
+    await filter.click();
+    await expect(filter).toBeChecked();
+
+    await openSeries(page, "farol", "Farol de Papel");
   });
 
   test("13 a 15: baixa um capítulo, encontra na biblioteca e lê no leitor de sempre", async () => {
@@ -337,7 +477,7 @@ test.describe.serial("extensões: da adição do repositório à leitura offline
     await expect(page.getByTestId("chapter")).toHaveCount(3);
     await chapterRow(page, "A primeira carta").getByRole("button", { name: "Ler" }).click();
     await expect(indicator(page)).toHaveText("Página 4 de 6");
-    await page.getByRole("button", { name: "Biblioteca" }).click();
+    await page.getByRole("button", { name: "Capítulos" }).click();
 
     // O catálogo já baixado continua na tela e o erro fica no repositório.
     await nav(page, "Repositórios");
@@ -364,6 +504,7 @@ test.describe.serial("extensões: da adição do repositório à leitura offline
     await expect(page.getByText("Nenhuma fonte instalada")).toBeVisible();
 
     await nav(page, "Minha biblioteca");
+    await expect(page.locator("[data-series-id]").filter({ hasText: "O Mapa das Marés" })).toBeVisible();
     await page.getByRole("button", { name: "Ver detalhes de A primeira carta" }).click();
     await expect(page.getByText("· Fonte não instalada")).toBeVisible();
     await page.getByRole("button", { name: /^(Ler|Continuar leitura|Ler novamente)$/ }).click();

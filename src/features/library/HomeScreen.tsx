@@ -1,11 +1,11 @@
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { BookOpen, ChevronRight, FolderPlus, GraduationCap, Library, Plus } from "lucide-react";
 import { Button } from "../../components/Button";
 import { ErrorState, ProgressBar, Spinner } from "../../components/Feedback";
 import { PageHeader } from "../../components/PageHeader";
 import { Cover } from "../../components/Cover";
+import { homeItems, isSeries, seriesProgressLabel, seriesRatio, type LibraryItem } from "../../domain/library-items";
 import { progressLabel, progressRatio, subtitle } from "../../domain/progress";
-import type { ComicSummary } from "../../domain/types";
 import { api } from "../../services/api";
 import { useLibraryData } from "../../app/library-events";
 import { useNav, type Route } from "../../app/navigation";
@@ -14,6 +14,8 @@ import { AddComicsButtons } from "./AddComicsButtons";
 import { ComicShelf } from "./ComicCollectionView";
 import { useImport } from "./import-context";
 import { useComicActions } from "./comic-actions";
+import { useLibrarySeries } from "./use-library-series";
+import { OnlineCover } from "../online/parts";
 import { useOnboarding } from "../onboarding/onboarding-context";
 
 function Section({ title, to, children }: { title: string; to?: Route; children: ReactNode }) {
@@ -34,26 +36,28 @@ function Section({ title, to, children }: { title: string; to?: Route; children:
 }
 
 /** Destaque para retomar a leitura mais recente com um clique. */
-function ResumeHero({ comic }: { comic: ComicSummary }) {
+function ResumeHero({ item }: { item: LibraryItem }) {
   const actions = useComicActions();
-  const ratio = progressRatio(comic);
+  const online = isSeries(item);
+  const ratio = online ? seriesRatio(item) : progressRatio(item);
+  const sub = online ? item.sourceName : subtitle(item);
   return (
     <div className="mb-8 flex items-center gap-5 rounded-lg border border-border bg-surface p-4">
       <div className="w-20 shrink-0">
-        <Cover comicId={comic.id} title={comic.title} kind={comic.coverKind} rev={comic.coverRev} error={comic.coverError} eager />
+        {online ? <OnlineCover series={item} eager /> : <Cover comicId={item.id} title={item.title} kind={item.coverKind} rev={item.coverRev} error={item.coverError} eager />}
       </div>
       <div className="min-w-0 flex-1">
         <p className="text-xs font-medium tracking-wide text-muted uppercase">Continue de onde parou</p>
-        <p className="mt-0.5 truncate text-xl font-semibold">{comic.title}</p>
-        {subtitle(comic) && <p className="truncate text-sm text-muted">{subtitle(comic)}</p>}
-        <p className="mt-2 text-sm">{progressLabel(comic)}</p>
-        {ratio !== null && <ProgressBar value={ratio} label={`Progresso de ${comic.title}`} className="mt-1.5 max-w-sm" />}
+        <p className="mt-0.5 truncate text-xl font-semibold">{item.title}</p>
+        {sub && <p className="truncate text-sm text-muted">{sub}</p>}
+        <p className="mt-2 text-sm">{online ? seriesProgressLabel(item) : progressLabel(item)}</p>
+        {ratio !== null && <ProgressBar value={ratio} label={`Progresso de ${item.title}`} className="mt-1.5 max-w-sm" />}
       </div>
       <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
-        <Button variant="ghost" onClick={() => actions.openDetails(comic)}>
+        <Button variant="ghost" onClick={() => (online ? actions.openSeries(item) : actions.openDetails(item))}>
           Detalhes
         </Button>
-        <Button variant="primary" icon={BookOpen} onClick={() => actions.read(comic)} disabled={comic.missing}>
+        <Button variant="primary" icon={BookOpen} onClick={() => (online ? actions.readSeries(item) : actions.read(item))} disabled={!online && item.missing}>
           Continuar leitura
         </Button>
       </div>
@@ -88,7 +92,9 @@ function EmptyHome() {
 }
 
 export function HomeScreen() {
-  const { data, error, reload } = useLibraryData(() => api.home(), []);
+  const { data: home, error, reload } = useLibraryData(() => api.home(), []);
+  const series = useLibrarySeries();
+  const data = useMemo(() => home && homeItems(home, series), [home, series]);
   return (
     <div className="h-full overflow-y-auto">
       <PageHeader title="Início" subtitle={data && data.total > 0 ? `${data.total} ${data.total === 1 ? "quadrinho" : "quadrinhos"} na biblioteca` : undefined} actions={data && data.total > 0 ? <AddComicsButtons /> : undefined} />
@@ -108,25 +114,25 @@ export function HomeScreen() {
         {data && data.total === 0 && <EmptyHome />}
         {data && data.total > 0 && (
           <>
-            {data.continueReading[0] && <ResumeHero comic={data.continueReading[0]} />}
+            {data.continueReading[0] && <ResumeHero item={data.continueReading[0]} />}
             {data.continueReading.length > 1 && (
               <Section title="Continuar lendo" to={{ name: "continue" }}>
-                <ComicShelf comics={data.continueReading.slice(1)} />
+                <ComicShelf items={data.continueReading.slice(1)} />
               </Section>
             )}
             {data.recentlyAdded.length > 0 && (
               <Section title="Adicionados recentemente" to={{ name: "library" }}>
-                <ComicShelf comics={data.recentlyAdded} />
+                <ComicShelf items={data.recentlyAdded} />
               </Section>
             )}
             {data.favorites.length > 0 && (
               <Section title="Favoritos" to={{ name: "favorites" }}>
-                <ComicShelf comics={data.favorites} />
+                <ComicShelf items={data.favorites} />
               </Section>
             )}
             {data.recentlyOpened.length > 0 && (
               <Section title="Acessados recentemente" to={{ name: "recent" }}>
-                <ComicShelf comics={data.recentlyOpened} />
+                <ComicShelf items={data.recentlyOpened} />
               </Section>
             )}
           </>

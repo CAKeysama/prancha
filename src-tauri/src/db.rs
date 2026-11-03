@@ -14,6 +14,8 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0001_initial.sql"),
     include_str!("../migrations/0002_guided_reading.sql"),
     include_str!("../migrations/0003_extensions.sql"),
+    include_str!("../migrations/0004_online_reading.sql"),
+    include_str!("../migrations/0005_series_library.sql"),
 ];
 
 pub fn schema_version() -> i64 {
@@ -142,6 +144,32 @@ mod tests {
         let theme: String = conn.query_row("SELECT value FROM settings WHERE key = 'appearance.theme'", [], |r| r.get(0)).unwrap();
         assert_eq!(theme, "\"light\"");
         extension_rows(&conn);
+    }
+
+    /// Quem já usava fontes na 0.3.0 não perde o acesso quando elas viram plugin. Quem nunca usou começa sem ele.
+    #[test]
+    fn the_online_plugin_stays_on_only_for_who_already_used_sources() {
+        let setting = |conn: &Connection| conn.query_row("SELECT value FROM settings WHERE key = 'plugins.online'", [], |r| r.get::<_, String>(0)).ok();
+        assert_eq!(setting(&database_from_0_2_0()), None);
+
+        let mut conn = Connection::open_in_memory().unwrap();
+        configure(&conn).unwrap();
+        for sql in &MIGRATIONS[..3] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.pragma_update(None, "user_version", 3).unwrap();
+        conn.execute_batch("INSERT INTO source_repositories (id, url, name, index_url, public_key, key_fingerprint, added_at) VALUES ('r', 'https://r/prancha-repo.json', 'R', 'https://r/i', 'k', 'f', 1);").unwrap();
+        migrate(&mut conn).unwrap();
+        assert_eq!(setting(&conn).as_deref(), Some("true"));
+    }
+
+    #[test]
+    fn removing_a_chapter_takes_its_online_progress() {
+        let conn = database_from_0_2_0();
+        extension_rows(&conn);
+        conn.execute("INSERT INTO chapter_progress (chapter_id, page_index, page_count, updated_at) VALUES (1, 2, 5, 1)", []).unwrap();
+        conn.execute("DELETE FROM online_chapters WHERE id = 1", []).unwrap();
+        assert_eq!(count(&conn, "chapter_progress"), 0);
     }
 
     #[test]

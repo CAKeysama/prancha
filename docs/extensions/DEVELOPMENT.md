@@ -6,7 +6,7 @@ Outras linguagens funcionam se gerarem um componente do mundo `extension` sem im
 
 ## Antes de começar
 
-Só escreva uma fonte para um site que você tem permissão de consultar. Não contorne login, paywall, DRM ou CAPTCHA. Conteúdo adulto não é aceito pelo Prancha.
+Só escreva uma fonte para um site que você tem permissão de consultar. Não contorne login, paywall, DRM ou CAPTCHA. Declare a classificação real: conteúdo adulto só aparece para quem desligou o filtro +18.
 
 ## O que você precisa
 

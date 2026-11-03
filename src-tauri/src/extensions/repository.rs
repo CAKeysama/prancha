@@ -11,10 +11,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::net::{Access, Limits, Net, NetError, Request, Response};
-use super::signing;
+use super::{signing, suwayomi};
 use crate::core::Core;
 use crate::db::now_ms;
 use crate::error::{AppError, AppResult};
+use crate::library;
 
 pub const MANIFEST_FILE: &str = "prancha-repo.json";
 pub const RUNTIME: &str = "wasm-component";
@@ -87,6 +88,77 @@ pub struct ExtensionEntry {
     pub capabilities: Capabilities,
 }
 
+/// A chave fixada de um repositório. No Mihon é a impressão digital do certificado que assina os pacotes:
+/// quem confere o pacote seria o Mihon, e o Prancha só garante que o repositório continua anunciando a mesma.
+#[derive(PartialEq)]
+enum Key {
+    Signed(VerifyingKey),
+    Mihon(String),
+}
+
+impl Key {
+    fn parse(text: &str) -> Option<Key> {
+        signing::parse_public_key(text).map(Key::Signed).or_else(|| is_sha256_hex(text).then(|| Key::Mihon(text.to_string())))
+    }
+
+    fn fingerprint(&self) -> String {
+        match self {
+            Key::Signed(key) => signing::fingerprint(key),
+            Key::Mihon(fingerprint) => fingerprint.clone(),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct MihonRepo {
+    meta: MihonMeta,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MihonMeta {
+    name: String,
+    #[serde(default)]
+    website: Option<String>,
+    signing_key_fingerprint: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MihonIndex {
+    extension_list: MihonList,
+}
+
+#[derive(Deserialize)]
+struct MihonList {
+    extensions: Vec<Value>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MihonExtension {
+    name: String,
+    package_name: String,
+    version_name: String,
+    #[serde(default)]
+    content_warning: String,
+    resources: MihonResources,
+    sources: Vec<MihonSource>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MihonResources {
+    jar_url: String,
+}
+
+#[derive(Deserialize)]
+struct MihonSource {
+    id: String,
+    name: String,
+    language: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct EntrySource {
@@ -142,6 +214,10 @@ pub fn short_text(text: &str, limit: usize) -> bool {
     !text.trim().is_empty() && text.chars().count() <= limit && !text.chars().any(char::is_control)
 }
 
+fn is_sha256_hex(text: &str) -> bool {
+    text.len() == 64 && text.chars().all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c))
+}
+
 /// `exemplo.com` ou `*.exemplo.com`, sem esquema, porta ou caminho.
 fn is_valid_host_pattern(pattern: &str, net: &Net) -> bool {
     if net.allows_loopback() && pattern == "127.0.0.1" {
@@ -188,8 +264,12 @@ fn validate_entry(net: &Net, entry: &ExtensionEntry) -> Result<(), String> {
     if entry.size == 0 || entry.size > MAX_ARTIFACT_BYTES {
         return Err(format!("{name}: tamanho de pacote fora do limite"));
     }
-    if entry.sha256.len() != 64 || !entry.sha256.chars().all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)) {
+    if !is_sha256_hex(&entry.sha256) {
         return Err(format!("{name}: SHA-256 inválido"));
+    }
+    // Um índice assinado não pode pedir para rodar fora do isolamento.
+    if entry.runtime == suwayomi::RUNTIME {
+        return Err(format!("{name}: runtime exclusivo de repositórios do Mihon"));
     }
     if entry.icon.as_deref().is_some_and(|icon| !is_valid_icon(icon)) {
         return Err(format!("{name}: ícone inválido"));
@@ -228,7 +308,7 @@ fn is_known_rating(rating: &str) -> bool {
 
 /// Motivo pelo qual esta versão do Prancha não pode usar a extensão.
 pub fn incompatibility(entry: &ExtensionEntry, app_version: &str) -> Option<String> {
-    if entry.runtime != RUNTIME {
+    if entry.runtime != RUNTIME && entry.runtime != suwayomi::RUNTIME {
         return Some(format!("Usa o runtime “{}”, que o Prancha não conhece.", entry.runtime));
     }
     if entry.api_version != API_VERSION {
@@ -292,7 +372,7 @@ fn sibling(base: &Url, file: &str) -> Option<Url> {
 
 fn names_a_mihon_file(url: &Url) -> bool {
     let path = url.path().to_ascii_lowercase();
-    path.ends_with(".apk") || path.ends_with("/index.min.json")
+    path.ends_with(".apk") || path.ends_with("/index.min.json") || path.ends_with("/index.pb")
 }
 
 /// `repo.json` do Mihon (`{"meta": {...}}`) ou `index.min.json` (lista com `pkg` e `apk`).
@@ -316,23 +396,54 @@ fn base_is_mihon(net: &Net, base: &Url) -> bool {
     is_mihon("repo.json") || is_mihon("index.min.json")
 }
 
-fn fetch_manifest(net: &Net, address: &str) -> AppResult<(String, Manifest, VerifyingKey)> {
+/// O `repo.json` de um repositório do Mihon, visto como o manifesto que o resto do fluxo já entende.
+/// shortcut: só lê `index.json`, o formato do Keiyoushi; quem só tem `index.min.json` recebe a mensagem do Mihon. Trocar se aparecer outro repositório em uso.
+fn mihon_manifest(net: &Net, address: &Url) -> AppResult<(String, Manifest, Key)> {
+    let path = address.path().to_ascii_lowercase();
+    if path.ends_with(".apk") {
+        return Err(mihon());
+    }
+    let mut base = address.clone();
+    if names_a_mihon_file(address) || path.ends_with("/repo.json") {
+        base.path_segments_mut().map_err(|()| mihon())?.pop();
+    }
+    let url = sibling(&base, "repo.json").ok_or_else(mihon)?;
+    let index_url = sibling(&base, "index.json").ok_or_else(mihon)?;
+    let response = fetch(net, url.as_str(), MAX_MANIFEST_BYTES, None)?;
+    let repo: MihonRepo = serde_json::from_slice(&response.body).ok().filter(|_| response.is_success()).ok_or_else(mihon)?;
+    let MihonMeta { name, website, signing_key_fingerprint: fingerprint } = repo.meta;
+    if !is_sha256_hex(&fingerprint) || !short_text(&name, 120) || !check_public_url(net, index_url.as_str()) {
+        return Err(mihon());
+    }
+    let manifest = Manifest {
+        // Pelo endereço, e não pela chave: se a chave mudar, continua sendo o mesmo repositório, e a pessoa revisa a nova.
+        id: format!("mihon-{}", &signing::sha256_hex(base.as_str().trim_end_matches('/').as_bytes())[..16]),
+        name,
+        description: None,
+        website: website.filter(|w| Url::parse(w).is_ok_and(|u| u.scheme() == "https")),
+        index_url: index_url.to_string(),
+        public_key: fingerprint.clone(),
+    };
+    Ok((url.to_string(), manifest, Key::Mihon(fingerprint)))
+}
+
+fn fetch_manifest(net: &Net, address: &str) -> AppResult<(String, Manifest, Key)> {
     let url = parse_address(address)?;
     if names_a_mihon_file(&url) {
-        return Err(mihon());
+        return mihon_manifest(net, &url);
     }
     let direct = url.path().to_ascii_lowercase().ends_with(".json");
     let target = if direct { url.clone() } else { sibling(&url, MANIFEST_FILE).ok_or_else(|| invalid("Esse endereço não é válido."))? };
     let response = fetch(net, target.as_str(), MAX_MANIFEST_BYTES, None)?;
     if !response.is_success() {
         if !direct && base_is_mihon(net, &url) {
-            return Err(mihon());
+            return mihon_manifest(net, &url);
         }
         return Err(AppError::user("repo_missing", format!("Não há um {MANIFEST_FILE} nesse endereço (resposta {}).", response.status)));
     }
     let value: Value = serde_json::from_slice(&response.body).map_err(|_| invalid(format!("O {MANIFEST_FILE} não é um JSON válido.")))?;
     if is_mihon_document(&value) {
-        return Err(mihon());
+        return mihon_manifest(net, &url);
     }
     match value.get("schemaVersion").and_then(Value::as_u64) {
         Some(SCHEMA_VERSION) => {}
@@ -350,7 +461,7 @@ fn fetch_manifest(net: &Net, address: &str) -> AppResult<(String, Manifest, Veri
         return Err(invalid("O endereço do índice não é permitido."));
     }
     let key = signing::parse_public_key(&manifest.public_key).ok_or_else(|| invalid("A chave pública do repositório não é válida."))?;
-    Ok((target.to_string(), manifest, key))
+    Ok((target.to_string(), manifest, Key::Signed(key)))
 }
 
 struct Fetched {
@@ -359,9 +470,66 @@ struct Fetched {
     entries: Vec<ExtensionEntry>,
 }
 
+/// Uma extensão do índice do Mihon, ou nada. Este formato é de terceiros: um item estranho não derruba os outros.
+fn mihon_entry(value: Value) -> Option<ExtensionEntry> {
+    let extension: MihonExtension = serde_json::from_value(value).ok()?;
+    // `MIXED` também traz obras adultas, e o que não se conhece conta como adulto.
+    let rating = if extension.content_warning == "CONTENT_WARNING_SAFE" { "general" } else { "adult" };
+    let id = extension.package_name;
+    let id_is_valid = (1..=128).contains(&id.len()) && id.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'));
+    if !id_is_valid || !short_text(&extension.name, 120) || semver::Version::parse(&extension.version_name).is_err() {
+        return None;
+    }
+    let sources: Vec<EntrySource> = extension
+        .sources
+        .into_iter()
+        .filter(|s| is_valid_id(&s.id) && short_text(&s.name, 120) && short_text(&s.language, 20))
+        .map(|s| EntrySource { id: s.id, name: s.name, language: s.language, content_rating: rating.into() })
+        .collect();
+    let mut languages: Vec<String> = sources.iter().map(|s| s.language.clone()).collect();
+    languages.sort();
+    languages.dedup();
+    (!sources.is_empty()).then(|| ExtensionEntry {
+        id,
+        name: extension.name,
+        version: extension.version_name,
+        description: None,
+        authors: Vec::new(),
+        languages,
+        runtime: suwayomi::RUNTIME.into(),
+        api_version: API_VERSION.into(),
+        min_app_version: env!("CARGO_PKG_VERSION").into(),
+        max_app_version: None,
+        artifact_url: extension.resources.jar_url,
+        size: 0,
+        sha256: String::new(),
+        signature_url: String::new(),
+        icon: None,
+        supported_kinds: Vec::new(),
+        content_rating: rating.into(),
+        sources,
+        capabilities: Capabilities { network: true, storage: false, authentication: false, allowed_hosts: Vec::new() },
+    })
+}
+
+fn fetch_mihon_index(net: &Net, index_url: &str, etag: Option<&str>) -> AppResult<Option<Fetched>> {
+    let response = fetch(net, index_url, MAX_INDEX_BYTES, etag)?;
+    if response.status == 304 {
+        return Ok(None);
+    }
+    let index: MihonIndex = serde_json::from_slice(&response.body).ok().filter(|_| response.is_success()).ok_or_else(mihon)?;
+    let mut seen = HashSet::new();
+    let entries = index.extension_list.extensions.into_iter().filter_map(mihon_entry).filter(|entry| seen.insert(entry.id.clone())).collect();
+    Ok(Some(Fetched { generated_at: now_ms(), etag: response.etag, entries }))
+}
+
 /// Índice validado por inteiro: uma única entrada errada recusa o arquivo todo.
 /// `None` quando o servidor responde que nada mudou.
-fn fetch_index(net: &Net, key: &VerifyingKey, repository_id: &str, index_url: &str, etag: Option<&str>) -> AppResult<Option<Fetched>> {
+fn fetch_index(net: &Net, key: &Key, repository_id: &str, index_url: &str, etag: Option<&str>) -> AppResult<Option<Fetched>> {
+    let key = match key {
+        Key::Signed(key) => key,
+        Key::Mihon(_) => return fetch_mihon_index(net, index_url, etag),
+    };
     let response = fetch(net, index_url, MAX_INDEX_BYTES, etag)?;
     if response.status == 304 {
         return Ok(None);
@@ -391,9 +559,8 @@ fn fetch_index(net: &Net, key: &VerifyingKey, repository_id: &str, index_url: &s
             return Err(invalid(format!("O índice não é válido: {} aparece duas vezes.", entry.id)));
         }
     }
-    // Conteúdo adulto não chega ao catálogo, e não há opção que mude isso.
-    let entries = index.extensions.into_iter().filter(|entry| entry.content_rating != "adult").collect();
-    Ok(Some(Fetched { generated_at, etag: response.etag, entries }))
+    // Entradas adultas ficam guardadas: quem decide se aparecem é o filtro +18, na hora de listar.
+    Ok(Some(Fetched { generated_at, etag: response.etag, entries: index.extensions }))
 }
 
 // ---------------------------------------------------------------------------
@@ -413,6 +580,8 @@ pub struct RepositoryPreview {
     pub fingerprint: String,
     pub extension_count: usize,
     pub already_added: bool,
+    /// Repositório do Mihon: as extensões rodam no Suwayomi, sem o isolamento do Prancha.
+    pub external: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -436,11 +605,13 @@ pub struct RepositoryInfo {
     pub added_at: i64,
 }
 
-const INFO_COLUMNS: &str = "id, url, name, description, website, public_key, key_fingerprint, pending_public_key, enabled, status, last_error, last_sync_at, last_success_at, extension_count, added_at";
+const INFO_COLUMNS: &str = "id, url, name, description, website, public_key, key_fingerprint, pending_public_key, enabled, status, last_error, last_sync_at, last_success_at,
+    (SELECT count(*) FROM repository_extensions e WHERE e.repository_id = source_repositories.id AND (json_extract(e.entry, '$.contentRating') != 'adult' OR EXISTS (SELECT 1 FROM settings WHERE key = 'content.adult' AND value = 'true'))),
+    added_at";
 
 fn info_from_row(row: &Row) -> rusqlite::Result<RepositoryInfo> {
     let pending_public_key: Option<String> = row.get(7)?;
-    let pending_fingerprint = pending_public_key.as_deref().and_then(signing::parse_public_key).map(|key| signing::fingerprint(&key));
+    let pending_fingerprint = pending_public_key.as_deref().and_then(Key::parse).map(|key| key.fingerprint());
     Ok(RepositoryInfo {
         id: row.get(0)?,
         url: row.get(1)?,
@@ -482,6 +653,7 @@ pub fn preview(core: &Core, address: &str) -> AppResult<RepositoryPreview> {
     let (url, manifest, key) = fetch_manifest(&core.net, address)?;
     let fetched = fetch_index(&core.net, &key, &manifest.id, &manifest.index_url, None)?.ok_or_else(|| invalid("O índice não pôde ser lido."))?;
     let already_added = core.db().query_row("SELECT 1 FROM source_repositories WHERE id = ?1 OR url = ?2", [&manifest.id, &url], |_| Ok(())).optional()?.is_some();
+    let adult_allowed = library::adult_allowed(&core.db());
     Ok(RepositoryPreview {
         url,
         id: manifest.id,
@@ -489,16 +661,17 @@ pub fn preview(core: &Core, address: &str) -> AppResult<RepositoryPreview> {
         description: manifest.description,
         website: manifest.website,
         public_key: manifest.public_key,
-        fingerprint: signing::fingerprint(&key),
-        extension_count: fetched.entries.len(),
+        fingerprint: key.fingerprint(),
+        extension_count: fetched.entries.iter().filter(|entry| adult_allowed || entry.content_rating != "adult").count(),
         already_added,
+        external: matches!(key, Key::Mihon(_)),
     })
 }
 
 /// Fixa a chave que a pessoa revisou. Se o endereço passou a anunciar outra, nada é gravado.
 pub fn add(core: &Core, address: &str, confirmed_fingerprint: &str) -> AppResult<RepositoryInfo> {
     let (url, manifest, key) = fetch_manifest(&core.net, address)?;
-    let fingerprint = signing::fingerprint(&key);
+    let fingerprint = key.fingerprint();
     if fingerprint != confirmed_fingerprint {
         return Err(AppError::user("repo_fingerprint", "A chave deste repositório mudou desde a revisão. Revise de novo antes de confiar."));
     }
@@ -572,12 +745,11 @@ fn sync_inner(core: &Core, id: &str) -> AppResult<()> {
         [id],
         |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, Option<String>>(3)?, r.get::<_, Option<i64>>(4)?)),
     )?;
-    let (_, manifest, _) = fetch_manifest(&core.net, &url)?;
+    let (_, manifest, announced) = fetch_manifest(&core.net, &url)?;
     if manifest.id != id {
         return Err(invalid("O manifesto agora declara outro repositório."));
     }
-    let pinned_key = signing::parse_public_key(&pinned).ok_or_else(|| invalid("A chave registrada não é válida."))?;
-    let announced = signing::parse_public_key(&manifest.public_key).ok_or_else(|| invalid("A chave pública do repositório não é válida."))?;
+    let pinned_key = Key::parse(&pinned).ok_or_else(|| invalid("A chave registrada não é válida."))?;
     if announced != pinned_key {
         let message = "A chave deste repositório mudou. A sincronização foi interrompida até você revisar a chave nova.";
         core.db().execute(
@@ -673,7 +845,9 @@ pub fn catalog(conn: &Connection, query: &CatalogQuery, app_version: &str) -> Ap
          LEFT JOIN installed_extensions i ON i.id = r.extension_id
          WHERE (?1 IS NULL OR r.name LIKE ?1 ESCAPE '\\' OR r.extension_id LIKE ?1 ESCAPE '\\')
            AND (?2 IS NULL OR EXISTS (SELECT 1 FROM json_each(r.entry, '$.languages') WHERE value = ?2))
-         ORDER BY {order} LIMIT ?3 OFFSET ?4"
+           AND (json_extract(r.entry, '$.contentRating') != 'adult' OR {adult})
+         ORDER BY {order} LIMIT ?3 OFFSET ?4",
+        adult = library::ADULT_ALLOWED_SQL,
     ))?;
     let rows = statement.query_map(params![text, query.language, query.limit.unwrap_or(200).clamp(1, 5000), query.offset.unwrap_or(0).max(0)], |row| {
         Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, Option<String>>(3)?, row.get::<_, Option<String>>(4)?))
@@ -693,9 +867,11 @@ pub fn catalog(conn: &Connection, query: &CatalogQuery, app_version: &str) -> Ap
 
 /// Idiomas do catálogo, para o filtro.
 pub fn catalog_languages(conn: &Connection) -> AppResult<Vec<String>> {
-    let mut statement = conn.prepare(
-        "SELECT DISTINCT j.value FROM repository_extensions r JOIN source_repositories s ON s.id = r.repository_id AND s.enabled = 1, json_each(r.entry, '$.languages') j ORDER BY 1",
-    )?;
+    let mut statement = conn.prepare(&format!(
+        "SELECT DISTINCT j.value FROM repository_extensions r JOIN source_repositories s ON s.id = r.repository_id AND s.enabled = 1, json_each(r.entry, '$.languages') j
+         WHERE json_extract(r.entry, '$.contentRating') != 'adult' OR {adult} ORDER BY 1",
+        adult = library::ADULT_ALLOWED_SQL,
+    ))?;
     let rows = statement.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?;
     Ok(rows)
 }
@@ -746,6 +922,95 @@ mod tests {
         assert!(!is_mihon_document(&native));
         assert!(names_a_mihon_file(&Url::parse("https://raw.githubusercontent.com/keiyoushi/extensions/repo/index.min.json").unwrap()));
         assert!(names_a_mihon_file(&Url::parse("https://exemplo.com/apk/x.APK").unwrap()));
+        assert!(names_a_mihon_file(&Url::parse("https://github.com/keiyoushi/extensions/raw/repo/index.pb").unwrap()));
+    }
+
+    #[test]
+    fn a_pinned_key_is_read_by_its_form() {
+        let fingerprint = "9add655a78e96c4ec7a53ef89dccb557cb5d767489fac5e785d671a5a75d4da2";
+        assert!(matches!(Key::parse(fingerprint), Some(Key::Mihon(_))));
+        assert_eq!(Key::parse(fingerprint).unwrap().fingerprint(), fingerprint);
+        assert!(matches!(Key::parse("11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo="), Some(Key::Signed(_))));
+        for bad in ["", "abc", &fingerprint.to_uppercase(), &fingerprint[..63]] {
+            assert!(Key::parse(bad).is_none(), "{bad}");
+        }
+    }
+
+    // Cópia de uma entrada real do índice do Keiyoushi.
+    fn keiyoushi_entry() -> Value {
+        serde_json::from_str(
+            r#"{"name":"Webtoons.com","packageName":"eu.kanade.tachiyomi.extension.all.webtoons","resources":{"apkUrl":"https://github.com/keiyoushi/extensions/raw/repo/apk/x.apk","iconUrl":"https://cdn.jsdelivr.net/x.png","jarUrl":"https://github.com/keiyoushi/extensions/releases/download/fc7a827-0/tachiyomi-all.webtoons-v1.6.3.jar"},"extensionLib":"1.6","versionCode":"106003","versionName":"1.6.3","contentWarning":"CONTENT_WARNING_SAFE","sources":[{"id":"2522335540328470744","name":"Webtoons.com","language":"en","homeUrl":"https://www.webtoons.com"},{"id":"123","name":"Webtoons.com","language":"pt-BR","homeUrl":"https://www.webtoons.com"}]}"#,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn a_real_keiyoushi_entry_becomes_a_catalog_entry() {
+        let entry = mihon_entry(keiyoushi_entry()).unwrap();
+        assert_eq!(entry.id, "eu.kanade.tachiyomi.extension.all.webtoons");
+        assert_eq!(entry.version, "1.6.3");
+        assert_eq!(entry.runtime, suwayomi::RUNTIME);
+        assert_eq!(entry.languages, ["en", "pt-BR"]);
+        assert_eq!(entry.sources.len(), 2);
+        assert!(incompatibility(&entry, env!("CARGO_PKG_VERSION")).is_none());
+    }
+
+    #[test]
+    fn only_entries_marked_safe_count_as_safe() {
+        assert_eq!(mihon_entry(keiyoushi_entry()).unwrap().content_rating, "general");
+        for warning in ["CONTENT_WARNING_MIXED", "CONTENT_WARNING_NSFW", "CONTENT_WARNING_NOVO", ""] {
+            let mut entry = keiyoushi_entry();
+            entry["contentWarning"] = warning.into();
+            let entry = mihon_entry(entry).unwrap();
+            assert_eq!(entry.content_rating, "adult", "{warning}");
+            assert!(entry.sources.iter().all(|source| source.content_rating == "adult"), "{warning}");
+        }
+        let mut entry = keiyoushi_entry();
+        entry.as_object_mut().unwrap().remove("contentWarning");
+        assert!(mihon_entry(entry).is_none_or(|entry| entry.content_rating == "adult"));
+    }
+
+    #[test]
+    fn a_strange_mihon_entry_is_skipped_without_harm() {
+        let changed = |field: &str, value: Value| {
+            let mut entry = keiyoushi_entry();
+            entry[field] = value;
+            mihon_entry(entry)
+        };
+        assert!(changed("packageName", "a/../b".into()).is_none());
+        assert!(changed("versionName", "1.6".into()).is_none());
+        assert!(changed("name", "".into()).is_none());
+        assert!(changed("sources", serde_json::json!([])).is_none());
+        assert!(changed("sources", serde_json::json!([{"id":"A B","name":"x","language":"en"}])).is_none());
+        assert!(changed("resources", serde_json::json!({})).is_none());
+        // O nome real de um pacote do índice, com maiúscula, continua valendo.
+        assert!(changed("packageName", "eu.kanade.tachiyomi.extension.all.vinnieVeritas".into()).is_some());
+    }
+
+    #[test]
+    fn a_signed_index_cannot_ask_to_run_outside_the_sandbox() {
+        let entry = ExtensionEntry {
+            id: "e".into(),
+            name: "E".into(),
+            version: "1.0.0".into(),
+            description: None,
+            authors: vec![],
+            languages: vec!["pt-BR".into()],
+            runtime: suwayomi::RUNTIME.into(),
+            api_version: API_VERSION.into(),
+            min_app_version: "0.1.0".into(),
+            max_app_version: None,
+            artifact_url: "https://exemplo.com/a.wasm".into(),
+            size: 1,
+            sha256: "a".repeat(64),
+            signature_url: "https://exemplo.com/a.sig".into(),
+            icon: None,
+            supported_kinds: vec![],
+            content_rating: "general".into(),
+            sources: vec![EntrySource { id: "f".into(), name: "F".into(), language: "pt-BR".into(), content_rating: "general".into() }],
+            capabilities: Capabilities { network: false, storage: false, authentication: false, allowed_hosts: vec![] },
+        };
+        assert!(validate_entry(&Net::new(false), &entry).unwrap_err().contains("runtime"));
     }
 
     #[test]

@@ -1,6 +1,6 @@
-# Relatório de testes — Prancha 0.2.0 e extensões
+# Relatório de testes — Prancha 0.4.0
 
-Executado em 2026-11-02, com as extensões ainda sem versão publicada, em Windows 11 Pro 10.0.26200, WebView2 156, Rust 1.99.1 e Node 22.23.
+Atualizado em 2026-11-03, antes de publicar a 0.4.0, em Windows 11 Pro 10.0.26200, WebView2 156, Rust 1.99.1 e Node 22.23. As seções sobre instaladores e atualização são da 0.2.0, e a do executável de release é da 0.3.0.
 
 ## Resumo
 
@@ -8,16 +8,17 @@ Executado em 2026-11-02, com as extensões ainda sem versão publicada, em Windo
 |---|---|---|
 | TypeScript estrito | `npm run typecheck` | ✅ sem erros |
 | ESLint (+ React Compiler) | `npm run lint` | ✅ 0 erros, 1 aviso conhecido (`useVirtualizer` não memoizável — limitação da biblioteca) |
-| Rust — unitários | `cargo test --lib` | ✅ 81/81 |
+| Rust — unitários | `cargo test --lib` | ✅ 98/98 |
 | Rust — integração | `cargo test --test backend` | ✅ 28/28 |
-| Rust — extensões | `cargo test --test extensions` | ✅ 89/89, com os 15 testes de download repetidos 10 vezes depois da última correção; mais 1 fora da execução normal, que usa a internet, também aprovado |
-| Rust — páginas reais | `npm run test:rust`, que roda todas as suítes de Rust | ✅ 6/6, com as páginas reais locais |
-| Frontend — Vitest | `npm test` | ✅ 95/95 |
-| E2E no executável real | `npm run test:e2e` | ✅ 49/49 |
-| Atualização instalada de verdade | `npm run test:update -- --build` | ✅ 23 verificações na 0.2.0; não repetida nas extensões, porque `updates.rs` e `tauri.conf.json` não mudaram |
+| Rust — extensões | `cargo test --test extensions` | ✅ 105/105; mais 2 fora da execução normal, que usam a internet |
+| Rust — páginas reais | `npm run test:rust`, que roda todas as suítes de Rust | ✅ 6/6, com as páginas reais locais; não repetida na 0.4.0, porque `formats/` não mudou |
+| Frontend — Vitest | `npm test` | ✅ 114/114 |
+| E2E no executável real | `npm run test:e2e` | ✅ 52/52 |
+| Atualização instalada de verdade | `npm run test:update -- --build` | ✅ 23 verificações na 0.2.0; não repetida depois, porque `updates.rs` não mudou e `tauri.conf.json` só mudou a versão |
 | Instalador da 0.2.0 | `npm run tauri build` | ✅ NSIS e MSI gerados, com 2 assinaturas; verificação abaixo |
-| Build de release com extensões | `npm run tauri build`, sem os artefatos do atualizador | ✅ NSIS e MSI gerados; tamanhos e conferência do executável abaixo |
-| Fluxo em HTTPS público | Executável de release, conferência avulsa | ✅ do repositório de demonstração à leitura, em 6,8 s; detalhes abaixo |
+| Build de release com extensões | `npm run tauri build`, sem os artefatos do atualizador | ✅ na 0.3.0: NSIS e MSI gerados, com tamanhos e conferência do executável abaixo. O da 0.4.0 sai da automação da tag |
+| Fluxo em HTTPS público | Executável de release, conferência avulsa | ✅ na 0.3.0: do repositório de demonstração à leitura, em 6,8 s; detalhes abaixo |
+| Sites de verdade pelo plugin | Build de depuração, conferência avulsa | ✅ duas fontes leem; ⚠️ duas param na verificação anti-robô; detalhes abaixo |
 
 ## Instaladores
 
@@ -139,9 +140,9 @@ Na execução normal, nenhum teste depende de site externo. O servidor é local 
 - **Isolamento:** laço infinito para por tempo e por cancelamento, o excesso de processamento esgota o combustível, memória acima do limite é recusada, estouro de pilha e pânico viram erro e o motor continua funcionando. Arquivos e ambiente não existem para a extensão, e um componente que importa WASI nem carrega.
 - **Rede da extensão:** exige a capacidade e um host autorizado, redirecionamentos não saem da lista, cabeçalhos privados são recusados, resposta grande não chega à extensão e o número de requisições por chamada é limitado.
 - **Rede do Prancha:** endereços privados, loopback, link-local e metadados são bloqueados na URL e na resolução de DNS. Redirecionamentos são conferidos de novo, até 3. Limite de tamanho sem tamanho declarado, servidor lento, cancelamento durante a espera, tipo de conteúdo e `ETag`.
-- **Repositórios:** endereço válido e inválido, manifesto ausente e JSON inválido, formato mais novo, Mihon com a mensagem exata, chave fixada só depois da revisão, mudança de chave, assinatura errada, índice assinado com outra chave, índice mais antigo, entrada ruim recusando o índice inteiro, falha de rede preservando o catálogo, vários repositórios com um falhando e índice sem mudança não baixado de novo.
+- **Repositórios:** endereço válido e inválido, manifesto ausente e JSON inválido, formato mais novo, Mihon sem `index.json` com a mensagem exata, chave fixada só depois da revisão, mudança de chave, assinatura errada, índice assinado com outra chave, índice mais antigo, entrada ruim recusando o índice inteiro, falha de rede preservando o catálogo, vários repositórios com um falhando e índice sem mudança não baixado de novo.
 - **Instalação:** extensão válida, hash, tamanho, assinatura, compatibilidade e runtime errados, componente que não carrega, divergência com o índice, atualização mantendo os dados da extensão, falha de atualização mantendo a versão anterior, procedência que não muda em silêncio, extensão desabilitada e remoção sem tocar na biblioteca.
-- **Fontes:** populares, recentes, pesquisa, detalhes, capítulos, páginas, paginação, fonte sem resultados, tipos de falha, fonte indisponível, conteúdo adulto filtrado e esquecido, e capas pelo backend com cache e dentro dos hosts da extensão.
+- **Fontes:** populares, recentes, pesquisa, detalhes, capítulos, páginas, paginação, fonte sem resultados, tipos de falha, fonte indisponível, conteúdo adulto recusado e fora das listas com o filtro ligado, e capas pelo backend com cache e dentro dos hosts da extensão.
 - **Downloads:** CBZ válido na biblioteca, ordem declarada, posições repetidas ou ausentes, página inválida limpando só os próprios arquivos, status ruim e host bloqueado, duplicação, cancelamento, pausa e retomada sem baixar de novo, continuação depois de reiniciar, uma por fonte com o intervalo respeitado, CBZ corrompido e os mesmos bytes para o mesmo capítulo.
 - **Biblioteca:** o capítulo sobrevive à remoção da extensão e do repositório e à falta de rede, remover da biblioteca só desfaz o vínculo e capítulo que sumiu da fonte continua local.
 - **Demonstração:** do repositório à leitura sem rede, sem interface.
@@ -155,7 +156,7 @@ O executável real fala com um servidor HTTP local que publica o repositório de
 
 | Passos | O que acontece |
 |---|---|
-| 1 a 5 | Abre o app e vai a Repositórios. Um endereço do Mihon é recusado com a mensagem exata. O repositório é validado, a impressão digital mostrada confere com a calculada pelo teste, nada fica salvo antes da confirmação, e o catálogo sincroniza. |
+| 1 a 5 | Abre o app e vai a Repositórios. Um endereço do Mihon sem `index.json` é recusado com a mensagem exata. O repositório é validado, a impressão digital mostrada confere com a calculada pelo teste, nada fica salvo antes da confirmação, e o catálogo sincroniza. |
 | 6 a 8 | Consulta o catálogo, vê as permissões, instala a extensão assinada e vê as fontes. |
 | 9 a 12 | Em Explorar: paginação, recentes, pesquisa vazia, pesquisa sem acento, detalhes, capítulos, ordem e acompanhamento. |
 | 13 a 15 | Baixa um capítulo, encontra o CBZ na biblioteca e abre no leitor de sempre. |
@@ -209,6 +210,28 @@ Mesmo perfil de release, antes e depois das extensões. O MSI "antes" é o publi
 
 O build de release levou 17 min, compilando Wasmtime e Cranelift do zero, com outras suítes rodando ao mesmo tempo.
 
+## Leitura pelas fontes (0.4.0)
+
+Na execução normal, estes testes também não dependem de site externo. Leitura, sequência de capítulos, biblioteca e filtro usam o repositório de demonstração, e a janela de verificação usa um site local. A prova com sites de verdade foi avulsa e está logo abaixo.
+
+### Automático
+- **Rust:** o filtro +18 começa ligado e decide o que aparece, o catálogo só mostra extensões +18 com ele desligado, uma obra marcada +18 nos detalhes é recusada e sai das listas, um gênero adulto marca a obra, um capítulo é lido sem gravar nada, próximo e anterior seguem a ordem de leitura, a leitura online continua de onde parou, uma obra guardada mostra onde parou e nunca é limpa, uma mudança de chave do Mihon para tudo até a confirmação, e os cookies de um site trocam só o que era desse site.
+- **Vitest:** sem o plugin, o menu não tem nada das fontes, e instalar traz tudo de volta. Remover pergunta antes e para o que estava rodando. Todo capítulo tem Ler, sem baixar. Favoritar e guardar em coleção valem para a obra. Um site com verificação oferece abrir o site, tenta de novo quando a janela fecha e diz quando o site liberou e recusou mesmo assim.
+- **E2E (`tests/e2e/extensions.spec.ts`):** clicar, ler e passar de um capítulo para o outro sem botão e sem baixar. A obra guardada vai para o início, a biblioteca e as coleções, e mostra onde parou.
+- **E2E (`tests/e2e/verification.spec.ts`):** com um site local no lugar da fonte, a janela se apresenta com o mesmo navegador do servidor, a página dela recebe 403 ao pedir algo da biblioteca, e o que o site liberou chega ao arquivo de cookies do servidor.
+
+### Conferência avulsa com sites de verdade
+Em 2026-11-03, uma vez, o build de depuração percorreu o link da Keiyoushi (`https://raw.githubusercontent.com/keiyoushi/extensions/repo`) com dados isolados e o Suwayomi-Server v2.4.2366. Ela usa a internet e sites de terceiros, por isso não fica no repositório, e nenhuma captura dela foi guardada. Esse build ainda não tinha a classificação +18 por gênero.
+
+- **Link:** repositório validado e catálogo com 1448 extensões em 1,3 s. A primeira extensão levou 18 s para instalar, porque o servidor sobe nessa hora, e as seguintes, 1,9 s.
+- **Astratoons:** obra com 137 capítulos. Primeira página 3,3 s depois do clique, modo webtoon escolhido sozinho, coluna de 800 px em uma janela de 1280, barra "A partir daqui: Capítulo 2" e passagem para o capítulo 2 sem clique.
+- **Manga Livre Blog:** obra com 30 capítulos. Primeira página em 4,3 s, modo webtoon escolhido sozinho e passagem do capítulo 91 para o 92 sem clique.
+- **ToonLivre:** lista e obra com 187 capítulos funcionam. As páginas do capítulo param na verificação anti-robô do site, e a tela oferece "Verificar no site". A janela não foi aberta para esse site.
+- **Lycan Toons:** a lista para na verificação. A janela abriu e, em 15 s, fechou sozinha, sem nenhum clique, com a liberação do site gravada. O servidor reiniciou e a nova tentativa recebeu a mesma recusa, então essa fonte continua sem funcionar. A tela agora diz isso em vez de oferecer repetir.
+- **Reabrir depois de encerrar à força:** o início mostra a obra e a página com o Java parado. Explorar voltou em 6,6 s, e a leitura continuou na mesma página. O Java termina com o app e ao remover o plugin.
+
+O filtro +18 foi conferido à parte, com o build final e uma obra sem gênero adulto (Aventura, Ação, Fantasia, Magia): ela abre e aparece com o filtro ligado ou desligado. Nenhuma obra real +18 foi aberta nos testes, então a recusa foi provada só com dados de teste.
+
 ## Validação visual
 
 Capturas em `artifacts/screenshots/`, geradas pelos testes E2E e revisadas manualmente:
@@ -256,7 +279,11 @@ As capturas das atualizações ficam em `tests/.tmp/update-shots/`, fora do git,
 Em uma execução do E2E, o leitor avançou páginas sozinho após as teclas (página 5 → 11 em alguns segundos). Repetições com captura de todos os eventos de teclado e roda do mouse não reproduziram o problema (três teclas → página 4, como esperado) e o cenário passou nas três execuções seguintes. A hipótese mais provável é a roda do mouse real sobre a janela visível durante o teste (a roda vira a página). Fica registrado como ponto a observar.
 
 ## Não verificado / limitações
-- **Fontes reais:** nenhuma extensão falou com um site de terceiros. Assinatura, instalação e download em HTTPS público foram provados só com a demonstração, hospedada no próprio repositório do projeto, em uma execução. Um site de verdade traz o que ela não traz, como limites de acesso, respostas lentas e páginas que mudam. Fora isso, `a_public_https_address_is_really_fetched`, que não roda na execução normal, busca o `repo.json` da Keiyoushi com TLS e DNS reais e reconhece o formato do Mihon.
+- **Fontes reais:** a conferência avulsa passou por quatro sites, uma vez, e esses sites mudam sem aviso. Extensões nativas do Prancha só foram provadas em HTTPS público com a demonstração. Extensões do Mihon rodam no Java, sem o isolamento das extensões do Prancha, e uma que dependa de WebView pode não funcionar. Fora da execução normal, `a_public_https_address_is_really_fetched` e `a_real_keiyoushi_extension_goes_from_the_link_to_an_image` usam a internet de verdade.
+- **Verificação anti-robô:** nenhum teste passou uma verificação com clique, e o Prancha não tenta passar sozinho. A janela não foi aberta para o ToonLivre. Uma página que falha no meio do capítulo, quando a liberação expira, não oferece a verificação: só abrir o capítulo e seguir para o próximo oferecem.
+- **Filtro +18:** a classificação é a que cada repositório declara, e `MIXED` conta como +18. O gênero é comparado por palavra, então "Young Adult" também conta. Uma listagem pode vir sem gêneros, e nesse caso a obra aparece em Explorar até ser aberta. A confirmação de idade é só uma declaração. Capítulos já baixados continuam como arquivos.
+- **Modo webtoon:** a escolha automática é uma estimativa pela proporção das páginas.
+- **Caminho de dados com acentos:** o servidor Java não foi testado com uma pasta de dados fora de ASCII.
 - **Compilação de extensão:** não pode ser cancelada. É curta (37 ms no build de release, para 24 KB) e o pacote tem tamanho limitado, mas conta como espera fora do limite de tempo da chamada.
 - **Permissões novas em uma atualização:** a comparação é feita na tela, antes de confirmar, e o backend não a repete.
 - **Download com falha:** uma nova tentativa recomeça do zero. Só a pausa e o reinício aproveitam as páginas já baixadas.

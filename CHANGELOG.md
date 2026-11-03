@@ -3,6 +3,37 @@
 Tudo o que mudou em cada versão do Prancha. O projeto segue o [versionamento semântico](https://semver.org/lang/pt-BR/),
 e as notas das releases e a [página de downloads](https://cakeysama.github.io/prancha/) são geradas a partir deste arquivo.
 
+## [0.4.0] - 2026-11-03
+
+Agora é clicar e ler, de um capítulo para o outro, sem baixar nada e sem botão de próximo. As obras das fontes entram na biblioteca como as HQs, as fontes viraram um plugin opcional, e obras em tiras têm um modo próprio.
+
+### Novidades
+
+- **Plugins:** uma aba nova, onde você instala as fontes de leitura. Sem o plugin, o menu fica só com o leitor e a biblioteca. Quem já usava extensões continua com ele instalado.
+- **Ler sem baixar:** todo capítulo tem o botão Ler. Nada vai para a biblioteca nem para os Downloads, e a obra guarda onde você parou.
+- **Um capítulo emenda no outro:** no fim do capítulo, é só continuar rolando ou virando a página. Uma barrinha marca onde começa o seguinte.
+- **Modo webtoon:** coluna estreita e contínua, sem espaço entre as imagens. O Prancha reconhece obras em tiras e continua assim nos capítulos seguintes. O modo também pode ser escolhido nas configurações do leitor.
+- **Obras na biblioteca:** favorite um mangá, manhwa ou webtoon, ou guarde em uma coleção. Ele aparece no Início, em Minha biblioteca, em Favoritos e em Continuar lendo, mostrando onde você parou, com o mesmo menu das HQs.
+- **Repositórios do Keiyoushi:** cole o link em Repositórios e instale as extensões. Elas rodam pelo Suwayomi-Server, baixado na primeira instalação.
+- **Filtro +18:** fica em Plugins e começa ligado. Com ele, obras, fontes e extensões adultas ou sem classificação não aparecem em tela nenhuma, e as obras do Keiyoushi são conferidas pelos gêneros que a fonte informa. Para desligar, você confirma ter 18 anos.
+- **Sites com verificação anti-robô:** o botão Verificar no site abre uma janela do próprio site. Você passa pela verificação, a janela fecha, e o Prancha tenta de novo.
+
+### Melhorias
+
+- Na rolagem vertical, as setas e o espaço já funcionam sem clicar na página antes, e chegar ao fim da rolagem conta como ter lido a última página.
+
+### Observações
+
+- As extensões do Keiyoushi rodam **sem o isolamento do Prancha**: têm acesso aos seus arquivos e à internet, como qualquer programa, e a assinatura de cada pacote não é conferida. O Prancha avisa antes de adicionar o repositório e antes de instalar. Só instale as de quem você confia.
+- A primeira instalação de uma dessas extensões baixa 343 MB e ocupa 229 MB no disco. Depois do primeiro uso, são cerca de 500 MB de memória enquanto o Prancha estiver aberto. Remover o plugin para o programa, mas mantém os arquivos.
+- Fontes que dependem de um navegador embutido ou de login mostram um erro.
+- Quem passa pela verificação anti-robô é você: o Prancha não responde por ninguém. O site pode recusar mesmo assim, e a passagem reinicia o servidor das fontes, então um download em andamento pode falhar e pedir nova tentativa.
+- A classificação +18 é a que cada repositório informa, e pode falhar. O que mistura conteúdo ou não informa conta como +18: com o filtro ligado, do Keiyoushi aparecem 564 das 1448 extensões em 2026-11-02. Numa fonte marcada como segura, a obra só é reconhecida como +18 pelos gêneros, que nem sempre vêm na lista: ela pode aparecer em Explorar até ser aberta. A confirmação de idade é só uma declaração. Capítulos já baixados de uma fonte +18 continuam na biblioteca, como qualquer arquivo.
+- Só o formato do Keiyoushi, com `repo.json` e `index.json`, é aceito. Outros repositórios do Mihon continuam recebendo a mensagem de incompatibilidade.
+- Reconhecer uma obra em tiras é uma estimativa. Se errar, troque o modo no leitor, e a escolha fica guardada para a obra.
+- Quem está na 0.1.x precisa instalar esta versão por cima uma vez. Da 0.2.0 em diante, o Prancha avisa ao abrir. A biblioteca e o progresso são mantidos, e o banco de dados se atualiza sozinho na primeira abertura.
+- Requer Windows 10 ou 11 de 64 bits. Os instaladores não têm assinatura digital, então o Windows SmartScreen pode pedir confirmação.
+
 ## [0.3.0] - 2026-11-02
 
 Chegam as extensões: você adiciona os repositórios em que confia, pesquisa em Explorar e baixa capítulos direto para a biblioteca.

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { ArrowDown, ArrowUp, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { Button, IconButton } from "../../components/Button";
@@ -23,6 +23,7 @@ import {
   type RegionKind,
 } from "../../domain/guided";
 import type { Size } from "../../domain/reader";
+import { comicPageSrc } from "../../services/urls";
 import { PageView } from "./PageView";
 import { SidePanel } from "./ReaderPanels";
 import { useViewportSize } from "./Views";
@@ -63,6 +64,7 @@ interface RegionEditorProps {
 
 /** Correção manual sobre a própria página: selecionar, arrastar, redimensionar, desenhar. */
 export function RegionEditor({ comicId, page, pdf, natural, regions, initialSelection, canRestore, onSize, onSave, onRestore, onCancel }: RegionEditorProps) {
+  const pageSrc = useMemo(() => comicPageSrc(comicId), [comicId]);
   const [draft, setDraft] = useState(regions);
   const [selected, setSelected] = useState(initialSelection);
   const [dirty, setDirty] = useState(false);
@@ -186,7 +188,7 @@ export function RegionEditor({ comicId, page, pdf, natural, regions, initialSele
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerUp}
         >
-          <PageView comicId={comicId} index={page} width={fit.width} height={fit.height} pdf={pdf} onSize={onSize} />
+          <PageView src={pageSrc} index={page} width={fit.width} height={fit.height} pdf={pdf} onSize={onSize} />
           {draft.map((r, n) => (
             <div
               key={r.id}

@@ -17,6 +17,7 @@ import type {
 import type { GuidedPage, GuidedRegion } from "../domain/guided";
 import type {
   BrowsePage,
+  ChapterSession,
   CatalogItem,
   CatalogQuery,
   ComicOrigin,
@@ -24,10 +25,12 @@ import type {
   InstalledExtension,
   RepositoryInfo,
   RepositoryPreview,
+  LibrarySeries,
   SeriesCard,
   SeriesView,
   SourceSummary,
 } from "../domain/online";
+import type { ReaderMode } from "../domain/settings";
 import type { UpdateProgress, UpdatesHistory, UpdatesSnapshot } from "../domain/updates";
 
 export class ApiError extends Error {
@@ -58,6 +61,9 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
 export function errorMessage(e: unknown): string {
   return normalizeError(e).message;
 }
+
+/** O que a pessoa estava tentando abrir, para a verificação começar pela mesma página. */
+export type VerifiableSite = { chapterId: number } | { seriesId: number } | { sourceId: string };
 
 export const api = {
   appInfo: () => call<AppInfo>("get_app_info"),
@@ -159,7 +165,21 @@ export const api = {
   seriesOpen: (requestId: string, id: number) => call<SeriesView>("series_open", { requestId, id }),
   seriesSetFollowing: (id: number, following: boolean) => call<SeriesCard>("series_set_following", { id, following }),
   seriesSetChapterSort: (id: number, sort: "asc" | "desc") => call<SeriesCard>("series_set_chapter_sort", { id, sort }),
+  seriesSetReaderMode: (id: number, mode: ReaderMode) => call<void>("series_set_reader_mode", { id, mode }),
+  chapterOpen: (requestId: string, id: number) => call<ChapterSession>("chapter_open", { requestId, id }),
+  chapterSaveProgress: (id: number, pageIndex: number, pageCount: number, scrollRatio: number) => call<void>("chapter_save_progress", { id, pageIndex, pageCount, scrollRatio }),
+  chapterResetProgress: (id: number) => call<void>("chapter_reset_progress", { id }),
+  onlineStop: () => call<void>("online_stop"),
   seriesFollowing: () => call<SeriesCard[]>("series_following"),
+  seriesLibrary: () => call<LibrarySeries[]>("series_library"),
+  seriesSetFavorite: (id: number, favorite: boolean) => call<void>("series_set_favorite", { id, favorite }),
+  seriesSetCollections: (id: number, collectionIds: number[]) => call<void>("series_set_collections", { id, collectionIds }),
+  addSeriesToCollection: (collectionId: number, ids: number[]) => call<void>("series_add_to_collection", { collectionId, ids }),
+  removeSeriesFromCollection: (collectionId: number, id: number) => call<void>("series_remove_from_collection", { collectionId, id }),
+  seriesSetRead: (id: number, read: boolean) => call<void>("series_set_read", { id, read }),
+  seriesForget: (id: number) => call<void>("series_forget", { id }),
+  /** Termina quando a janela do site fecha, e diz se o site liberou. */
+  sourceVerify: (site: VerifiableSite) => call<boolean>("source_verify", { ...site }),
   comicOrigin: (id: number) => call<ComicOrigin | null>("comic_origin", { id }),
 
   downloads: (limit: number) => call<DownloadView[]>("downloads_list", { limit }),

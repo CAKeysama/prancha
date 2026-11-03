@@ -9,7 +9,7 @@ import { FIT_LABELS, MODE_LABELS } from "../../domain/reader";
 import type { ControlsBehavior, FitMode, ReaderMode, ReadingDirection, WheelBehavior } from "../../domain/settings";
 import { SHORTCUT_ACTIONS, SHORTCUT_LABELS, formatKey, type ShortcutMap } from "../../domain/shortcuts";
 import { useSettings } from "../../app/settings-context";
-import { pageUrl } from "../../services/urls";
+import type { PageSrc } from "../../services/urls";
 
 /** Painel lateral do leitor (não cobre a página inteira). */
 export function SidePanel({ title, onClose, children, side = "right" }: { title: string; onClose: () => void; children: ReactNode; side?: "left" | "right" }) {
@@ -42,12 +42,16 @@ export function SidePanel({ title, onClose, children, side = "right" }: { title:
 }
 
 export function ReaderSettingsPanel({
+  mode,
+  onMode,
   onClose,
   onResetProgress,
   onShowShortcuts,
   onHideControls,
   hideKey,
 }: {
+  mode: ReaderMode;
+  onMode: (mode: ReaderMode) => void;
   onClose: () => void;
   onResetProgress: () => void;
   onShowShortcuts: () => void;
@@ -60,8 +64,8 @@ export function ReaderSettingsPanel({
     <SidePanel title="Configurações de leitura" onClose={onClose}>
       <div className="space-y-5">
         {/* Opções longas ficam num menu: só a escolha atual aparece. */}
-        <Select label="Modo de página" value={settings["reader.mode"]} onChange={(e) => void update("reader.mode", e.target.value as ReaderMode)}>
-          {(["single", "double", "vertical"] as ReaderMode[]).map((m) => (
+        <Select label="Modo de página" value={mode} onChange={(e) => onMode(e.target.value as ReaderMode)}>
+          {(["single", "double", "vertical", "webtoon"] as ReaderMode[]).map((m) => (
             <option key={m} value={m}>
               {MODE_LABELS[m]}
             </option>
@@ -75,14 +79,16 @@ export function ReaderSettingsPanel({
           <option value="ltr">Esquerda → direita</option>
           <option value="rtl">Direita → esquerda (mangá)</option>
         </Select>
-        <Segmented<FitMode>
-          label="Ajuste da imagem"
-          value={settings["reader.fit"]}
-          onChange={(v) => void update("reader.fit", v)}
-          size="sm"
-          options={(["page", "width", "height"] as FitMode[]).map((f) => ({ value: f, label: FIT_LABELS[f].replace("Ajustar à ", "") }))}
-        />
-        {settings["reader.mode"] === "double" && (
+        {mode !== "webtoon" && (
+          <Segmented<FitMode>
+            label="Ajuste da imagem"
+            value={settings["reader.fit"]}
+            onChange={(v) => void update("reader.fit", v)}
+            size="sm"
+            options={(["page", "width", "height"] as FitMode[]).map((f) => ({ value: f, label: FIT_LABELS[f].replace("Ajustar à ", "") }))}
+          />
+        )}
+        {mode === "double" && (
           <Switch
             label="Capa sozinha"
             description="Na página dupla, mostra a primeira página sozinha para alinhar os pares."
@@ -139,14 +145,14 @@ export function ReaderSettingsPanel({
 }
 
 export function PageIndexPanel({
-  comicId,
+  pageSrc,
   count,
   current,
   isPdf,
   onSelect,
   onClose,
 }: {
-  comicId: number;
+  pageSrc: PageSrc;
   count: number;
   current: number[];
   isPdf: boolean;
@@ -215,7 +221,7 @@ export function PageIndexPanel({
                 {isPdf ? (
                   <span className="text-lg font-semibold text-muted">{i + 1}</span>
                 ) : (
-                  <img src={pageUrl(comicId, i)} alt="" loading="lazy" decoding="async" className="h-full w-full object-contain" />
+                  <img src={pageSrc(i)} alt="" loading="lazy" decoding="async" className="h-full w-full object-contain" />
                 )}
               </span>
               <span>{i + 1}</span>

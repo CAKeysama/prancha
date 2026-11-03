@@ -1,6 +1,6 @@
 [package]
 name = "prancha"
-version = "0.3.0"
+version = "0.4.0"
 description = "Prancha — leitor e organizador de quadrinhos"
 authors = ["Prancha"]
 edition = "2024"
@@ -43,6 +43,10 @@ wasmtime = { version = "48.0.8", default-features = false, features = ["cranelif
 url = "2.5.8"
 ed25519-dalek = { version = "3.0.0", default-features = false, features = ["fast"] }
 base64 = "0.23.1"
+getrandom = "0.4.3"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Security", "Win32_System_JobObjects"] }
 
 [dev-dependencies]
 tempfile = "3.27.0"

@@ -1,23 +1,26 @@
 //! Chama as fontes, filtra o que chega e guarda o que a biblioteca online precisa lembrar.
 //! Tudo que vem de uma extensão é tratado como dado de terceiros: tamanho limitado, sem endereços fora das regras
-//! e sem conteúdo adulto.
+//! e conteúdo adulto só com o filtro +18 desligado.
 
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 use std::sync::atomic::Ordering;
-use std::sync::{Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
 use reqwest::Url;
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::Serialize;
 
-use super::install;
 use super::net::{Access, Cancel, Limits, Request};
-use super::runtime::{ContentRating, Filter, Installed, PublicationStatus, SearchPage, SearchResult};
+use super::runtime::{ContentRating, Filter, Installed, Page, PublicationStatus, SearchPage, SearchResult};
+use super::suwayomi::{self, Browse};
+use super::{downloads, install};
 use crate::core::Core;
 use crate::covers;
 use crate::db::now_ms;
 use crate::error::{AppError, AppResult};
+use crate::library::{self, ComicFileInfo, Progress};
 
 const MAX_RESULTS: usize = 200;
 const MAX_CHAPTERS: usize = 5000;
@@ -27,7 +30,8 @@ const MAX_NAMES: usize = 32;
 const MAX_REMOTE_ID_BYTES: usize = 1024;
 const MAX_COVER_BYTES: u64 = 16 * 1024 * 1024;
 const COVER_TIMEOUT: Duration = Duration::from_secs(30);
-const CONCURRENT_COVERS: usize = 4;
+const CONCURRENT_IMAGES: usize = 4;
+const MAX_CACHED_CHAPTERS: usize = 8;
 /// Obras só vistas em uma busca saem do banco depois deste tempo.
 const STALE_AFTER_MS: i64 = 30 * 24 * 60 * 60 * 1000;
 
@@ -57,35 +61,58 @@ impl Requests {
     }
 }
 
-/// Limita quantas capas são buscadas ao mesmo tempo: uma grade inteira não vira uma rajada contra o servidor.
-pub struct CoverGate {
+/// Limita quantas imagens são buscadas ao mesmo tempo: uma grade inteira não vira uma rajada contra o servidor.
+pub struct Gate {
     used: Mutex<usize>,
     freed: Condvar,
 }
 
-impl Default for CoverGate {
+impl Default for Gate {
     fn default() -> Self {
-        CoverGate { used: Mutex::new(0), freed: Condvar::new() }
+        Gate { used: Mutex::new(0), freed: Condvar::new() }
     }
 }
 
-struct CoverPermit<'a>(&'a CoverGate);
+struct Permit<'a>(&'a Gate);
 
-impl Drop for CoverPermit<'_> {
+impl Drop for Permit<'_> {
     fn drop(&mut self) {
         *self.0.used.lock().unwrap_or_else(|e| e.into_inner()) -= 1;
         self.0.freed.notify_one();
     }
 }
 
-impl CoverGate {
-    fn enter(&self) -> CoverPermit<'_> {
+impl Gate {
+    fn enter(&self) -> Permit<'_> {
         let mut used = self.used.lock().unwrap_or_else(|e| e.into_inner());
-        while *used >= CONCURRENT_COVERS {
+        while *used >= CONCURRENT_IMAGES {
             used = self.freed.wait(used).unwrap_or_else(|e| e.into_inner());
         }
         *used += 1;
-        CoverPermit(self)
+        Permit(self)
+    }
+}
+
+/// Listas de páginas dos capítulos abertos há pouco, para cada imagem não consultar a fonte de novo.
+#[derive(Default)]
+pub struct ChapterPages(Mutex<HashMap<i64, Arc<Vec<Page>>>>);
+
+impl ChapterPages {
+    fn get(&self, chapter_id: i64) -> Option<Arc<Vec<Page>>> {
+        self.0.lock().unwrap_or_else(|e| e.into_inner()).get(&chapter_id).cloned()
+    }
+
+    fn put(&self, chapter_id: i64, pages: Arc<Vec<Page>>) {
+        let mut lists = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        // shortcut: esvazia tudo em vez de tirar o mais antigo; quem estiver lendo só consulta a fonte mais uma vez.
+        if lists.len() >= MAX_CACHED_CHAPTERS {
+            lists.clear();
+        }
+        lists.insert(chapter_id, pages);
+    }
+
+    fn forget(&self, chapter_id: i64) {
+        self.0.lock().unwrap_or_else(|e| e.into_inner()).remove(&chapter_id);
     }
 }
 
@@ -110,14 +137,15 @@ pub struct SourceSummary {
     pub supports_search: bool,
 }
 
-/// Fontes que podem aparecer em Explorar: de extensões habilitadas e com classificação confiável.
+/// Fontes que podem aparecer em Explorar: de extensões habilitadas e dentro do filtro +18.
 pub fn available_sources(conn: &Connection) -> AppResult<Vec<SourceSummary>> {
-    let mut statement = conn.prepare(
+    let mut statement = conn.prepare(&format!(
         "SELECT s.extension_id, e.name, e.repository_name, s.source_id, s.name, s.language, s.description, s.kinds, s.rating, s.direction, s.supports_latest, s.supports_search
          FROM extension_sources s JOIN installed_extensions e ON e.id = s.extension_id
-         WHERE e.enabled = 1 AND s.rating IN ('general', 'teen')
+         WHERE e.enabled = 1 AND (s.rating IN ('general', 'teen') OR {adult})
          ORDER BY s.name COLLATE NATSORT, e.name COLLATE NATSORT",
-    )?;
+        adult = library::ADULT_ALLOWED_SQL,
+    ))?;
     let rows = statement.query_map([], |r| {
         Ok(SourceSummary {
             extension_id: r.get(0)?,
@@ -156,11 +184,11 @@ pub fn source_row(conn: &Connection, extension_id: &str, source_id: &str) -> App
     row.ok_or_else(|| AppError::user("source_not_found", "Esta fonte não está disponível."))
 }
 
-/// A fonte existe, tem classificação confiável e a extensão está habilitada.
+/// A fonte existe, está dentro do filtro +18 e a extensão está habilitada.
 fn usable(core: &Core, extension_id: &str, source_id: &str) -> AppResult<(Installed, SourceRow)> {
     let row = source_row(&core.db(), extension_id, source_id)?;
-    if !install::rating_is_available(&row.rating) {
-        return Err(AppError::user("source_disabled", "Esta fonte fica desabilitada até o repositório informar a classificação de conteúdo."));
+    if !install::rating_is_available(&core.db(), &row.rating) {
+        return Err(AppError::user("source_disabled", "Esta fonte é +18 ou não informa a classificação. Para usar, desligue o filtro +18 em Plugins."));
     }
     Ok((install::runnable(core, extension_id)?, row))
 }
@@ -182,6 +210,10 @@ fn clean_names(names: &[String]) -> Vec<String> {
 /// Uma capa só vale se puder ser baixada sob as mesmas regras de rede da extensão.
 fn safe_cover(core: &Core, extension: &Installed, url: Option<&str>) -> Option<String> {
     let url = clean(url, MAX_TEXT_CHARS)?;
+    if extension.bridged {
+        // Um caminho no servidor local: é ele quem busca a imagem na fonte.
+        return url.starts_with("/api/v1/").then_some(url);
+    }
     let parsed = Url::parse(&url).ok()?;
     core.net.check(&parsed, Access::Hosts(&extension.grant.allowed_hosts)).ok()?;
     Some(url)
@@ -219,9 +251,10 @@ pub struct SeriesCard {
     pub chapter_sort: String,
     pub last_checked_at: Option<i64>,
     pub last_update_at: Option<i64>,
+    pub favorite: bool,
 }
 
-const CARD_SELECT: &str = "SELECT o.id, o.extension_id, o.source_id, s.name, o.remote_id, o.title, o.cover_url, o.summary, o.author, o.genres, o.status, o.language, o.following, o.chapter_sort, o.last_checked_at, o.last_update_at
+const CARD_SELECT: &str = "SELECT o.id, o.extension_id, o.source_id, s.name, o.remote_id, o.title, o.cover_url, o.summary, o.author, o.genres, o.status, o.language, o.following, o.chapter_sort, o.last_checked_at, o.last_update_at, o.favorite
     FROM online_series o LEFT JOIN extension_sources s ON s.extension_id = o.extension_id AND s.source_id = o.source_id";
 
 fn card_from_row(r: &Row) -> rusqlite::Result<SeriesCard> {
@@ -242,6 +275,7 @@ fn card_from_row(r: &Row) -> rusqlite::Result<SeriesCard> {
         chapter_sort: r.get(13)?,
         last_checked_at: r.get(14)?,
         last_update_at: r.get(15)?,
+        favorite: r.get::<_, i64>(16)? != 0,
     })
 }
 
@@ -266,6 +300,7 @@ struct NewSeries<'a> {
     genres: Option<String>,
     status: Option<&'static str>,
     language: Option<&'a str>,
+    adult: bool,
 }
 
 /// O que a fonte deixou de informar não apaga o que já se sabia.
@@ -284,8 +319,8 @@ fn upsert_series(core: &Core, conn: &Connection, series: &NewSeries) -> AppResul
     }
     let now = now_ms();
     let id = conn.query_row(
-        "INSERT INTO online_series (extension_id, source_id, remote_id, title, cover_url, summary, author, genres, status, language, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, coalesce(?8, '[]'), ?9, ?10, ?11, ?11)
+        "INSERT INTO online_series (extension_id, source_id, remote_id, title, cover_url, summary, author, genres, status, language, created_at, updated_at, adult)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, coalesce(?8, '[]'), ?9, ?10, ?11, ?11, ?12)
          ON CONFLICT (extension_id, source_id, remote_id) DO UPDATE SET
             title = excluded.title,
             cover_url = coalesce(?5, cover_url),
@@ -294,9 +329,10 @@ fn upsert_series(core: &Core, conn: &Connection, series: &NewSeries) -> AppResul
             genres = coalesce(?8, genres),
             status = coalesce(?9, status),
             language = coalesce(?10, language),
-            updated_at = excluded.updated_at
+            updated_at = excluded.updated_at,
+            adult = max(adult, ?12)
          RETURNING id",
-        params![series.extension_id, series.source_id, series.remote_id, series.title, series.cover_url, series.summary, series.author, series.genres, series.status, series.language, now],
+        params![series.extension_id, series.source_id, series.remote_id, series.title, series.cover_url, series.summary, series.author, series.genres, series.status, series.language, now, series.adult],
         |r| r.get(0),
     )?;
     Ok(id)
@@ -309,21 +345,27 @@ pub struct BrowsePage {
     pub has_more: bool,
 }
 
-fn is_listed(result: &SearchResult) -> bool {
-    !matches!(result.rating, Some(ContentRating::Adult)) && result.id.len() <= MAX_REMOTE_ID_BYTES && !result.id.is_empty()
+fn is_listed(result: &SearchResult, adult_allowed: bool) -> bool {
+    (adult_allowed || !matches!(result.rating, Some(ContentRating::Adult))) && result.id.len() <= MAX_REMOTE_ID_BYTES && !result.id.is_empty()
 }
 
-fn store_page(core: &Core, extension: &Installed, source_id: &str, language: &str, page: SearchPage) -> AppResult<BrowsePage> {
+/// O que importa para o filtro +18: a marca da obra, se houver, ou a da fonte.
+fn rated_adult(source: &SourceRow, rating: &Option<ContentRating>) -> bool {
+    !matches!(source.rating.as_str(), "general" | "teen") || matches!(rating, Some(ContentRating::Adult))
+}
+
+fn store_page(core: &Core, extension: &Installed, source_id: &str, source: &SourceRow, page: SearchPage) -> AppResult<BrowsePage> {
     let mut conn = core.db();
+    let adult_allowed = library::adult_allowed(&conn);
     let tx = conn.transaction()?;
     let mut seen = HashSet::new();
     let mut ids = Vec::new();
-    for result in page.results.iter().filter(|r| is_listed(r)).take(MAX_RESULTS) {
+    for result in page.results.iter().filter(|r| is_listed(r, adult_allowed)).take(MAX_RESULTS) {
         let Some(title) = clean(Some(&result.title), MAX_TITLE_CHARS) else { continue };
         if !seen.insert(result.id.as_str()) {
             continue;
         }
-        ids.push(upsert_series(
+        let id = upsert_series(
             core,
             &tx,
             &NewSeries {
@@ -336,9 +378,14 @@ fn store_page(core: &Core, extension: &Installed, source_id: &str, language: &st
                 author: clean(result.author.as_deref(), 300),
                 genres: None,
                 status: result.status.map(status_name),
-                language: Some(language),
+                language: Some(&source.language),
+                adult: rated_adult(source, &result.rating),
             },
-        )?);
+        )?;
+        // A lista nem sempre traz os gêneros: a obra recusada ao abrir não volta para ela.
+        if adult_allowed || !tx.query_row("SELECT adult FROM online_series WHERE id = ?1", [id], |r| r.get::<_, bool>(0))? {
+            ids.push(id);
+        }
     }
     tx.commit()?;
     let results = ids.into_iter().map(|id| card(&conn, id)).collect::<AppResult<_>>()?;
@@ -351,8 +398,8 @@ fn kind_filter(kind: Option<&str>) -> Vec<Filter> {
 
 pub fn popular(core: &Core, extension_id: &str, source_id: &str, page: u32, kind: Option<&str>, cancel: Option<&Cancel>) -> AppResult<BrowsePage> {
     let (extension, source) = usable(core, extension_id, source_id)?;
-    let found = core.engine()?.popular(&extension, cancel, source_id, page, &kind_filter(kind))?;
-    store_page(core, &extension, source_id, &source.language, found)
+    let found = if extension.bridged { suwayomi::browse(core, source_id, Browse::Popular, page, cancel)? } else { core.engine()?.popular(&extension, cancel, source_id, page, &kind_filter(kind))? };
+    store_page(core, &extension, source_id, &source, found)
 }
 
 pub fn latest(core: &Core, extension_id: &str, source_id: &str, page: u32, kind: Option<&str>, cancel: Option<&Cancel>) -> AppResult<BrowsePage> {
@@ -360,8 +407,8 @@ pub fn latest(core: &Core, extension_id: &str, source_id: &str, page: u32, kind:
     if !source.supports_latest {
         return Err(AppError::user("source_unsupported", "Esta fonte não informa atualizações recentes."));
     }
-    let found = core.engine()?.latest(&extension, cancel, source_id, page, &kind_filter(kind))?;
-    store_page(core, &extension, source_id, &source.language, found)
+    let found = if extension.bridged { suwayomi::browse(core, source_id, Browse::Latest, page, cancel)? } else { core.engine()?.latest(&extension, cancel, source_id, page, &kind_filter(kind))? };
+    store_page(core, &extension, source_id, &source, found)
 }
 
 pub fn search(core: &Core, extension_id: &str, source_id: &str, query: &str, page: u32, kind: Option<&str>, cancel: Option<&Cancel>) -> AppResult<BrowsePage> {
@@ -369,8 +416,8 @@ pub fn search(core: &Core, extension_id: &str, source_id: &str, query: &str, pag
     if !source.supports_search {
         return Err(AppError::user("source_unsupported", "Esta fonte não oferece pesquisa."));
     }
-    let found = core.engine()?.search(&extension, cancel, source_id, query.trim(), page, &kind_filter(kind))?;
-    store_page(core, &extension, source_id, &source.language, found)
+    let found = if extension.bridged { suwayomi::browse(core, source_id, Browse::Search(query.trim()), page, cancel)? } else { core.engine()?.search(&extension, cancel, source_id, query.trim(), page, &kind_filter(kind))? };
+    store_page(core, &extension, source_id, &source, found)
 }
 
 // ---------------------------------------------------------------------------
@@ -416,16 +463,63 @@ pub struct SeriesView {
     #[serde(flatten)]
     pub series: SeriesCard,
     pub chapters: Vec<ChapterView>,
+    #[serde(flatten)]
+    pub reading: SeriesReading,
     /// A fonte não respondeu: o que aparece é o último conhecido.
     pub source_error: Option<String>,
+    /// O motivo foi uma verificação anti-robô, que a pessoa pode passar no site.
+    pub source_protected: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SeriesResume {
+    pub chapter_id: i64,
+    pub title: String,
+    pub progress: Option<ChapterProgress>,
+}
+
+/// Até onde a pessoa leu e onde a obra está guardada, igual na página da obra e na biblioteca.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SeriesReading {
+    /// `unread`, `reading` ou `completed`, como nas HQs. `status`, na obra, é a situação da publicação.
+    pub read_status: &'static str,
+    pub chapter_count: usize,
+    pub chapters_read: usize,
+    pub resume: Option<SeriesResume>,
+    pub collections: Vec<i64>,
+}
+
+/// Onde a leitura continua: no capítulo mais adiantado com progresso ou, se ele terminou, no seguinte.
+/// Terminado o último, ler de novo começa do primeiro. `chapters` vem na ordem de leitura.
+fn reading_of(conn: &Connection, id: i64, chapters: &[ChapterView]) -> AppResult<SeriesReading> {
+    let reached = chapters.iter().rposition(|chapter| chapter.progress.is_some());
+    let finished = |at: usize| chapters[at].progress.as_ref().is_some_and(|progress| progress.page_index >= progress.page_count - 1);
+    let (status, chapters_read, resume) = match reached {
+        None => ("unread", 0, chapters.first()),
+        Some(at) if !finished(at) => ("reading", at, chapters.get(at)),
+        Some(at) if at + 1 < chapters.len() => ("reading", at + 1, chapters.get(at + 1)),
+        Some(_) => ("completed", chapters.len(), chapters.first()),
+    };
+    let mut statement = conn.prepare("SELECT collection_id FROM series_collections WHERE series_id = ?1")?;
+    let collections = statement.query_map([id], |r| r.get(0))?.collect::<Result<_, _>>()?;
+    Ok(SeriesReading {
+        read_status: status,
+        chapter_count: chapters.len(),
+        chapters_read,
+        resume: resume.map(|chapter| SeriesResume { chapter_id: chapter.id, title: chapter.title.clone(), progress: chapter.progress.clone().filter(|_| status == "reading") }),
+        collections,
+    })
 }
 
 pub fn chapters_of(conn: &Connection, series_id: i64) -> AppResult<Vec<ChapterView>> {
     let mut statement = conn.prepare(
-        "SELECT c.id, c.remote_id, c.title, c.number, c.published_at, c.sort_order, c.file_path, c.comic_id, p.page_index, p.page_count,
+        "SELECT c.id, c.remote_id, c.title, c.number, c.published_at, c.sort_order, c.file_path, c.comic_id, coalesce(p.page_index, q.page_index), coalesce(p.page_count, q.page_count),
                 d.id, d.status, d.pages_done, d.pages_total, d.error
          FROM online_chapters c
          LEFT JOIN reading_progress p ON p.comic_id = c.comic_id
+         LEFT JOIN chapter_progress q ON q.chapter_id = c.id
          LEFT JOIN chapter_downloads d ON d.id = (SELECT max(x.id) FROM chapter_downloads x WHERE x.chapter_id = c.id)
          WHERE c.series_id = ?1
          ORDER BY c.sort_order, c.id",
@@ -497,12 +591,13 @@ fn store_chapters(conn: &mut Connection, series_id: i64, chapters: &[super::runt
 
 /// O que há registrado, sem consultar a fonte. Funciona sem internet e depois de remover a extensão.
 pub fn stored_series(conn: &Connection, id: i64) -> AppResult<SeriesView> {
-    Ok(SeriesView { series: card(conn, id)?, chapters: chapters_of(conn, id)?, source_error: None })
+    let chapters = chapters_of(conn, id)?;
+    Ok(SeriesView { series: card(conn, id)?, reading: reading_of(conn, id, &chapters)?, chapters, source_error: None, source_protected: false })
 }
 
 fn remove_if_unused(core: &Core, conn: &Connection, id: i64) -> AppResult<()> {
     let removed = conn.execute(
-        "DELETE FROM online_series WHERE id = ?1 AND following = 0 AND NOT EXISTS (SELECT 1 FROM online_chapters c WHERE c.series_id = ?1 AND (c.comic_id IS NOT NULL OR c.file_path IS NOT NULL))",
+        "DELETE FROM online_series WHERE id = ?1 AND following = 0 AND favorite = 0 AND NOT EXISTS (SELECT 1 FROM series_collections x WHERE x.series_id = ?1) AND NOT EXISTS (SELECT 1 FROM online_chapters c WHERE c.series_id = ?1 AND (c.comic_id IS NOT NULL OR c.file_path IS NOT NULL OR EXISTS (SELECT 1 FROM chapter_progress q WHERE q.chapter_id = c.id)))",
         [id],
     )?;
     if removed > 0 {
@@ -516,12 +611,11 @@ pub fn open_series(core: &Core, id: i64, cancel: Option<&Cancel>) -> AppResult<S
     let series = card(&core.db(), id)?;
     let remote = (|| -> AppResult<_> {
         let (extension, source) = usable(core, &series.extension_id, &series.source_id)?;
-        let engine = core.engine()?;
-        let details = engine.details(&extension, cancel, &series.source_id, &series.remote_id)?;
-        if matches!(details.rating, Some(ContentRating::Adult)) {
-            return Err(AppError::user("source_rating", "O Prancha não oferece conteúdo adulto."));
+        let details = if extension.bridged { suwayomi::details(core, &series.remote_id, cancel)? } else { core.engine()?.details(&extension, cancel, &series.source_id, &series.remote_id)? };
+        if matches!(details.rating, Some(ContentRating::Adult)) && !library::adult_allowed(&core.db()) {
+            return Err(AppError::user("source_rating", "Esta obra é +18. Para ver, desligue o filtro +18 em Plugins."));
         }
-        let chapters = engine.chapters(&extension, cancel, &series.source_id, &series.remote_id)?;
+        let chapters = if extension.bridged { suwayomi::chapters(core, &series.remote_id, cancel)? } else { core.engine()?.chapters(&extension, cancel, &series.source_id, &series.remote_id)? };
         Ok((extension, source, details, chapters))
     })();
     match remote {
@@ -542,6 +636,7 @@ pub fn open_series(core: &Core, id: i64, cancel: Option<&Cancel>) -> AppResult<S
                     genres: Some(clean_names(&details.genres)).filter(|g| !g.is_empty()).and_then(|g| serde_json::to_string(&g).ok()),
                     status: details.status.map(status_name),
                     language: clean(details.language.as_deref(), 20).as_deref().or(Some(source.language.as_str())),
+                    adult: rated_adult(&source, &details.rating),
                 },
             )?;
             store_chapters(&mut conn, id, &chapters)?;
@@ -549,15 +644,217 @@ pub fn open_series(core: &Core, id: i64, cancel: Option<&Cancel>) -> AppResult<S
         }
         Err(error) if error.code() == "extension_cancelled" => Err(error),
         Err(error) if error.code() == "source_rating" => {
-            remove_if_unused(core, &core.db(), id)?;
+            core.db().execute("UPDATE online_series SET adult = 1 WHERE id = ?1", [id])?;
             Err(error)
         }
         Err(error) => {
             let mut view = stored_series(&core.db(), id)?;
             view.source_error = Some(error.to_string());
+            view.source_protected = error.code() == "source_protected";
             Ok(view)
         }
     }
+}
+
+/// A página que a pessoa estava tentando abrir, para a verificação começar por ela.
+pub fn site_to_verify(core: &Core, chapter_id: Option<i64>, series_id: Option<i64>, source_id: Option<String>) -> AppResult<String> {
+    if let Some(id) = chapter_id {
+        let chapter = chapter_row(&core.db(), id)?;
+        return suwayomi::site_address(core, &chapter.source_id, None, Some(&chapter.remote_id));
+    }
+    if let Some(id) = series_id {
+        let series = card(&core.db(), id)?;
+        return suwayomi::site_address(core, &series.source_id, Some(&series.remote_id), None);
+    }
+    let source = source_id.ok_or_else(|| AppError::user("source_not_found", "Esta fonte não está disponível."))?;
+    suwayomi::site_address(core, &source, None, None)
+}
+
+// ---------------------------------------------------------------------------
+// Leitura online
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChapterSession {
+    pub id: i64,
+    pub series_id: i64,
+    pub series_title: String,
+    pub title: String,
+    pub page_count: i64,
+    pub start: Progress,
+    pub previous_id: Option<i64>,
+    pub next_id: Option<i64>,
+    /// Só com o arquivo no disco: é o que a Leitura Guiada precisa.
+    pub comic_id: Option<i64>,
+    pub genres: Vec<String>,
+    pub reader_mode: Option<String>,
+}
+
+struct ChapterRow {
+    series_id: i64,
+    title: String,
+    remote_id: String,
+    comic_id: Option<i64>,
+    extension_id: String,
+    source_id: String,
+    series_title: String,
+    genres: String,
+    reader_mode: Option<String>,
+}
+
+fn chapter_row(conn: &Connection, id: i64) -> AppResult<ChapterRow> {
+    conn.query_row(
+        "SELECT c.series_id, c.title, c.remote_id, c.comic_id, o.extension_id, o.source_id, o.title, o.genres, o.reader_mode
+         FROM online_chapters c JOIN online_series o ON o.id = c.series_id WHERE c.id = ?1",
+        [id],
+        |r| Ok(ChapterRow { series_id: r.get(0)?, title: r.get(1)?, remote_id: r.get(2)?, comic_id: r.get(3)?, extension_id: r.get(4)?, source_id: r.get(5)?, series_title: r.get(6)?, genres: r.get(7)?, reader_mode: r.get(8)? }),
+    )
+    .optional()?
+    .ok_or_else(|| AppError::user("chapter_not_found", "Este capítulo não está mais registrado."))
+}
+
+/// O arquivo do capítulo, se ele está na biblioteca e continua no disco.
+fn local_file(conn: &Connection, comic_id: Option<i64>) -> Option<ComicFileInfo> {
+    let info = library::file_info(conn, comic_id?).ok()?;
+    Path::new(&info.path).exists().then_some(info)
+}
+
+fn fetch_pages(core: &Core, id: i64, chapter: &ChapterRow, extension: &Installed, cancel: Option<&Cancel>) -> AppResult<Arc<Vec<Page>>> {
+    let pages = if extension.bridged { suwayomi::pages(core, &chapter.remote_id, cancel)? } else { core.engine()?.pages(extension, cancel, &chapter.source_id, &chapter.remote_id)? };
+    let pages = Arc::new(downloads::ordered_pages(pages)?);
+    core.chapter_pages.put(id, pages.clone());
+    Ok(pages)
+}
+
+/// Anterior e próximo na ordem de leitura, que não muda com a ordenação escolhida na tela.
+fn neighbors(conn: &Connection, series_id: i64, id: i64) -> AppResult<(Option<i64>, Option<i64>)> {
+    let mut statement = conn.prepare("SELECT id FROM online_chapters WHERE series_id = ?1 ORDER BY sort_order, id")?;
+    let ids: Vec<i64> = statement.query_map([series_id], |r| r.get(0))?.collect::<Result<_, _>>()?;
+    let Some(position) = ids.iter().position(|chapter| *chapter == id) else { return Ok((None, None)) };
+    Ok((position.checked_sub(1).map(|p| ids[p]), ids.get(position + 1).copied()))
+}
+
+/// Prepara a leitura: consulta as páginas na fonte, a não ser que o capítulo esteja baixado.
+pub fn open_chapter(core: &Core, id: i64, cancel: Option<&Cancel>) -> AppResult<ChapterSession> {
+    let chapter = chapter_row(&core.db(), id)?;
+    let local = local_file(&core.db(), chapter.comic_id);
+    let (page_count, start, comic_id) = match local {
+        Some(info) => {
+            let count = core.pages.listing(&info)?.pages.len() as i64;
+            let conn = core.db();
+            // Quem leu online e baixou depois continua de onde estava.
+            conn.execute(
+                "INSERT OR IGNORE INTO reading_progress (comic_id, page_index, page_count, scroll_ratio, updated_at) SELECT ?2, page_index, page_count, scroll_ratio, updated_at FROM chapter_progress WHERE chapter_id = ?1",
+                params![id, info.id],
+            )?;
+            (count, library::mark_opened(&conn, info.id, count.max(1))?, Some(info.id))
+        }
+        None => {
+            let (extension, _) = usable(core, &chapter.extension_id, &chapter.source_id)?;
+            let count = fetch_pages(core, id, &chapter, &extension, cancel)?.len() as i64;
+            let stored: Option<(i64, f64, i64)> = core.db().query_row("SELECT page_index, scroll_ratio, updated_at FROM chapter_progress WHERE chapter_id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).optional()?;
+            // Como na biblioteca, um capítulo terminado recomeça.
+            let start = match stored {
+                Some((page, ratio, updated_at)) if page < count - 1 => Progress { page_index: page, page_count: count, scroll_ratio: ratio, updated_at },
+                _ => Progress { page_index: 0, page_count: count, scroll_ratio: 0.0, updated_at: now_ms() },
+            };
+            (count, start, None)
+        }
+    };
+    let (previous_id, next_id) = neighbors(&core.db(), chapter.series_id, id)?;
+    Ok(ChapterSession {
+        id,
+        series_id: chapter.series_id,
+        series_title: chapter.series_title,
+        title: chapter.title,
+        page_count,
+        start,
+        previous_id,
+        next_id,
+        comic_id,
+        genres: serde_json::from_str(&chapter.genres).unwrap_or_default(),
+        reader_mode: chapter.reader_mode,
+    })
+}
+
+/// Uma página, do arquivo se o capítulo estiver baixado e da fonte se não estiver. Nada fica gravado em disco.
+pub fn chapter_page(core: &Core, id: i64, index: usize) -> AppResult<(Vec<u8>, &'static str)> {
+    let chapter = chapter_row(&core.db(), id)?;
+    let local = local_file(&core.db(), chapter.comic_id);
+    if let Some(info) = local {
+        return Ok(core.pages.read_page(&info, index)?);
+    }
+    let (extension, source) = usable(core, &chapter.extension_id, &chapter.source_id)?;
+    let pages = match core.chapter_pages.get(id) {
+        Some(pages) => pages,
+        None => fetch_pages(core, id, &chapter, &extension, None)?,
+    };
+    let page = pages.get(index).ok_or_else(|| AppError::user("page_not_found", "Esta página não existe."))?;
+    let _permit = core.page_gate.enter();
+    downloads::wait_turn(core, &format!("{}/{}", chapter.extension_id, chapter.source_id), source.min_interval_ms, &Cancel::default())?;
+    let (bytes, kind) = downloads::fetch_page(core, &extension, page, index, None).inspect_err(|_| {
+        // Endereços de página podem expirar: a próxima tentativa pede a lista de novo.
+        core.chapter_pages.forget(id);
+    })?;
+    let mime = match kind {
+        "png" => "image/png",
+        "webp" => "image/webp",
+        "gif" => "image/gif",
+        "bmp" => "image/bmp",
+        _ => "image/jpeg",
+    };
+    Ok((bytes, mime))
+}
+
+pub fn save_chapter_progress(conn: &Connection, id: i64, page_index: i64, page_count: i64, scroll_ratio: f64) -> AppResult<()> {
+    if page_count <= 0 {
+        return Err(AppError::user("invalid", "Número de páginas inválido."));
+    }
+    if let Some(comic) = chapter_row(conn, id)?.comic_id {
+        library::save_progress(conn, comic, page_index, page_count, scroll_ratio)?;
+        return Ok(());
+    }
+    let scroll_ratio = if scroll_ratio.is_finite() { scroll_ratio.clamp(0.0, 1.0) } else { 0.0 };
+    conn.execute(
+        "INSERT INTO chapter_progress (chapter_id, page_index, page_count, scroll_ratio, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT (chapter_id) DO UPDATE SET page_index = ?2, page_count = ?3, scroll_ratio = ?4, updated_at = ?5",
+        params![id, page_index.clamp(0, page_count - 1), page_count, scroll_ratio, now_ms()],
+    )?;
+    Ok(())
+}
+
+pub fn reset_chapter_progress(conn: &Connection, id: i64) -> AppResult<()> {
+    match chapter_row(conn, id)?.comic_id {
+        Some(comic) => library::reset_progress(conn, comic),
+        None => {
+            conn.execute("DELETE FROM chapter_progress WHERE chapter_id = ?1", [id])?;
+            Ok(())
+        }
+    }
+}
+
+pub fn set_reader_mode(conn: &Connection, series_id: i64, mode: &str) -> AppResult<()> {
+    if !matches!(mode, "single" | "double" | "vertical" | "webtoon") {
+        return Err(AppError::user("bad_request", "Modo de leitura inválido."));
+    }
+    conn.execute("UPDATE online_series SET reader_mode = ?2 WHERE id = ?1", params![series_id, mode])?;
+    Ok(())
+}
+
+/// O plugin foi removido: a fila para e o Java sai da memória. Nada é apagado, e instalar de novo traz tudo de volta.
+pub fn stop_online(core: &Core) -> AppResult<()> {
+    let open: Vec<i64> = {
+        let conn = core.db();
+        let mut statement = conn.prepare("SELECT id FROM chapter_downloads WHERE status IN ('queued', 'running')")?;
+        let ids = statement.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?;
+        ids
+    };
+    for id in open {
+        downloads::pause(core, id)?;
+    }
+    suwayomi::stop(core);
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -578,9 +875,121 @@ pub fn set_chapter_sort(conn: &Connection, id: i64, sort: &str) -> AppResult<Ser
 }
 
 pub fn list_following(conn: &Connection) -> AppResult<Vec<SeriesCard>> {
-    let mut statement = conn.prepare(&format!("{CARD_SELECT} WHERE o.following = 1 ORDER BY o.title COLLATE NATSORT"))?;
+    let mut statement = conn.prepare(&format!("{CARD_SELECT} WHERE o.following = 1 AND (o.adult = 0 OR {adult}) ORDER BY o.title COLLATE NATSORT", adult = library::ADULT_ALLOWED_SQL))?;
     let rows = statement.query_map([], card_from_row)?.collect::<Result<_, _>>()?;
     Ok(rows)
+}
+
+// ---------------------------------------------------------------------------
+// Obras na biblioteca
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibrarySeries {
+    pub id: i64,
+    pub title: String,
+    pub has_cover: bool,
+    pub source_name: Option<String>,
+    pub favorite: bool,
+    pub added_at: i64,
+    pub last_opened_at: Option<i64>,
+    #[serde(flatten)]
+    pub reading: SeriesReading,
+}
+
+/// As obras que a pessoa guardou. O resto do que a fonte mostrou fica só em Explorar.
+pub fn library_series(conn: &Connection) -> AppResult<Vec<LibrarySeries>> {
+    let mut statement = conn.prepare(&format!(
+        "SELECT o.id, o.title, o.cover_url IS NOT NULL, s.name, o.favorite, o.created_at,
+                (SELECT max(coalesce(p.updated_at, q.updated_at)) FROM online_chapters c
+                 LEFT JOIN reading_progress p ON p.comic_id = c.comic_id
+                 LEFT JOIN chapter_progress q ON q.chapter_id = c.id WHERE c.series_id = o.id)
+         FROM online_series o LEFT JOIN extension_sources s ON s.extension_id = o.extension_id AND s.source_id = o.source_id
+         WHERE (o.adult = 0 OR {adult})
+           AND (o.favorite = 1 OR o.following = 1
+                OR EXISTS (SELECT 1 FROM series_collections x WHERE x.series_id = o.id)
+                OR EXISTS (SELECT 1 FROM online_chapters c JOIN chapter_progress q ON q.chapter_id = c.id WHERE c.series_id = o.id))",
+        adult = library::ADULT_ALLOWED_SQL,
+    ))?;
+    let rows: Vec<(i64, String, bool, Option<String>, bool, i64, Option<i64>)> =
+        statement.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)))?.collect::<Result<_, _>>()?;
+    rows.into_iter()
+        .map(|(id, title, has_cover, source_name, favorite, added_at, last_opened_at)| {
+            let reading = reading_of(conn, id, &chapters_of(conn, id)?)?;
+            Ok(LibrarySeries { id, title, has_cover, source_name, favorite, added_at, last_opened_at, reading })
+        })
+        .collect()
+}
+
+pub fn set_favorite(conn: &Connection, id: i64, favorite: bool) -> AppResult<()> {
+    card(conn, id)?;
+    conn.execute("UPDATE online_series SET favorite = ?2 WHERE id = ?1", params![id, favorite])?;
+    Ok(())
+}
+
+/// Define exatamente as coleções de uma obra.
+pub fn set_series_collections(conn: &mut Connection, id: i64, collection_ids: &[i64]) -> AppResult<()> {
+    card(conn, id)?;
+    let tx = conn.transaction()?;
+    let keep = collection_ids.iter().map(i64::to_string).collect::<Vec<_>>().join(",");
+    tx.execute(&format!("DELETE FROM series_collections WHERE series_id = ?1 AND collection_id NOT IN ({keep})"), [id])?;
+    for collection in collection_ids {
+        tx.execute("INSERT OR IGNORE INTO series_collections (series_id, collection_id, added_at) VALUES (?1, ?2, ?3)", params![id, collection, now_ms()])?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+pub fn add_series_to_collection(conn: &mut Connection, collection_id: i64, ids: &[i64]) -> AppResult<()> {
+    let tx = conn.transaction()?;
+    let now = now_ms();
+    for id in ids {
+        tx.execute("INSERT OR IGNORE INTO series_collections (series_id, collection_id, added_at) VALUES (?1, ?2, ?3)", params![id, collection_id, now])?;
+    }
+    tx.execute("UPDATE collections SET updated_at = ?1 WHERE id = ?2", params![now, collection_id])?;
+    tx.commit()?;
+    Ok(())
+}
+
+pub fn remove_series_from_collection(conn: &Connection, collection_id: i64, id: i64) -> AppResult<()> {
+    conn.execute("DELETE FROM series_collections WHERE collection_id = ?1 AND series_id = ?2", params![collection_id, id])?;
+    Ok(())
+}
+
+/// Marca a obra inteira como lida ou não lida, incluindo os capítulos baixados.
+pub fn set_series_read(conn: &mut Connection, id: i64, read: bool) -> AppResult<()> {
+    card(conn, id)?;
+    let tx = conn.transaction()?;
+    let comics: Vec<i64> = {
+        let mut statement = tx.prepare("SELECT comic_id FROM online_chapters WHERE series_id = ?1 AND comic_id IS NOT NULL")?;
+        let rows = statement.query_map([id], |r| r.get(0))?.collect::<Result<_, _>>()?;
+        rows
+    };
+    if read {
+        // Sem abrir o capítulo não se sabe quantas páginas ele tem, e "uma de uma" já conta como lido.
+        tx.execute(
+            "INSERT INTO chapter_progress (chapter_id, page_index, page_count, updated_at) SELECT id, 0, 1, ?2 FROM online_chapters WHERE series_id = ?1
+             ON CONFLICT (chapter_id) DO UPDATE SET page_index = page_count - 1, updated_at = ?2",
+            params![id, now_ms()],
+        )?;
+    } else {
+        tx.execute("DELETE FROM chapter_progress WHERE chapter_id IN (SELECT id FROM online_chapters WHERE series_id = ?1)", [id])?;
+    }
+    for comic in comics {
+        library::set_read_status(&tx, comic, if read { "completed" } else { "unread" })?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+/// Tira a obra da biblioteca. Capítulos baixados continuam lá, como as HQs que são.
+pub fn forget_series(core: &Core, id: i64) -> AppResult<()> {
+    let conn = core.db();
+    conn.execute("UPDATE online_series SET favorite = 0, following = 0 WHERE id = ?1", [id])?;
+    conn.execute("DELETE FROM series_collections WHERE series_id = ?1", [id])?;
+    conn.execute("DELETE FROM chapter_progress WHERE chapter_id IN (SELECT id FROM online_chapters WHERE series_id = ?1)", [id])?;
+    remove_if_unused(core, &conn, id)
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -609,9 +1018,10 @@ pub fn comic_origin(conn: &Connection, comic_id: i64) -> AppResult<Option<ComicO
 pub fn prune_stale(core: &Core, conn: &Connection) -> AppResult<usize> {
     let ids: Vec<i64> = {
         let mut statement = conn.prepare(
-            "SELECT o.id FROM online_series o WHERE o.following = 0 AND o.updated_at < ?1
+            "SELECT o.id FROM online_series o WHERE o.following = 0 AND o.favorite = 0 AND o.updated_at < ?1
+               AND NOT EXISTS (SELECT 1 FROM series_collections x WHERE x.series_id = o.id)
                AND NOT EXISTS (SELECT 1 FROM online_chapters c WHERE c.series_id = o.id
-                    AND (c.comic_id IS NOT NULL OR c.file_path IS NOT NULL OR EXISTS (SELECT 1 FROM chapter_downloads d WHERE d.chapter_id = c.id)))",
+                    AND (c.comic_id IS NOT NULL OR c.file_path IS NOT NULL OR EXISTS (SELECT 1 FROM chapter_downloads d WHERE d.chapter_id = c.id) OR EXISTS (SELECT 1 FROM chapter_progress q WHERE q.chapter_id = c.id)))",
         )?;
         let rows = statement.query_map([now_ms() - STALE_AFTER_MS], |r| r.get(0))?;
         rows.collect::<Result<_, _>>()?
@@ -642,7 +1052,8 @@ pub fn cover(core: &Core, id: i64) -> AppResult<Option<Vec<u8>>> {
     }
     let _permit = core.cover_gate.enter();
     let limits = Limits { max_bytes: MAX_COVER_BYTES, timeout: COVER_TIMEOUT };
-    let Ok(response) = core.net.get(&url, Access::Hosts(&extension.grant.allowed_hosts), limits, Request { check_content_type: true, ..Default::default() }) else {
+    let fetched = if extension.bridged { suwayomi::image(core, &url, limits, None) } else { core.net.get(&url, Access::Hosts(&extension.grant.allowed_hosts), limits, Request { check_content_type: true, ..Default::default() }) };
+    let Ok(response) = fetched else {
         return Ok(None);
     };
     if !response.is_success() {

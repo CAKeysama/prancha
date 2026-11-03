@@ -6,7 +6,7 @@
 
 O Prancha precisa executar código de terceiros que consulta fontes de leitura. Esse código não pode tocar no
 sistema de arquivos, no banco, nos processos ou na rede por conta própria, e uma extensão ruim não pode derrubar
-o aplicativo nem travar a leitura. As extensões do Mihon são APKs Android e não rodam aqui.
+o aplicativo nem travar a leitura. As extensões do Mihon são APKs Android e não rodam neste runtime: a [ADR 0002](0002-repositorios-do-mihon-pelo-suwayomi.md) trata delas.
 
 ## Decisão
 
@@ -32,7 +32,7 @@ Extensões são **componentes WebAssembly** executados pelo **Wasmtime 48**, com
   implementar interfaces que o Prancha não quer oferecer.
 - **Winch:** é um compilador de base, sem as otimizações do Cranelift. Compila mais rápido, mas a medição abaixo não
   mostra ganho que compense, e as extensões analisam HTML e JSON a cada chamada.
-- **Executar APKs do Mihon:** exigiria um ambiente Android. Fora de escopo.
+- **Executar APKs do Mihon:** exigiria um ambiente Android, e continua fora de escopo. O Prancha roda as versões `.jar` delas pelo Suwayomi, fora deste runtime.
 - **JavaScript em um WebView:** dividiria o processo com a interface e não ofereceria limites de memória e instruções por chamada.
 
 ## Impacto no tamanho

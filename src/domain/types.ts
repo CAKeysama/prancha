@@ -56,6 +56,8 @@ export interface CoverRef {
   title: string;
   coverKind: CoverKind;
   coverRev: number;
+  /** Uma obra de uma fonte, com a capa por outro caminho. */
+  online: boolean;
 }
 
 export interface CollectionInfo {

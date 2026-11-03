@@ -487,7 +487,7 @@ export function SettingsScreen() {
           <Section id="leitura" title="Leitura">
             <SettingRow label="Modo de página">
               <Select label="Modo de página" hideLabel value={settings["reader.mode"]} onChange={(e) => save("reader.mode", e.target.value as Settings["reader.mode"])} className="w-48">
-                {(["single", "double", "vertical"] as const).map((m) => (
+                {(["single", "double", "vertical", "webtoon"] as const).map((m) => (
                   <option key={m} value={m}>
                     {MODE_LABELS[m]}
                   </option>
