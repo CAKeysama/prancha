@@ -338,6 +338,16 @@ pub fn cancel(core: &Core, id: i64) -> AppResult<()> {
     Ok(())
 }
 
+/// Apaga as páginas soltas dos downloads de uma obra que vai sair do banco.
+pub fn remove_partial_pages(core: &Core, conn: &Connection, series_id: i64) -> AppResult<()> {
+    let mut statement = conn.prepare("SELECT d.id FROM chapter_downloads d JOIN online_chapters c ON c.id = d.chapter_id WHERE c.series_id = ?1")?;
+    let ids: Vec<i64> = statement.query_map([series_id], |r| r.get(0))?.collect::<Result<_, _>>()?;
+    for id in ids {
+        let _ = std::fs::remove_dir_all(temp_dir(core, id));
+    }
+    Ok(())
+}
+
 pub fn retry(core: &Arc<Core>, id: i64) -> AppResult<()> {
     if matches!(status_of(core, id)?.as_str(), "failed" | "cancelled") {
         core.db().execute("UPDATE chapter_downloads SET status = 'queued', error = NULL, pages_done = 0, pages_total = 0, bytes = 0, finished_at = NULL, updated_at = ?2 WHERE id = ?1", params![id, now_ms()])?;
@@ -546,7 +556,10 @@ fn download(core: &Arc<Core>, job: &Job) -> AppResult<()> {
         std::fs::rename(&partial, &name)?;
         stored.insert(position + 1, name);
         pages_done += 1;
-        core.db().execute("UPDATE chapter_downloads SET pages_done = ?2, bytes = ?3, updated_at = ?4 WHERE id = ?1", params![id, pages_done, bytes as i64, now_ms()])?;
+        // A linha some junto com a obra, quando ela é bloqueada: o capítulo não pode chegar à biblioteca.
+        if core.db().execute("UPDATE chapter_downloads SET pages_done = ?2, bytes = ?3, updated_at = ?4 WHERE id = ?1", params![id, pages_done, bytes as i64, now_ms()])? == 0 {
+            return Err(AppError::user("download_not_found", "Este download não está mais na lista."));
+        }
         notify(core, id);
     }
 
@@ -559,6 +572,7 @@ fn download(core: &Arc<Core>, job: &Job) -> AppResult<()> {
     ordered.sort_by_key(|(number, _)| *number);
     write_cbz(&partial, &ordered, &comic_info_xml(&info))?;
     validate_cbz(&partial, pages.len())?;
+    status_of(core, id)?;
     std::fs::rename(&partial, &target)?;
     register(core, &info, &target)
 }
