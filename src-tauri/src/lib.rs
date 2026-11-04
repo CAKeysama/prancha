@@ -66,6 +66,10 @@ pub fn run() {
                     }
                     app.manage(core.clone());
                     std::thread::spawn(move || {
+                        // Antes dos downloads: nada da obra que não pode aparecer volta a baixar.
+                        if let Err(e) = extensions::sources::forget_blocked(&core, &core.db()) {
+                            log::warn!("limpeza de obras bloqueadas falhou: {e}");
+                        }
                         // Antes da verificação, que pode demorar: com a tela aberta, um download novo já estaria correndo.
                         if let Err(e) = extensions::downloads::on_startup(&core) {
                             log::warn!("downloads não retomados: {e}");

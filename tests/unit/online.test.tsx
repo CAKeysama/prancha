@@ -420,6 +420,50 @@ describe("Explorar", () => {
     expect(await screen.findByText(/As outras podem ter/)).toBeTruthy();
   });
 
+  it("diz quando quem escondeu as obras foi o filtro +18, em vez de dizer que não há nada", async () => {
+    handlers.sources_list = () => [source("a", "Fonte A"), source("b", "Fonte B")];
+    handlers.source_popular = (args) => ({ results: [], hasMore: false, hidden: args.sourceId === "a" ? 23 : 0, unverified: 0 });
+    handlers.source_search = (args) => ({ results: [], hasMore: false, hidden: args.sourceId === "a" ? 2 : 0, unverified: 0 });
+    await open("Explorar");
+    // A tela guarda a pesquisa do teste anterior.
+    await searchFor("");
+    const hiding = await screen.findByRole("region", { name: "Fonte A" });
+    expect(await within(hiding).findByText(/O filtro \+18 escondeu 23 obras, adultas ou sem classificação\. Para ver, desligue o filtro em Plugins\./)).toBeTruthy();
+    expect(within(hiding).queryByText("Nada encontrado.")).toBeNull();
+    expect(await within(screen.getByRole("region", { name: "Fonte B" })).findByText("Nada encontrado.")).toBeTruthy();
+
+    await searchFor("escondida");
+    expect(await screen.findByText(/O filtro \+18 escondeu obras adultas ou sem classificação de: Fonte A\./)).toBeTruthy();
+    expect(screen.queryByText(/Nenhuma fonte encontrou esse nome/)).toBeNull();
+  });
+
+  it("mostra o que passou e oferece conferir de novo só a fonte que ficou sem resposta", async () => {
+    handlers.sources_list = () => [source("a", "Fonte A"), source("b", "Fonte B")];
+    const asked: string[] = [];
+    let answered = false;
+    handlers.source_popular = (args) => {
+      asked.push(String(args.sourceId));
+      if (args.sourceId === "b") return { results: [card(9, "Da outra")], hasMore: false, hidden: 0, unverified: 0 };
+      return answered ? { results: [card(1, "Conferida"), card(2, "Depois")], hasMore: false, hidden: 0, unverified: 0 } : { results: [card(1, "Conferida")], hasMore: false, hidden: 0, unverified: 1 };
+    };
+    handlers.source_search = handlers.source_popular;
+    await open("Explorar");
+    // A tela guarda a pesquisa do teste anterior.
+    await searchFor("");
+    const section = await screen.findByRole("region", { name: "Fonte A" });
+    expect(await within(section).findByRole("button", { name: /Conferida/ })).toBeTruthy();
+    expect(within(section).getByText(/Não deu para conferir a classificação de 1 obra agora\./)).toBeTruthy();
+    await screen.findByRole("button", { name: /Da outra/ });
+    expect(screen.getAllByRole("button", { name: "Tentar de novo" })).toHaveLength(1);
+
+    answered = true;
+    asked.length = 0;
+    await userEvent.click(within(section).getByRole("button", { name: "Tentar de novo" }));
+    expect(await within(section).findByRole("button", { name: /Depois/ })).toBeTruthy();
+    expect(within(section).queryByText(/Não deu para conferir/)).toBeNull();
+    expect(asked).toEqual(["a"]);
+  });
+
   it("com uma fonte só, a pesquisa continua na grade daquela fonte", async () => {
     handlers.sources_list = () => [source("a", "Fonte A")];
     handlers.source_popular = () => ({ results: [], hasMore: false });
