@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Bell, Compass, Search, X } from "lucide-react";
 import { Button, IconButton } from "../../components/Button";
 import { EmptyState, ErrorState, Spinner } from "../../components/Feedback";
@@ -6,9 +6,9 @@ import { Segmented, Select } from "../../components/Form";
 import { PageHeader } from "../../components/PageHeader";
 import { useLibraryData } from "../../app/library-events";
 import { useNav } from "../../app/navigation";
-import { KIND_LABELS, languageName, nextHistory, runLimited, type BrowsePage, type SeriesCard, type SourceSummary } from "../../domain/online";
+import { KIND_LABELS, groupByTitle, languageName, nextHistory, runLimited, type BrowsePage, type SeriesCard, type SourceSummary, type TitleGroup } from "../../domain/online";
 import { ApiError, api, errorMessage } from "../../services/api";
-import { GridSkeleton, SeriesGrid, VerifySiteButton } from "./parts";
+import { GridSkeleton, OnlineCover, SeriesGrid, SourceTrouble, siteAnswered } from "./parts";
 
 type Mode = "popular" | "latest" | "following";
 
@@ -18,6 +18,8 @@ interface Section {
   results: SeriesCard[];
   page: number;
   hasMore: boolean;
+  hidden: number;
+  unverified: number;
   loadingMore: boolean;
   error: string | null;
   /** O site pediu uma verificação anti-robô. */
@@ -63,8 +65,9 @@ export function ExploreScreen() {
   const [followingError, setFollowingError] = useState<string | null>(null);
   const [history, setHistory] = useState<string[]>([]);
   const [focused, setFocused] = useState(false);
-  const [attempt, setAttempt] = useState(0);
   const inFlight = useRef(new Set<string>());
+  const run = useRef<object | null>(null);
+  const searchBox = useRef<HTMLInputElement>(null);
 
   Object.assign(memory, { mode, query, source: sourceFilter, language, kind });
 
@@ -87,21 +90,16 @@ export function ExploreScreen() {
     void api.setSetting(HISTORY_KEY, next).catch(() => undefined);
   };
 
-  const selected = useMemo(() => {
-    return (sources ?? []).filter(
-      (source) =>
-        (!sourceFilter || keyOf(source) === sourceFilter) &&
-        (!language || source.language === language) &&
-        (!kind || source.kinds.includes(kind)) &&
-        (query ? source.supportsSearch : mode !== "latest" || source.supportsLatest),
-    );
-  }, [sources, sourceFilter, language, kind, query, mode]);
+  const filtered = useMemo(() => {
+    return (sources ?? []).filter((source) => (!sourceFilter || keyOf(source) === sourceFilter) && (!language || source.language === language) && (!kind || source.kinds.includes(kind)));
+  }, [sources, sourceFilter, language, kind]);
+  const selected = useMemo(() => filtered.filter((source) => (query ? source.supportsSearch : mode !== "latest" || source.supportsLatest)), [filtered, query, mode]);
 
-  const nextRequest = () => {
+  const nextRequest = useCallback(() => {
     const id = `explore-${++requestCounter}`;
     inFlight.current.add(id);
     return id;
-  };
+  }, []);
   const cancelAll = useCallback(() => {
     for (const id of inFlight.current) void api.sourceCancel(id).catch(() => undefined);
     inFlight.current.clear();
@@ -109,34 +107,50 @@ export function ExploreScreen() {
 
   const showingFollowing = mode === "following" && !query;
 
+  const loadFirstPage = useCallback(
+    async (source: SourceSummary, thisRun: object) => {
+      if (run.current !== thisRun) return;
+      const patch = (change: Partial<Section>) => {
+        if (run.current === thisRun) setSections((all) => all.map((section) => (keyOf(section.source) === keyOf(source) ? { ...section, ...change } : section)));
+      };
+      const id = nextRequest();
+      try {
+        const page = await fetchPage(id, source, mode, query, 1, kind);
+        siteAnswered(source.sourceId);
+        patch({ status: "ready", results: page.results, page: 1, hasMore: page.hasMore, hidden: page.hidden, unverified: page.unverified, error: null, protected: false });
+      } catch (e) {
+        if (!isCancelled(e)) patch({ status: "failed", error: errorMessage(e), protected: e instanceof ApiError && e.code === "source_protected" });
+      } finally {
+        inFlight.current.delete(id);
+      }
+    },
+    [mode, query, kind, nextRequest],
+  );
+
   // Cada fonte responde no seu tempo: uma lenta ou com erro não segura as outras.
   useEffect(() => {
     if (showingFollowing) return;
-    let alive = true;
-    setSections(selected.map((source) => ({ source, status: "loading", results: [], page: 1, hasMore: false, loadingMore: false, error: null, protected: false })));
-    const patch = (source: SourceSummary, change: Partial<Section>) => {
-      if (alive) setSections((all) => all.map((section) => (keyOf(section.source) === keyOf(source) ? { ...section, ...change } : section)));
-    };
+    const thisRun = {};
+    run.current = thisRun;
+    setSections(selected.map((source) => ({ source, status: "loading", results: [], page: 1, hasMore: false, hidden: 0, unverified: 0, loadingMore: false, error: null, protected: false })));
     void runLimited(
-      selected.map((source) => async () => {
-        if (!alive) return;
-        const id = nextRequest();
-        try {
-          const page = await fetchPage(id, source, mode, query, 1, kind);
-          patch(source, { status: "ready", results: page.results, hasMore: page.hasMore });
-        } catch (e) {
-          if (!isCancelled(e)) patch(source, { status: "failed", error: errorMessage(e), protected: e instanceof ApiError && e.code === "source_protected" });
-        } finally {
-          inFlight.current.delete(id);
-        }
-      }),
+      selected.map((source) => () => loadFirstPage(source, thisRun)),
       CONCURRENT_SOURCES,
     );
     return () => {
-      alive = false;
+      run.current = null;
       cancelAll();
     };
-  }, [selected, mode, query, kind, attempt, showingFollowing, cancelAll]);
+  }, [selected, loadFirstPage, showingFollowing, cancelAll]);
+
+  // Só a fonte que falhou: as outras já responderam, e o que elas trouxeram continua na tela.
+  const retrySource = (source: SourceSummary) => {
+    if (!run.current) return;
+    setSections((all) => all.map((section) => (keyOf(section.source) === keyOf(source) ? { ...section, status: "loading", error: null, protected: false } : section)));
+    void loadFirstPage(source, run.current);
+  };
+
+  const groups = useMemo(() => groupByTitle(sections.flatMap(({ source, results }) => results.map((card) => ({ ...card, sourceName: source.name, language: card.language ?? source.language }))), query), [sections, query]);
 
   useEffect(() => {
     if (!showingFollowing) return;
@@ -162,7 +176,7 @@ export function ExploreScreen() {
         all.map((other) => {
           if (!matches(other)) return other;
           const known = new Set(other.results.map((item) => item.id));
-          return { ...other, results: [...other.results, ...page.results.filter((item) => !known.has(item.id))], page: section.page + 1, hasMore: page.hasMore, loadingMore: false };
+          return { ...other, results: [...other.results, ...page.results.filter((item) => !known.has(item.id))], page: section.page + 1, hasMore: page.hasMore, hidden: other.hidden + page.hidden, unverified: other.unverified + page.unverified, loadingMore: false };
         }),
       );
     } catch (e) {
@@ -182,7 +196,20 @@ export function ExploreScreen() {
     }
   };
 
+  const loadMoreEverywhere = () => {
+    void runLimited(
+      sections.filter((section) => section.hasMore && !section.loadingMore).map((section) => () => loadMore(section)),
+      CONCURRENT_SOURCES,
+    );
+  };
+
   const openSeries = (series: SeriesCard) => nav.navigate({ name: "series", id: series.id });
+
+  // Sem filtro de fonte, uma pesquisa já mostra todas. Sem pesquisa, falta o nome da obra.
+  const searchElsewhere = () => {
+    setSourceFilter("");
+    if (!query) searchBox.current?.focus();
+  };
 
   if (sourcesError && !sources) {
     return (
@@ -205,12 +232,18 @@ export function ExploreScreen() {
   const languages = [...new Set(sources.map((source) => source.language))];
   const kinds = [...new Set(sources.flatMap((source) => source.kinds))];
   const searching = sections.filter((section) => section.status === "loading").length;
+  const failed = sections.filter((section) => section.status === "failed");
+  const byTitle = Boolean(query) && selected.length > 1;
+  const withoutSearch = query ? filtered.filter((source) => !source.supportsSearch) : [];
+  const hiddenIn = sections.filter((section) => section.status === "ready" && section.hidden > 0);
+  const uncheckedIn = sections.filter((section) => section.status === "ready" && section.unverified > 0);
+  const finished = byTitle ? (failed.length > 0 ? `${sections.length - failed.length} de ${sections.length} fontes responderam` : `${sections.length} fontes consultadas`) : undefined;
 
   return (
     <div className="h-full overflow-y-auto">
       <PageHeader
         title="Explorar"
-        subtitle={searching > 0 ? `Consultando ${searching} de ${sections.length} ${sections.length === 1 ? "fonte" : "fontes"}…` : undefined}
+        subtitle={searching > 0 ? `Consultando ${searching} de ${sections.length} ${sections.length === 1 ? "fonte" : "fontes"}…` : finished}
         actions={
           sources.length > 0 && !query ? (
             <Segmented
@@ -239,6 +272,7 @@ export function ExploreScreen() {
             >
               <Search size={14} className="pointer-events-none absolute top-2 left-2.5 text-muted" aria-hidden />
               <input
+                ref={searchBox}
                 type="search"
                 aria-label="Pesquisar nas fontes"
                 placeholder="Pesquisar nas fontes"
@@ -314,26 +348,74 @@ export function ExploreScreen() {
           </>
         )}
         {!showingFollowing && sources.length > 0 && selected.length === 0 && <EmptyState icon={Search} title="Nenhuma fonte com esses filtros" />}
+        {!showingFollowing && byTitle && (
+          <>
+            {failed.length > 0 && <UnansweredSources failed={failed} onRetry={retrySource} />}
+            {groups.length === 0 && searching > 0 && <TitlesSkeleton />}
+            {searching > 0 && <p className="p-enter-late mt-3 text-sm text-muted">{CHECKING_NOTE}</p>}
+            {groups.length === 0 && searching === 0 && hiddenIn.length === 0 && uncheckedIn.length === 0 && (
+              <EmptyState icon={Search} title="Nada encontrado">
+                {failed.length > 0 ? "Nada com esse nome nas fontes que responderam. As outras podem ter." : "Nenhuma fonte encontrou esse nome."} A mesma obra pode ter outro título em cada fonte: vale tentar outro.
+              </EmptyState>
+            )}
+            {groups.length > 0 && <TitleResults groups={groups} showLanguage={languages.length > 1} onOpen={openSeries} />}
+            {sections.some((section) => section.hasMore) && (
+              <div className="mt-3">
+                <Button onClick={loadMoreEverywhere} loading={sections.some((section) => section.loadingMore)}>
+                  Carregar mais
+                </Button>
+              </div>
+            )}
+            {groups.length > 0 && searching === 0 && <p className="mt-4 text-sm text-muted">A mesma obra pode ter outro título em cada fonte. Se não achar, vale tentar outro nome.</p>}
+            {withoutSearch.length > 0 && <p className="mt-1 text-sm text-muted">Sem pesquisa, ficaram de fora: {LIST_FORMAT.format(withoutSearch.map((source) => source.name))}.</p>}
+            {hiddenIn.length > 0 && (
+              <p className="mt-1 text-sm text-muted">
+                O filtro +18 escondeu obras adultas ou sem classificação de: {LIST_FORMAT.format(hiddenIn.map((section) => section.source.name))}. {TURN_OFF_NOTE}
+              </p>
+            )}
+            {uncheckedIn.length > 0 && (
+              <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted">
+                Não deu para conferir a classificação de obras de: {LIST_FORMAT.format(uncheckedIn.map((section) => section.source.name))}.
+                <Button size="sm" onClick={() => uncheckedIn.forEach((section) => retrySource(section.source))}>
+                  Tentar de novo
+                </Button>
+              </p>
+            )}
+          </>
+        )}
         {!showingFollowing &&
+          !byTitle &&
           sections.map((section) => (
             <section key={keyOf(section.source)} aria-label={section.source.name} className="mb-8 last:mb-0">
               <h2 className="mb-2 flex flex-wrap items-center gap-2 text-base font-semibold">
                 {section.source.name}
                 {sources.length > 1 && <span className="text-sm font-normal text-muted">{languageName(section.source.language)}</span>}
                 {section.status === "loading" && <Spinner size={14} />}
+                {section.status === "loading" && <span className="p-enter-late text-sm font-normal text-muted">{CHECKING_NOTE}</span>}
               </h2>
               {section.status === "loading" && <GridSkeleton />}
               {section.status === "failed" && (
-                <p role="alert" className="flex flex-wrap items-center gap-2 text-sm text-danger">
-                  {section.error}
-                  {section.protected && <VerifySiteButton size="sm" site={{ sourceId: section.source.sourceId }} onDone={() => setAttempt((n) => n + 1)} />}
-                  <Button size="sm" onClick={() => setAttempt((n) => n + 1)}>
+                <div role="alert">
+                  <SourceTrouble message={section.error ?? ""} site={section.protected ? { sourceId: section.source.sourceId } : undefined} sourceId={section.source.sourceId} onRetry={() => retrySource(section.source)} elsewhere={sources.length > 1 ? searchElsewhere : undefined} size="sm">
+                    {troubleLayout}
+                  </SourceTrouble>
+                </div>
+              )}
+              {section.status === "ready" && section.results.length === 0 && !(section.hidden > 0) && !(section.unverified > 0) && <p className="text-sm text-muted">Nada encontrado.</p>}
+              {section.results.length > 0 && <SeriesGrid items={section.results} onOpen={openSeries} />}
+              {section.status === "ready" && section.hidden > 0 && (
+                <p className="mt-3 text-sm text-muted">
+                  O filtro +18 escondeu {section.hidden === 1 ? "1 obra, adulta ou sem classificação" : `${section.hidden} obras, adultas ou sem classificação`}. {TURN_OFF_NOTE}
+                </p>
+              )}
+              {section.status === "ready" && section.unverified > 0 && (
+                <p className="mt-3 flex flex-wrap items-center gap-2 text-sm text-muted">
+                  Não deu para conferir a classificação de {section.unverified === 1 ? "1 obra" : `${section.unverified} obras`} agora.
+                  <Button size="sm" onClick={() => retrySource(section.source)}>
                     Tentar de novo
                   </Button>
                 </p>
               )}
-              {section.status === "ready" && section.results.length === 0 && <p className="text-sm text-muted">Nada encontrado.</p>}
-              {section.results.length > 0 && <SeriesGrid items={section.results} onOpen={openSeries} />}
               {section.hasMore && (
                 <div className="mt-3">
                   <Button onClick={() => void loadMore(section)} loading={section.loadingMore}>
@@ -344,6 +426,86 @@ export function ExploreScreen() {
             </section>
           ))}
       </div>
+    </div>
+  );
+}
+
+const LIST_FORMAT = new Intl.ListFormat("pt-BR", { type: "conjunction" });
+const CHECKING_NOTE = "Conferindo a classificação das obras. Na primeira visita, pode passar de um minuto.";
+const TURN_OFF_NOTE = "Para ver, desligue o filtro em Plugins.";
+const NAMES_SHOWN = 3;
+
+const troubleLayout = (text: string, actions: ReactNode) => (
+  <>
+    <p className="mb-2 text-sm text-muted">{text}</p>
+    {actions}
+  </>
+);
+
+/** Quem não respondeu não disse que a obra não está lá. A explicação e as saídas abrem quando a pessoa quiser. */
+function UnansweredSources({ failed, onRetry }: { failed: Section[]; onRetry: (source: SourceSummary) => void }) {
+  const names = failed.map((section) => section.source.name);
+  const rest = names.length - NAMES_SHOWN;
+  const listed = LIST_FORMAT.format(rest > 0 ? [...names.slice(0, NAMES_SHOWN), `mais ${rest}`] : names);
+  return (
+    <details className="mb-4 rounded-md border border-border bg-surface px-4 py-2.5">
+      <summary className="cursor-pointer text-sm">
+        <span className="font-medium">
+          {listed} {failed.length === 1 ? "não respondeu" : "não responderam"}.
+        </span>{" "}
+        A obra pode estar {failed.length === 1 ? "nela" : "nelas"}.
+      </summary>
+      <ul className="mt-2 divide-y divide-border">
+        {failed.map((section) => (
+          <li key={keyOf(section.source)} className="py-3">
+            <p className="text-sm font-medium">{section.source.name}</p>
+            <SourceTrouble message={section.error ?? ""} site={section.protected ? { sourceId: section.source.sourceId } : undefined} sourceId={section.source.sourceId} onRetry={() => onRetry(section.source)} size="sm">
+              {troubleLayout}
+            </SourceTrouble>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+function TitleResults({ groups, showLanguage, onOpen }: { groups: TitleGroup[]; showLanguage: boolean; onOpen: (series: SeriesCard) => void }) {
+  return (
+    <ul className="divide-y divide-border">
+      {groups.map((group) => {
+        const sourceCount = new Set(group.entries.map((series) => `${series.extensionId}/${series.sourceId}`)).size;
+        return (
+          <li key={group.key} className="py-4 first:pt-0">
+            <h2 className="text-base font-semibold break-words">{group.title}</h2>
+            {sourceCount > 1 && <p className="text-sm text-muted">Mesmo título em {sourceCount} fontes. Confira as capas.</p>}
+            <ul aria-label={`Onde ler ${group.title}`} className="mt-2 grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-2">
+              {group.entries.map((series) => (
+                <li key={series.id}>
+                  <button type="button" aria-label={`Abrir ${series.title} em ${series.sourceName}`} onClick={() => onOpen(series)} className="flex w-full items-center gap-3 rounded-md border border-border p-2 text-left hover:bg-hover focus-visible:outline-2 focus-visible:outline-accent">
+                    <span className="block w-12 shrink-0">
+                      <OnlineCover series={series} />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium">{series.sourceName}</span>
+                      {showLanguage && series.language && <span className="block truncate text-xs text-muted">{languageName(series.language)}</span>}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function TitlesSkeleton() {
+  return (
+    <div className="flex flex-col gap-3" aria-hidden>
+      {Array.from({ length: 3 }, (_, i) => (
+        <div key={i} className="p-skeleton h-24 rounded-md bg-elevated" />
+      ))}
     </div>
   );
 }

@@ -721,7 +721,7 @@ fn map_unique(e: rusqlite::Error, name: &str) -> AppError {
 
 pub fn list_collections(conn: &Connection) -> AppResult<Vec<CollectionInfo>> {
     // Obras de fontes só contam com o plugin instalado e dentro do filtro +18.
-    let shown = format!("EXISTS (SELECT 1 FROM settings WHERE key = 'plugins.online' AND value = 'true') AND (o.adult = 0 OR {ADULT_ALLOWED_SQL})");
+    let shown = format!("EXISTS (SELECT 1 FROM settings WHERE key = 'plugins.online' AND value = 'true') AND ({SERIES_SAFE_SQL} OR {ADULT_ALLOWED_SQL})");
     let mut stmt = conn.prepare(&format!(
         "SELECT c.id, c.name, c.created_at, c.updated_at, \
          (SELECT count(*) FROM comic_collections cc WHERE cc.collection_id = c.id) + \
@@ -829,6 +829,9 @@ pub fn remove_from_collection(conn: &Connection, collection_id: i64, comic_id: i
 
 /// Verdadeiro em SQL depois que a pessoa desliga o filtro +18, que vem ligado.
 pub const ADULT_ALLOWED_SQL: &str = "EXISTS (SELECT 1 FROM settings WHERE key = 'content.adult' AND value = 'true')";
+
+/// Verdadeiro em SQL para a obra `o` que passa pelo filtro +18 ligado: tem classificação, e ela não é adulta.
+pub const SERIES_SAFE_SQL: &str = "(o.adult = 0 AND o.classification = 'known')";
 
 pub fn adult_allowed(conn: &Connection) -> bool {
     conn.query_row(&format!("SELECT {ADULT_ALLOWED_SQL}"), [], |r| r.get(0)).unwrap_or(false)

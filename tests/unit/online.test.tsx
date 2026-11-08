@@ -5,7 +5,7 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import userEvent from "@testing-library/user-event";
 import { clearMocks, mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { App } from "../../src/app/App";
-import { chapterFinished, chapterStream, nextHistory, runLimited, sortedChapters, type CatalogItem, type ChapterView, type DownloadView, type RepositoryInfo, type SeriesCard, type SourceSummary } from "../../src/domain/online";
+import { chapterFinished, chapterStream, groupByTitle, nextHistory, runLimited, sortedChapters, titleKey, type CatalogItem, type ChapterView, type DownloadView, type RepositoryInfo, type SeriesCard, type SourceSummary } from "../../src/domain/online";
 
 const MIHON_MESSAGE = "Este repositório distribui extensões para Mihon e não possui pacotes compatíveis com o Prancha.";
 const FINGERPRINT = "6660b9881c97baa88baa6554bd13968143242814febe85825bc8a69b736ff054";
@@ -358,20 +358,142 @@ describe("Explorar", () => {
     expect(await screen.findByText("Nenhuma fonte instalada")).toBeTruthy();
   });
 
-  it("uma fonte com erro não impede a outra e cada resultado fica sob a sua fonte", async () => {
+  async function searchFor(text: string) {
+    const box = await screen.findByRole("searchbox", { name: "Pesquisar nas fontes" });
+    await userEvent.clear(box);
+    await userEvent.type(box, `${text}{Enter}`);
+  }
+
+  it("a pesquisa mostra cada obra com as fontes onde está, sem juntar título só parecido", async () => {
+    handlers.sources_list = () => [source("a", "Fonte A"), source("b", "Fonte B"), source("c", "Fonte C")];
+    handlers.source_popular = () => ({ results: [], hasMore: false });
+    handlers.source_search = (args) => {
+      if (args.sourceId === "c") reject("source_failed", "A fonte está em manutenção.");
+      return { results: args.sourceId === "a" ? [card(1, "Aurora!"), card(2, "Aurora Boreal")] : [card(3, "aurora", { sourceId: "b", sourceName: null })], hasMore: false };
+    };
+    await open("Explorar");
+    await searchFor("aurora");
+
+    const whereToRead = await screen.findByRole("list", { name: "Onde ler Aurora!" });
+    expect(within(whereToRead).getByRole("button", { name: "Abrir Aurora! em Fonte A" })).toBeTruthy();
+    expect(await within(whereToRead).findByRole("button", { name: "Abrir aurora em Fonte B" })).toBeTruthy();
+    expect(screen.getByText(/Mesmo título em 2 fontes/)).toBeTruthy();
+    expect(within(screen.getByRole("list", { name: "Onde ler Aurora Boreal" })).getAllByRole("listitem")).toHaveLength(1);
+
+    // Quem falhou não disse que a obra não está lá.
+    expect(await screen.findByText("Fonte C não respondeu.")).toBeTruthy();
+    expect(screen.getByText(/A obra pode estar nela/)).toBeTruthy();
+    expect(await screen.findByText("2 de 3 fontes responderam")).toBeTruthy();
+    expect(calls.filter((c) => c.cmd === "source_search").map((c) => c.args.query)).toEqual(["aurora", "aurora", "aurora"]);
+    await waitFor(() => expect(calls.find((c) => c.cmd === "set_setting" && c.args.key === "online.searchHistory")?.args.value).toEqual(["aurora"]));
+  });
+
+  it("tentar de novo consulta só a fonte que falhou e mantém o resto na tela", async () => {
+    let down = true;
     handlers.sources_list = () => [source("a", "Fonte A"), source("b", "Fonte B")];
     handlers.source_popular = () => ({ results: [], hasMore: false });
-    handlers.source_search = (args) => (args.sourceId === "a" ? reject("source_failed", "A fonte está em manutenção.") : { results: [card(1, "Obra da B", { sourceId: "b", sourceName: "Fonte B" })], hasMore: false });
+    handlers.source_search = (args) => {
+      if (args.sourceId === "b" && down) reject("source_failed", "A fonte está em manutenção.");
+      return { results: [card(args.sourceId === "a" ? 1 : 2, "Lume", { sourceId: String(args.sourceId) })], hasMore: false };
+    };
     await open("Explorar");
-    await userEvent.type(await screen.findByRole("searchbox", { name: "Pesquisar nas fontes" }), "aurora{Enter}");
+    await searchFor("lume");
+    await userEvent.click(await screen.findByText("Fonte B não respondeu."));
+    expect(screen.getByRole("button", { name: "Abrir Lume em Fonte A" })).toBeTruthy();
 
-    const failing = await screen.findByRole("region", { name: "Fonte A" });
-    expect(await within(failing).findByRole("alert")).toBeTruthy();
-    expect(within(failing).getByText(/em manutenção/)).toBeTruthy();
-    const working = screen.getByRole("region", { name: "Fonte B" });
-    expect(await within(working).findByRole("button", { name: /Obra da B/ })).toBeTruthy();
-    expect(calls.filter((c) => c.cmd === "source_search").map((c) => c.args.query)).toEqual(["aurora", "aurora"]);
-    await waitFor(() => expect(calls.find((c) => c.cmd === "set_setting" && c.args.key === "online.searchHistory")?.args.value).toEqual(["aurora"]));
+    const before = calls.filter((c) => c.cmd === "source_search" && c.args.sourceId === "a").length;
+    down = false;
+    await userEvent.click(screen.getByRole("button", { name: "Tentar de novo" }));
+    expect(await screen.findByRole("button", { name: "Abrir Lume em Fonte B" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Abrir Lume em Fonte A" })).toBeTruthy();
+    expect(calls.filter((c) => c.cmd === "source_search" && c.args.sourceId === "a")).toHaveLength(before);
+    expect(screen.queryByText(/não respondeu/)).toBeNull();
+    expect(await screen.findByText("2 fontes consultadas")).toBeTruthy();
+  });
+
+  it("sem resultado, não afirma que a obra não existe enquanto faltar fonte", async () => {
+    handlers.sources_list = () => [source("a", "Fonte A"), source("b", "Fonte B")];
+    handlers.source_popular = () => ({ results: [], hasMore: false });
+    handlers.source_search = (args) => (args.sourceId === "a" ? reject("source_failed", "Fora do ar.") : { results: [], hasMore: false });
+    await open("Explorar");
+    await searchFor("vazio");
+    expect(await screen.findByText(/As outras podem ter/)).toBeTruthy();
+  });
+
+  it("diz quando quem escondeu as obras foi o filtro +18, em vez de dizer que não há nada", async () => {
+    handlers.sources_list = () => [source("a", "Fonte A"), source("b", "Fonte B")];
+    handlers.source_popular = (args) => ({ results: [], hasMore: false, hidden: args.sourceId === "a" ? 23 : 0, unverified: 0 });
+    handlers.source_search = (args) => ({ results: [], hasMore: false, hidden: args.sourceId === "a" ? 2 : 0, unverified: 0 });
+    await open("Explorar");
+    // A tela guarda a pesquisa do teste anterior.
+    await searchFor("");
+    const hiding = await screen.findByRole("region", { name: "Fonte A" });
+    expect(await within(hiding).findByText(/O filtro \+18 escondeu 23 obras, adultas ou sem classificação\. Para ver, desligue o filtro em Plugins\./)).toBeTruthy();
+    expect(within(hiding).queryByText("Nada encontrado.")).toBeNull();
+    expect(await within(screen.getByRole("region", { name: "Fonte B" })).findByText("Nada encontrado.")).toBeTruthy();
+
+    await searchFor("escondida");
+    expect(await screen.findByText(/O filtro \+18 escondeu obras adultas ou sem classificação de: Fonte A\./)).toBeTruthy();
+    expect(screen.queryByText(/Nenhuma fonte encontrou esse nome/)).toBeNull();
+  });
+
+  it("mostra o que passou e oferece conferir de novo só a fonte que ficou sem resposta", async () => {
+    handlers.sources_list = () => [source("a", "Fonte A"), source("b", "Fonte B")];
+    const asked: string[] = [];
+    let answered = false;
+    handlers.source_popular = (args) => {
+      asked.push(String(args.sourceId));
+      if (args.sourceId === "b") return { results: [card(9, "Da outra")], hasMore: false, hidden: 0, unverified: 0 };
+      return answered ? { results: [card(1, "Conferida"), card(2, "Depois")], hasMore: false, hidden: 0, unverified: 0 } : { results: [card(1, "Conferida")], hasMore: false, hidden: 0, unverified: 1 };
+    };
+    handlers.source_search = handlers.source_popular;
+    await open("Explorar");
+    // A tela guarda a pesquisa do teste anterior.
+    await searchFor("");
+    const section = await screen.findByRole("region", { name: "Fonte A" });
+    expect(await within(section).findByRole("button", { name: /Conferida/ })).toBeTruthy();
+    expect(within(section).getByText(/Não deu para conferir a classificação de 1 obra agora\./)).toBeTruthy();
+    await screen.findByRole("button", { name: /Da outra/ });
+    expect(screen.getAllByRole("button", { name: "Tentar de novo" })).toHaveLength(1);
+
+    answered = true;
+    asked.length = 0;
+    await userEvent.click(within(section).getByRole("button", { name: "Tentar de novo" }));
+    expect(await within(section).findByRole("button", { name: /Depois/ })).toBeTruthy();
+    expect(within(section).queryByText(/Não deu para conferir/)).toBeNull();
+    expect(asked).toEqual(["a"]);
+  });
+
+  it("com uma fonte só, a pesquisa continua na grade daquela fonte", async () => {
+    handlers.sources_list = () => [source("a", "Fonte A")];
+    handlers.source_popular = () => ({ results: [], hasMore: false });
+    handlers.source_search = () => ({ results: [card(1, "Sozinha")], hasMore: false });
+    await open("Explorar");
+    await searchFor("sozinha");
+    expect(await within(await screen.findByRole("region", { name: "Fonte A" })).findByRole("button", { name: /Sozinha/ })).toBeTruthy();
+  });
+
+  it("depois de o site liberar e recusar, o aviso é um só e dá o caminho", async () => {
+    const protectedError = "Este site pede uma verificação anti-robô, que só você pode passar.";
+    handlers.sources_list = () => [source("a", "Fonte A"), source("b", "Fonte B")];
+    handlers.source_popular = (args) => (args.sourceId === "a" ? reject("source_protected", protectedError) : { results: [card(1, "Lista da B", { sourceId: "b" })], hasMore: false });
+    handlers.source_search = () => ({ results: [], hasMore: false });
+    handlers.source_verify = () => true;
+    await open("Explorar");
+    await userEvent.click(await screen.findByRole("button", { name: "Limpar pesquisa" }).catch(() => screen.findByRole("radio", { name: /Populares/ })));
+
+    const blocked = await screen.findByRole("region", { name: "Fonte A" });
+    expect(await within(blocked).findByText(protectedError)).toBeTruthy();
+    await userEvent.click(within(blocked).getByRole("button", { name: "Verificar no site" }));
+
+    expect(await within(blocked).findByText(/mesmo depois da verificação/)).toBeTruthy();
+    await waitFor(() => expect(calls.filter((c) => c.cmd === "source_popular" && c.args.sourceId === "a").length).toBeGreaterThan(1));
+    expect(await within(blocked).findByText(/mesmo depois da verificação/)).toBeTruthy();
+    expect(within(blocked).queryByText(protectedError)).toBeNull();
+    expect(within(blocked).queryByRole("button", { name: "Verificar no site" })).toBeNull();
+
+    await userEvent.click(within(blocked).getByRole("button", { name: "Procurar em outras fontes" }));
+    expect(document.activeElement).toBe(screen.getByRole("searchbox", { name: "Pesquisar nas fontes" }));
   });
 
   it("carrega mais resultados sem repetir", async () => {
@@ -379,7 +501,7 @@ describe("Explorar", () => {
     handlers.source_popular = (args) => (args.page === 1 ? { results: [card(1, "Um"), card(2, "Dois")], hasMore: true } : { results: [card(2, "Dois"), card(3, "Três")], hasMore: false });
     handlers.source_search = () => ({ results: [], hasMore: false });
     await open("Explorar");
-    await userEvent.click(await screen.findByRole("button", { name: "Limpar pesquisa" }).catch(() => screen.findByRole("radio", { name: "Populares" })));
+    await userEvent.click(await screen.findByRole("button", { name: "Limpar pesquisa" }).catch(() => screen.findByRole("radio", { name: /Populares/ })));
     await userEvent.click(await screen.findByRole("button", { name: "Carregar mais" }));
     expect(await screen.findByRole("button", { name: /Três/ })).toBeTruthy();
     expect(screen.getAllByRole("button", { name: /Dois/ })).toHaveLength(1);
@@ -491,14 +613,21 @@ describe("Obra e capítulos", () => {
     await waitFor(() => expect(calls.find((c) => c.cmd === "series_set_collections")?.args).toEqual({ id: 1, collectionIds: [7] }));
   });
 
-  it("se o site liberar e recusar mesmo assim, diz que repetir não resolve", async () => {
+  it("se o site liberar e recusar mesmo assim, para de oferecer a verificação e leva às outras fontes", async () => {
     const chapters = [chapter(1, "Um")];
     handlers.series_stored = () => view(chapters);
     handlers.series_open = () => view(chapters, { sourceError: "Este site pede uma verificação anti-robô, que só você pode passar.", sourceProtected: true });
     handlers.source_verify = () => true;
     await openSeries();
     await userEvent.click(await screen.findByRole("button", { name: "Verificar no site" }));
-    expect(await screen.findByText(/mesmo assim recusou o Prancha/)).toBeTruthy();
+    expect(await screen.findByText(/mesmo depois da verificação/)).toBeTruthy();
+    expect(screen.queryByText(/que só você pode passar/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Verificar no site" })).toBeNull();
+
+    const before = calls.filter((c) => c.cmd === "source_search").length;
+    await userEvent.click(within(screen.getByRole("alert")).getByRole("button", { name: "Procurar em outras fontes" }));
+    await waitFor(() => expect(calls.filter((c) => c.cmd === "source_search").length).toBeGreaterThan(before));
+    expect(calls.filter((c) => c.cmd === "source_search").at(-1)?.args.query).toBe("Obra");
   });
 
   it("um site com verificação oferece abrir o site, e tenta de novo quando a janela fecha", async () => {
@@ -552,6 +681,22 @@ describe("regras puras", () => {
     expect(nextHistory(["Aurora"], "  aurora ")).toEqual(["aurora"]);
     expect(nextHistory(["a"], "   ")).toEqual(["a"]);
     expect(nextHistory(Array.from({ length: 8 }, (_, i) => `q${i}`), "nova")).toHaveLength(8);
+  });
+
+  it("títulos: junta só os iguais, sem contar caixa, acento e pontuação", () => {
+    expect(titleKey("Ação: Total!")).toBe(titleKey("acao  total"));
+    expect(titleKey("Aurora")).not.toBe(titleKey("Aurora Boreal"));
+    expect(titleKey("Aurora (Novel)")).not.toBe(titleKey("Aurora"));
+    expect(titleKey("がく")).not.toBe(titleKey("かく"));
+    expect(titleKey("!!!")).toBe("!!!");
+  });
+
+  it("títulos: o pesquisado vem primeiro, e a ordem não muda com mais uma fonte", () => {
+    const ids = (cards: SeriesCard[], query: string) => groupByTitle(cards, query).map((group) => group.entries.map((entry) => entry.id));
+    const some = [card(1, "A Volta de Lume"), card(2, "Lume Dourado"), card(3, "Lume")];
+    expect(ids(some, "lume")).toEqual([[3], [2], [1]]);
+    expect(ids([...some, card(4, "LUME!"), card(5, "A volta de lume")], "lume")).toEqual([[3, 4], [2], [1, 5]]);
+    expect(groupByTitle(some, "lume")[0]?.title).toBe("Lume");
   });
 
   it("ordena os capítulos pela posição informada pela fonte", () => {

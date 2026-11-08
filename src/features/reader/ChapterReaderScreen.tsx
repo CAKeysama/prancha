@@ -7,7 +7,7 @@ import { chapterStream, type ChapterSession } from "../../domain/online";
 import { chapterAt, chapterLeftBehind, webtoonHint } from "../../domain/reader";
 import { ApiError, api, errorMessage } from "../../services/api";
 import { onlinePageUrl } from "../../services/urls";
-import { VerifySiteButton } from "../online/parts";
+import { SourceTrouble } from "../online/parts";
 import { useLeaveFullscreenOnClose } from "./fullscreen";
 import { Reader, type ReaderContent } from "./ReaderScreen";
 
@@ -58,14 +58,9 @@ export function ChapterReaderScreen({ id }: { id: number }) {
           </Button>
         </div>
         <div className="flex flex-1 items-center justify-center p-6">
-          <ErrorState title="Não foi possível abrir este capítulo" message={current.error} 
-            action={
-              <div className="flex flex-wrap justify-center gap-2">
-                {current.protected && <VerifySiteButton site={{ chapterId }} onDone={retry} />}
-                <Button onClick={retry}>Tentar de novo</Button>
-              </div>
-            }
-          />
+          <SourceTrouble message={current.error} site={current.protected ? { chapterId } : undefined} onRetry={retry} center>
+            {(text, actions) => <ErrorState title="Não foi possível abrir este capítulo" message={text} action={actions} />}
+          </SourceTrouble>
         </div>
       </div>
     );
@@ -155,16 +150,15 @@ function ChapterStream({ first, zoomState, onOpen, fromChapters }: { first: Chap
       ending: (
         <div className="flex flex-col items-center gap-2 py-12 text-center text-sm text-muted">
           {failure !== null ? (
-            <>
-              <p className="font-medium text-fg">Não foi possível abrir o próximo capítulo</p>
-              <p className="max-w-md">{failure.message}</p>
-              <div className="flex flex-wrap justify-center gap-2">
-                {failure.protected && nextId !== null && <VerifySiteButton size="sm" site={{ chapterId: nextId }} onDone={loadNext} />}
-                <Button size="sm" onClick={loadNext}>
-                  Tentar de novo
-                </Button>
-              </div>
-            </>
+            <SourceTrouble message={failure.message} site={failure.protected && nextId !== null ? { chapterId: nextId } : undefined} onRetry={loadNext} size="sm" center>
+              {(text, actions) => (
+                <>
+                  <p className="font-medium text-fg">Não foi possível abrir o próximo capítulo</p>
+                  <p className="max-w-md">{text}</p>
+                  {actions}
+                </>
+              )}
+            </SourceTrouble>
           ) : nextId !== null ? (
             <Spinner size={16} label="Abrindo o próximo capítulo…" />
           ) : (
