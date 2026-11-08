@@ -1,19 +1,18 @@
 // Monta o site em site/: fontes, ícone, capturas e a página de downloads,
-// e atualiza no HTML os links, o tamanho e os SHA-256 a partir da release publicada no GitHub.
-// Uso: npm run site:build  (depois de publicar a release da versão atual)
+// e atualiza no HTML a versão, os links, o tamanho e os SHA-256 a partir da release mais recente publicada no GitHub.
+// Uso: npm run site:build  (o pages.yml roda sozinho depois de cada versão e de cada mudança no site)
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildDownloads, megabytes } from "./build-downloads.mjs";
 import { ROOT } from "./changelog.mjs";
 
 const site = join(ROOT, "site");
-const { version } = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
 
+// A versão vem da release, não do package.json: entre o merge de uma versão nova e a release dela, o site segue na anterior.
 const manifest = await buildDownloads();
 const release = manifest.releases[0];
-if (release?.version !== version) {
-  throw new Error(`A versão ${version} ainda não foi publicada: a release mais recente é ${release?.version ?? "nenhuma"}.`);
-}
+if (!release) throw new Error("Nenhuma versão publicada ainda.");
+const { version } = release;
 const exe = release.assets.find((a) => a.name.endsWith("-setup.exe"));
 const msi = release.assets.find((a) => a.name.endsWith(".msi"));
 if (!exe?.sha256 || !msi?.sha256) throw new Error(`A release ${release.tag} está sem instaladores ou sem SHA256SUMS.txt.`);
