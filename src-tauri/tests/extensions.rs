@@ -1617,6 +1617,381 @@ fn a_cover_outside_the_extension_hosts_is_not_fetched() {
 }
 
 // ---------------------------------------------------------------------------
+// Filtro +18 nas fontes do Mihon, com um Suwayomi de mentira e obras de teste
+// ---------------------------------------------------------------------------
+
+const BRIDGED: &str = "eu.kanade.tachiyomi.extension.all.teste";
+const BRIDGED_SOURCE: &str = "123";
+
+#[derive(Clone, Default)]
+struct FakeWork {
+    title: String,
+    /// O que a lista traz. Em boa parte das fontes, nada.
+    listed: Vec<String>,
+    /// O que a consulta da obra traz.
+    details: Vec<String>,
+    /// A consulta da obra falha com esta mensagem.
+    failure: Option<String>,
+}
+
+fn fake_work(title: &str, listed: &[&str], details: &[&str]) -> FakeWork {
+    let names = |list: &[&str]| list.iter().map(|name| name.to_string()).collect();
+    FakeWork { title: title.to_string(), listed: names(listed), details: names(details), failure: None }
+}
+
+struct FakeSuwayomi {
+    server: http::Server,
+    works: Arc<std::sync::Mutex<Vec<FakeWork>>>,
+}
+
+impl FakeSuwayomi {
+    fn new(works: Vec<FakeWork>, check_delay: Duration) -> Self {
+        let works = Arc::new(std::sync::Mutex::new(works));
+        let shared = works.clone();
+        let image = common::png(20, 30, 7);
+        let server = serve(move |seen| {
+            if seen.path.ends_with("/thumbnail") {
+                return Reply::ok(image.clone()).header("Content-Type", "image/png");
+            }
+            let works = shared.lock().unwrap();
+            let call: Value = serde_json::from_slice(&seen.body).unwrap();
+            let query = call["query"].as_str().unwrap();
+            let data = |field: &str, value: Value| Reply::ok(json!({ "data": { field: value } }).to_string());
+            if query.contains("fetchSourceManga") {
+                let mangas: Vec<Value> = works.iter().enumerate().map(|(at, work)| json!({ "id": at + 1, "title": work.title, "thumbnailUrl": format!("/api/v1/manga/{}/thumbnail", at + 1), "genre": work.listed })).collect();
+                return data("fetchSourceManga", json!({ "hasNextPage": false, "mangas": mangas }));
+            }
+            if query.contains("fetchManga") {
+                let id = call["variables"]["i"].as_u64().unwrap() as usize;
+                let work = &works[id - 1];
+                if let Some(message) = &work.failure {
+                    return Reply::ok(json!({ "errors": [{ "message": message }], "data": null }).to_string()).after(check_delay);
+                }
+                let manga = json!({ "id": id, "title": work.title, "author": "Autoria", "artist": null, "description": "Sinopse", "status": "ONGOING", "genre": work.details, "thumbnailUrl": format!("/api/v1/manga/{id}/thumbnail") });
+                return data("fetchManga", json!({ "manga": manga })).after(check_delay);
+            }
+            if query.contains("fetchChapters") {
+                return data("fetchChapters", json!({ "chapters": [{ "id": 7, "name": "Capítulo 1", "chapterNumber": 1, "sourceOrder": 1, "uploadDate": "1620684028000" }] }));
+            }
+            Reply::status(404)
+        });
+        FakeSuwayomi { server, works }
+    }
+
+    fn checks(&self) -> usize {
+        self.server.seen().iter().filter(|seen| String::from_utf8_lossy(&seen.body).contains("fetchManga(")).count()
+    }
+
+    fn checks_of(&self, remote_id: &str) -> usize {
+        self.server.seen().iter().filter_map(|seen| serde_json::from_slice::<Value>(&seen.body).ok()).filter(|call| call["query"].as_str().is_some_and(|query| query.contains("fetchManga(")) && call["variables"]["i"].to_string() == remote_id).count()
+    }
+
+    fn covers_requested(&self) -> usize {
+        self.server.seen().iter().filter(|seen| seen.path.ends_with("/thumbnail")).count()
+    }
+}
+
+fn core_with_bridge(fake: &FakeSuwayomi) -> (tempfile::TempDir, Arc<Core>) {
+    let (dir, core) = core();
+    suwayomi::attach(&core, &fake.server.base).unwrap();
+    let mut entry = TestRepo::new("com.exemplo.repo", 1).entry(BRIDGED, "1.0.0", b"x");
+    entry["runtime"] = json!(suwayomi::RUNTIME);
+    entry["capabilities"]["network"] = json!(true);
+    core.db()
+        .execute(
+            "INSERT INTO installed_extensions (id, repository_id, repository_name, public_key, key_fingerprint, name, version, entry, file_name, sha256, installed_at, updated_at)
+             VALUES (?1, 'r', 'R', 'k', 'f', 'E', '1.0.0', ?2, 'e', 'h', 1, 1)",
+            [BRIDGED, entry.to_string().as_str()],
+        )
+        .unwrap();
+    // A fonte se declara segura, como a do caso real: a marca não diz nada sobre cada obra.
+    core.db()
+        .execute("INSERT INTO extension_sources (extension_id, source_id, name, language, rating, direction, supports_latest, supports_search) VALUES (?1, ?2, 'Fonte', 'pt-BR', 'general', 'ltr', 1, 1)", [BRIDGED, BRIDGED_SOURCE])
+        .unwrap();
+    (dir, Arc::new(core))
+}
+
+fn bridged_list(core: &Core) -> sources::BrowsePage {
+    sources::popular(core, BRIDGED, BRIDGED_SOURCE, 1, None, None).unwrap()
+}
+
+fn set_filter(core: &Core, hide: bool) {
+    library::set_setting(&core.db(), "content.adult", &json!(!hide)).unwrap();
+}
+
+fn stored_id(core: &Core, title: &str) -> Option<i64> {
+    core.db().query_row("SELECT id FROM online_series WHERE title = ?1", [title], |r| r.get(0)).ok()
+}
+
+#[test]
+fn with_the_filter_on_a_list_without_genres_shows_only_what_the_details_classify() {
+    let fake = FakeSuwayomi::new(vec![fake_work("Segura", &[], &["Ação"]), fake_work("Marcada", &[], &["Ecchi"]), fake_work("Sem gêneros", &[], &[])], Duration::ZERO);
+    let (_dir, core) = core_with_bridge(&fake);
+
+    let page = bridged_list(&core);
+    assert_eq!(titles(&page), ["Segura"]);
+    assert_eq!((page.hidden, page.unverified), (2, 0));
+    assert_eq!(page.results[0].genres, ["Ação"], "a consulta já guarda os detalhes");
+    assert!(sources::cover(&core, page.results[0].id).unwrap().is_some());
+    for title in ["Marcada", "Sem gêneros"] {
+        assert_eq!(sources::cover(&core, stored_id(&core, title).unwrap()).unwrap(), None, "{title}");
+    }
+    assert_eq!(fake.covers_requested(), 1, "a capa de obra escondida nem é pedida");
+
+    set_filter(&core, false);
+    let page = bridged_list(&core);
+    assert_eq!(titles(&page), ["Segura", "Marcada", "Sem gêneros"]);
+    assert_eq!((page.hidden, page.unverified), (0, 0));
+    assert!(sources::cover(&core, stored_id(&core, "Marcada").unwrap()).unwrap().is_some());
+}
+
+#[test]
+fn a_classified_series_is_not_asked_about_again() {
+    let fake = FakeSuwayomi::new(vec![fake_work("Segura", &[], &["Ação"]), fake_work("Sem gêneros", &[], &[])], Duration::ZERO);
+    let (_dir, core) = core_with_bridge(&fake);
+    bridged_list(&core);
+    assert_eq!(fake.checks(), 2);
+    assert_eq!(titles(&bridged_list(&core)), ["Segura"]);
+    assert_eq!(fake.checks(), 2, "nem a que a fonte não classifica volta a ser consultada");
+}
+
+#[test]
+fn a_list_that_brings_genres_needs_no_extra_call() {
+    let fake = FakeSuwayomi::new(vec![fake_work("Com gêneros", &["Ação"], &["Ação"]), fake_work("Adulta", &["Hentai"], &["Hentai"])], Duration::ZERO);
+    let (_dir, core) = core_with_bridge(&fake);
+    let page = bridged_list(&core);
+    assert_eq!(titles(&page), ["Com gêneros"]);
+    assert_eq!(page.hidden, 1);
+    assert_eq!(fake.checks(), 0);
+    assert_eq!(stored_id(&core, "Adulta"), None);
+    assert_eq!(page.results[0].genres, ["Ação"]);
+}
+
+#[test]
+fn a_series_that_could_not_be_checked_stays_hidden_and_is_tried_again() {
+    let mut failing = fake_work("Falhou", &[], &["Ação"]);
+    failing.failure = Some("HTTP error 500".into());
+    let fake = FakeSuwayomi::new(vec![fake_work("Boa", &[], &["Ação"]), failing], Duration::ZERO);
+    let (_dir, core) = core_with_bridge(&fake);
+
+    for hide in [true, false] {
+        set_filter(&core, hide);
+        let page = bridged_list(&core);
+        assert_eq!(titles(&page), ["Boa"], "sem saber os gêneros, nem com o filtro desligado");
+        assert_eq!((page.hidden, page.unverified), (0, 1));
+    }
+    assert_eq!(sources::cover(&core, stored_id(&core, "Falhou").unwrap()).unwrap().is_some(), true, "guardada e com o filtro desligado, como antes");
+
+    set_filter(&core, true);
+    assert_eq!(sources::cover(&core, stored_id(&core, "Falhou").unwrap()).unwrap(), None);
+    fake.works.lock().unwrap()[1].failure = None;
+    assert_eq!(titles(&bridged_list(&core)), ["Boa", "Falhou"]);
+}
+
+#[test]
+fn a_source_whose_checks_all_fail_says_so_and_stops_trying() {
+    let failing = |message: &str, count: usize| (0..count).map(|at| FakeWork { title: format!("Obra {at}"), failure: Some(message.to_string()), ..Default::default() }).collect::<Vec<_>>();
+
+    let fake = FakeSuwayomi::new(failing("HTTP error 503", 30), Duration::ZERO);
+    let (_dir, core) = core_with_bridge(&fake);
+    assert_eq!(code(sources::popular(&core, BRIDGED, BRIDGED_SOURCE, 1, None, None)), "source_error");
+    assert!(fake.checks() < 10, "um site fora do ar não recebe uma consulta por obra: {}", fake.checks());
+
+    let fake = FakeSuwayomi::new(failing("Cloudflare bypass currently disabled", 30), Duration::ZERO);
+    let (_dir, core) = core_with_bridge(&fake);
+    assert_eq!(code(sources::popular(&core, BRIDGED, BRIDGED_SOURCE, 1, None, None)), "source_protected");
+    assert!(fake.checks() < 10, "{}", fake.checks());
+}
+
+#[test]
+fn a_few_failures_along_the_way_do_not_hide_the_rest_of_the_list() {
+    let works: Vec<FakeWork> = (1..=40)
+        .map(|at| {
+            let mut work = fake_work(&format!("Obra {at}"), &[], &["Ação"]);
+            work.failure = (at % 8 == 0).then(|| "HTTP error 500".to_string());
+            work
+        })
+        .collect();
+    let fake = FakeSuwayomi::new(works, Duration::ZERO);
+    let (_dir, core) = core_with_bridge(&fake);
+    let page = bridged_list(&core);
+    assert_eq!(page.results.len(), 35);
+    assert_eq!((page.hidden, page.unverified), (0, 5));
+    assert_eq!(fake.checks(), 40, "só falhas seguidas param as consultas");
+}
+
+#[test]
+fn leaving_the_screen_stops_the_checks_and_keeps_what_was_answered() {
+    let works = (0..24).map(|at| fake_work(&format!("Obra {at}"), &[], &["Ação"])).collect();
+    let fake = FakeSuwayomi::new(works, Duration::from_millis(150));
+    let (_dir, core) = core_with_bridge(&fake);
+    let cancel = core.requests.begin("lista");
+    let flag = core.clone();
+    // Sai da tela assim que a primeira resposta estiver guardada.
+    std::thread::spawn(move || {
+        while flag.db().query_row("SELECT count(*) FROM online_series WHERE classification = 'known'", [], |r| r.get::<_, i64>(0)).unwrap() == 0 {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        flag.requests.cancel("lista");
+    });
+    assert_eq!(code(sources::popular(&core, BRIDGED, BRIDGED_SOURCE, 1, None, Some(&cancel))), "extension_cancelled");
+    core.requests.end("lista");
+    let asked = fake.checks();
+    assert!(asked < 24, "{asked}");
+    let answered: Vec<String> = {
+        let conn = core.db();
+        let mut known = conn.prepare("SELECT remote_id FROM online_series WHERE classification = 'known'").unwrap();
+        known.query_map([], |r| r.get(0)).unwrap().map(Result::unwrap).collect()
+    };
+    assert!(!answered.is_empty());
+
+    assert_eq!(bridged_list(&core).results.len(), 24);
+    for remote_id in answered {
+        assert_eq!(fake.checks_of(&remote_id), 1, "só pergunta o que faltou: {remote_id}");
+    }
+}
+
+// Rode com `--nocapture` para ver os tempos. A demora é simulada: num site de verdade depende dele e dos limites da extensão.
+#[test]
+fn checking_a_list_costs_time_only_on_the_first_visit() {
+    const WORKS: u32 = 30;
+    let delay = Duration::from_millis(150);
+    let works = (0..WORKS).map(|at| fake_work(&format!("Obra {at}"), &[], &["Ação"])).collect();
+    let fake = FakeSuwayomi::new(works, delay);
+    let (_dir, core) = core_with_bridge(&fake);
+
+    let started = Instant::now();
+    assert_eq!(bridged_list(&core).results.len(), WORKS as usize);
+    let first = started.elapsed();
+    let started = Instant::now();
+    assert_eq!(bridged_list(&core).results.len(), WORKS as usize);
+    let second = started.elapsed();
+    println!("{WORKS} obras, {delay:?} por consulta: primeira visita {first:?}, segunda {second:?}");
+
+    assert_eq!(fake.checks(), WORKS as usize, "a segunda visita não consulta nada");
+    assert!(first >= delay * (WORKS / 4), "no máximo 4 consultas ao mesmo tempo: {first:?}");
+    assert!(first < delay * WORKS * 3 / 4, "as consultas correm em paralelo: {first:?}");
+}
+
+#[test]
+fn a_series_that_sexualizes_minors_never_appears_with_the_filter_on_or_off() {
+    let works = vec![fake_work("Comum", &[], &["Ação"]), fake_work("Obra Lolicon", &[], &["Ação"]), fake_work("Pelo gênero nos detalhes", &[], &["Loli"]), fake_work("Pelo gênero na lista", &["Shota"], &["Ação"])];
+    let blocked = ["Obra Lolicon", "Pelo gênero nos detalhes", "Pelo gênero na lista"];
+    let fake = FakeSuwayomi::new(works, Duration::ZERO);
+    let (_dir, core) = core_with_bridge(&fake);
+
+    for hide in [false, true, false] {
+        set_filter(&core, hide);
+        let page = bridged_list(&core);
+        assert_eq!(titles(&page), ["Comum"], "filtro ligado: {hide}");
+        assert_eq!(page.hidden, 0, "desligar o filtro não traz estas de volta, então a tela não sugere isso");
+        for title in blocked {
+            assert_eq!(stored_id(&core, title), None, "{title} não fica no banco");
+        }
+    }
+    let kept: i64 = core.db().query_row("SELECT count(*) FROM blocked_series", [], |r| r.get(0)).unwrap();
+    assert_eq!(kept, 3);
+    assert_eq!(fake.checks(), 2, "só a comum e a do gênero nos detalhes, e uma vez cada");
+}
+
+#[test]
+fn a_native_source_is_checked_by_title_too() {
+    let (_dir, core, _repo) = core_with_fixture(&[]);
+    for hide in [true, false] {
+        set_filter(&core, hide);
+        let page = sources::search(&core, EXT, "livre", "Lolicon", 1, None, None).unwrap();
+        assert!(page.results.is_empty(), "filtro ligado: {hide}");
+        assert_eq!(page.hidden, 0);
+    }
+    assert_eq!(stored_id(&core, "Lolicon 1"), None);
+}
+
+#[test]
+fn opening_a_series_that_turned_out_to_sexualize_minors_removes_it() {
+    let fake = FakeSuwayomi::new(vec![fake_work("Obra", &[], &["Ação"])], Duration::ZERO);
+    let (_dir, core) = core_with_bridge(&fake);
+    let id = bridged_list(&core).results[0].id;
+    sources::set_favorite(&core.db(), id, true).unwrap();
+    assert!(sources::cover(&core, id).unwrap().is_some());
+    let cover = core.paths.covers.join(format!("online-{id}.jpg"));
+    assert!(cover.exists());
+
+    fake.works.lock().unwrap()[0].details = vec!["Loli".into()];
+    assert_eq!(code(sources::open_series(&core, id, None)), "series_blocked");
+    assert_eq!(code(sources::card(&core.db(), id)), "series_not_found");
+    assert!(!cover.exists());
+    assert_eq!(sources::cover(&core, id).unwrap(), None);
+    assert!(bridged_list(&core).results.is_empty(), "e não volta pela lista");
+}
+
+#[test]
+fn what_was_stored_before_is_removed_at_startup_without_touching_the_rest() {
+    let (_dir, core, _repo) = core_with_fixture(&[]);
+    let conn = core.db();
+    conn.execute_batch(
+        "INSERT INTO online_series (id, extension_id, source_id, remote_id, title, genres, favorite, classification, created_at, updated_at) VALUES
+            (1, 'e', 's', 'titulo', 'Obra Lolicon', '[]', 1, 'known', 1, 1),
+            (2, 'e', 's', 'genero', 'Obra', '[\"Shota\"]', 1, 'known', 1, 1),
+            (3, 'e', 's', 'comum', 'Comum', '[\"Ação\"]', 1, 'known', 1, 1);
+         INSERT INTO online_chapters (id, series_id, remote_id, title, sort_order, file_path) VALUES (1, 1, 'cap', 'Cap', 0, 'capitulo.cbz');
+         INSERT INTO chapter_downloads (id, chapter_id, status, created_at, updated_at) VALUES (1, 1, 'paused', 1, 1);",
+    )
+    .unwrap();
+    let cover = core.paths.covers.join("online-1.jpg");
+    std::fs::write(&cover, b"capa").unwrap();
+    let partial = core.paths.data_dir.join("downloads/tmp/1");
+    std::fs::create_dir_all(&partial).unwrap();
+    std::fs::write(partial.join("0001.png"), b"pagina").unwrap();
+
+    assert_eq!(sources::forget_blocked(&core, &conn).unwrap(), 2);
+    let left: Vec<String> = sources::library_series(&conn).unwrap().into_iter().map(|series| series.title).collect();
+    assert_eq!(left, ["Comum"]);
+    assert!(!cover.exists() && !partial.exists(), "nem capa nem páginas soltas ficam no disco");
+    let downloads: i64 = conn.query_row("SELECT count(*) FROM chapter_downloads", [], |r| r.get(0)).unwrap();
+    assert_eq!(downloads, 0);
+    assert_eq!(sources::forget_blocked(&core, &conn).unwrap(), 0);
+}
+
+#[test]
+fn a_series_without_classification_stays_out_of_every_screen_with_the_filter_on() {
+    let fake = FakeSuwayomi::new(vec![fake_work("Sem gêneros", &[], &[])], Duration::ZERO);
+    let (_dir, core) = core_with_bridge(&fake);
+    let folder = library::create_collection(&core.db(), "Pasta").unwrap();
+    library::set_setting(&core.db(), "plugins.online", &json!(true)).unwrap();
+
+    set_filter(&core, false);
+    let id = bridged_list(&core).results[0].id;
+    assert!(sources::open_series(&core, id, None).is_ok(), "com o filtro desligado, abre");
+    assert!(sources::cover(&core, id).unwrap().is_some());
+    sources::set_favorite(&core.db(), id, true).unwrap();
+    sources::set_following(&core.db(), id, true).unwrap();
+    sources::set_series_collections(&mut core.db(), id, &[folder]).unwrap();
+
+    set_filter(&core, true);
+    assert!(sources::library_series(&core.db()).unwrap().is_empty());
+    assert!(sources::list_following(&core.db()).unwrap().is_empty());
+    assert_eq!(library::list_collections(&core.db()).unwrap()[0].comic_count, 0);
+    assert_eq!(sources::cover(&core, id).unwrap(), None, "nem a capa que já estava em cache");
+    assert_eq!(code(sources::open_series(&core, id, None)), "source_unrated");
+
+    let adult: bool = core.db().query_row("SELECT adult FROM online_series WHERE id = ?1", [id], |r| r.get(0)).unwrap();
+    assert!(!adult, "não é a mesma coisa que ser adulta");
+    set_filter(&core, false);
+    assert_eq!(sources::library_series(&core.db()).unwrap().len(), 1, "guardada, volta ao desligar");
+}
+
+#[test]
+fn details_that_stop_bringing_genres_do_not_take_away_a_classification() {
+    let fake = FakeSuwayomi::new(vec![fake_work("Obra", &[], &["Ação"])], Duration::ZERO);
+    let (_dir, core) = core_with_bridge(&fake);
+    let id = bridged_list(&core).results[0].id;
+    fake.works.lock().unwrap()[0].details.clear();
+    let view = sources::open_series(&core, id, None).unwrap();
+    assert_eq!(view.series.genres, ["Ação"]);
+    assert_eq!(titles(&bridged_list(&core)), ["Obra"]);
+}
+
+// ---------------------------------------------------------------------------
 // Downloads
 // ---------------------------------------------------------------------------
 

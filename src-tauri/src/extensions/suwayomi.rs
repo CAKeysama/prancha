@@ -2,6 +2,7 @@
 //! e controla como processo local. As extensões dele são código Java sem isolamento: a interface avisa antes de instalar.
 //! Ele aceita pedidos de qualquer site aberto no navegador, então escuta só em 127.0.0.1, com porta e senha novas a cada início.
 
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use std::net::TcpListener;
@@ -54,17 +55,26 @@ pub struct Suwayomi {
 }
 
 struct Server {
-    child: Child,
+    /// Só falta nos testes, que falam com um servidor já no ar.
+    child: Option<Child>,
     /// Fechado pelo Windows quando o Prancha termina, mesmo em uma falha, e leva o processo junto.
     #[cfg(windows)]
     _job: Option<OwnedHandle>,
     client: Client,
 }
 
+impl Server {
+    fn is_running(&mut self) -> bool {
+        self.child.as_mut().is_none_or(|child| matches!(child.try_wait(), Ok(None)))
+    }
+}
+
 impl Drop for Server {
     fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        if let Some(child) = self.child.as_mut() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
     }
 }
 
@@ -261,7 +271,7 @@ fn start(core: &Core, dir: &Path) -> AppResult<Server> {
     let mut server = Server {
         #[cfg(windows)]
         _job: kill_with_app(&child),
-        child,
+        child: Some(child),
         client: Client { http, base: format!("http://127.0.0.1:{port}"), password },
     };
     let deadline = Instant::now() + START_TIMEOUT;
@@ -269,7 +279,7 @@ fn start(core: &Core, dir: &Path) -> AppResult<Server> {
         if server.client.graphql::<Value>("aboutServer", "{ aboutServer { version } }", json!({}), None).is_ok() {
             return Ok(server);
         }
-        if !matches!(server.child.try_wait(), Ok(None)) || Instant::now() >= deadline {
+        if !server.is_running() || Instant::now() >= deadline {
             return Err(failed("component_start", "O componente destas extensões não iniciou. Tente de novo."));
         }
         std::thread::sleep(START_STEP);
@@ -280,7 +290,7 @@ fn start(core: &Core, dir: &Path) -> AppResult<Server> {
 fn client(core: &Core) -> AppResult<Client> {
     let mut server = core.suwayomi.server.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(running) = server.as_mut() {
-        if matches!(running.child.try_wait(), Ok(None)) {
+        if running.is_running() {
             return Ok(running.client.clone());
         }
     }
@@ -293,6 +303,19 @@ fn client(core: &Core) -> AppResult<Client> {
     let client = started.client.clone();
     *server = Some(started);
     Ok(client)
+}
+
+/// Para os testes: usa um servidor já no ar, sem iniciar o Java.
+pub fn attach(core: &Core, base: &str) -> AppResult<()> {
+    let http = http().redirect(reqwest::redirect::Policy::none()).build().map_err(|e| failed("component_start", e.to_string()))?;
+    let client = Client { http, base: base.to_string(), password: String::new() };
+    *core.suwayomi.server.lock().unwrap_or_else(|e| e.into_inner()) = Some(Server {
+        child: None,
+        #[cfg(windows)]
+        _job: None,
+        client,
+    });
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -554,7 +577,7 @@ struct PagesReply {
 }
 
 /// O Mihon não classifica obra por obra, e uma fonte marcada como segura ainda traz obras adultas.
-/// Para o filtro +18, sobra o que a própria fonte diz nos gêneros.
+/// Para o filtro +18, sobra o que a própria fonte diz nos gêneros. Sem gêneros não há classificação, e quem decide é `sources`.
 /// shortcut: compara por palavra, então "Young Adult" também conta; trocar por uma lista exata se isso esconder obras demais.
 fn rating_from(genres: &[String]) -> Option<ContentRating> {
     const ADULT: [&str; 11] = ["adult", "+18", "18+", "hentai", "smut", "nsfw", "ecchi", "erot", "erót", "porn", "mature"];
@@ -610,7 +633,8 @@ pub enum Browse<'a> {
     Search(&'a str),
 }
 
-pub fn browse(core: &Core, source_id: &str, kind: Browse, page: u32, cancel: Option<&Cancel>) -> AppResult<SearchPage> {
+/// A página e os gêneros que a lista trouxe, por obra. `SearchResult` vem do contrato das extensões e não tem esse campo.
+pub fn browse(core: &Core, source_id: &str, kind: Browse, page: u32, cancel: Option<&Cancel>) -> AppResult<(SearchPage, HashMap<String, Vec<String>>)> {
     let (kind, query) = match kind {
         Browse::Popular => ("POPULAR", None),
         Browse::Latest => ("LATEST", None),
@@ -622,7 +646,8 @@ pub fn browse(core: &Core, source_id: &str, kind: Browse, page: u32, cancel: Opt
         json!({ "s": source_id, "t": kind, "p": page.max(1), "q": query }),
         cancel,
     )?;
-    Ok(to_search_page(found))
+    let genres = found.mangas.iter().map(|manga| (manga.id.to_string(), manga.genre.clone())).collect();
+    Ok((to_search_page(found), genres))
 }
 
 pub fn details(core: &Core, remote_id: &str, cancel: Option<&Cancel>) -> AppResult<ComicDetails> {

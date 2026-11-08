@@ -2,6 +2,7 @@
 
 pub mod downloads;
 pub mod install;
+pub mod minors;
 pub mod net;
 pub mod repository;
 pub mod runtime;

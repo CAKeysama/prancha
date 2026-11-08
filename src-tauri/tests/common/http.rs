@@ -9,6 +9,7 @@ use std::time::Duration;
 pub struct Seen {
     pub path: String,
     pub headers: Vec<(String, String)>,
+    pub body: Vec<u8>,
 }
 
 impl Seen {
@@ -94,11 +95,19 @@ fn answer(mut stream: TcpStream, log: &Mutex<Vec<Seen>>, handler: &(dyn Fn(&Seen
             Ok(n) => raw.extend_from_slice(&buffer[..n]),
         }
     }
-    let text = String::from_utf8_lossy(&raw).to_string();
+    let head_end = raw.windows(4).position(|w| w == b"\r\n\r\n").unwrap() + 4;
+    let text = String::from_utf8_lossy(&raw[..head_end]).to_string();
     let mut lines = text.split("\r\n");
     let path = lines.next().and_then(|l| l.split(' ').nth(1)).unwrap_or("/").to_string();
-    let headers = lines.filter_map(|l| l.split_once(": ")).map(|(n, v)| (n.to_string(), v.to_string())).collect();
-    let request = Seen { path, headers };
+    let headers: Vec<(String, String)> = lines.filter_map(|l| l.split_once(": ")).map(|(n, v)| (n.to_string(), v.to_string())).collect();
+    let length = headers.iter().find(|(n, _)| n.eq_ignore_ascii_case("content-length")).and_then(|(_, v)| v.parse::<usize>().ok()).unwrap_or(0);
+    while raw.len() < head_end + length {
+        match stream.read(&mut buffer) {
+            Ok(0) | Err(_) => return,
+            Ok(n) => raw.extend_from_slice(&buffer[..n]),
+        }
+    }
+    let request = Seen { path, headers, body: raw[head_end..].to_vec() };
     log.lock().unwrap().push(request.clone());
     let reply = handler(&request);
     std::thread::sleep(reply.delay);

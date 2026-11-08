@@ -153,6 +153,10 @@ export interface SeriesCard {
 export interface BrowsePage {
   results: SeriesCard[];
   hasMore: boolean;
+  /** Obras que o filtro +18 escondeu. Com ele desligado, aparecem. */
+  hidden: number;
+  /** Obras que não puderam ser conferidas agora: ficam de fora com o filtro ligado ou desligado. */
+  unverified: number;
 }
 
 export type DownloadStatus = "queued" | "running" | "paused" | "completed" | "failed" | "cancelled";

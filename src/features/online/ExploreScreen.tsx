@@ -18,6 +18,8 @@ interface Section {
   results: SeriesCard[];
   page: number;
   hasMore: boolean;
+  hidden: number;
+  unverified: number;
   loadingMore: boolean;
   error: string | null;
   /** O site pediu uma verificação anti-robô. */
@@ -115,7 +117,7 @@ export function ExploreScreen() {
       try {
         const page = await fetchPage(id, source, mode, query, 1, kind);
         siteAnswered(source.sourceId);
-        patch({ status: "ready", results: page.results, page: 1, hasMore: page.hasMore, error: null, protected: false });
+        patch({ status: "ready", results: page.results, page: 1, hasMore: page.hasMore, hidden: page.hidden, unverified: page.unverified, error: null, protected: false });
       } catch (e) {
         if (!isCancelled(e)) patch({ status: "failed", error: errorMessage(e), protected: e instanceof ApiError && e.code === "source_protected" });
       } finally {
@@ -130,7 +132,7 @@ export function ExploreScreen() {
     if (showingFollowing) return;
     const thisRun = {};
     run.current = thisRun;
-    setSections(selected.map((source) => ({ source, status: "loading", results: [], page: 1, hasMore: false, loadingMore: false, error: null, protected: false })));
+    setSections(selected.map((source) => ({ source, status: "loading", results: [], page: 1, hasMore: false, hidden: 0, unverified: 0, loadingMore: false, error: null, protected: false })));
     void runLimited(
       selected.map((source) => () => loadFirstPage(source, thisRun)),
       CONCURRENT_SOURCES,
@@ -174,7 +176,7 @@ export function ExploreScreen() {
         all.map((other) => {
           if (!matches(other)) return other;
           const known = new Set(other.results.map((item) => item.id));
-          return { ...other, results: [...other.results, ...page.results.filter((item) => !known.has(item.id))], page: section.page + 1, hasMore: page.hasMore, loadingMore: false };
+          return { ...other, results: [...other.results, ...page.results.filter((item) => !known.has(item.id))], page: section.page + 1, hasMore: page.hasMore, hidden: other.hidden + page.hidden, unverified: other.unverified + page.unverified, loadingMore: false };
         }),
       );
     } catch (e) {
@@ -233,6 +235,8 @@ export function ExploreScreen() {
   const failed = sections.filter((section) => section.status === "failed");
   const byTitle = Boolean(query) && selected.length > 1;
   const withoutSearch = query ? filtered.filter((source) => !source.supportsSearch) : [];
+  const hiddenIn = sections.filter((section) => section.status === "ready" && section.hidden > 0);
+  const uncheckedIn = sections.filter((section) => section.status === "ready" && section.unverified > 0);
   const finished = byTitle ? (failed.length > 0 ? `${sections.length - failed.length} de ${sections.length} fontes responderam` : `${sections.length} fontes consultadas`) : undefined;
 
   return (
@@ -348,7 +352,8 @@ export function ExploreScreen() {
           <>
             {failed.length > 0 && <UnansweredSources failed={failed} onRetry={retrySource} />}
             {groups.length === 0 && searching > 0 && <TitlesSkeleton />}
-            {groups.length === 0 && searching === 0 && (
+            {searching > 0 && <p className="p-enter-late mt-3 text-sm text-muted">{CHECKING_NOTE}</p>}
+            {groups.length === 0 && searching === 0 && hiddenIn.length === 0 && uncheckedIn.length === 0 && (
               <EmptyState icon={Search} title="Nada encontrado">
                 {failed.length > 0 ? "Nada com esse nome nas fontes que responderam. As outras podem ter." : "Nenhuma fonte encontrou esse nome."} A mesma obra pode ter outro título em cada fonte: vale tentar outro.
               </EmptyState>
@@ -363,6 +368,19 @@ export function ExploreScreen() {
             )}
             {groups.length > 0 && searching === 0 && <p className="mt-4 text-sm text-muted">A mesma obra pode ter outro título em cada fonte. Se não achar, vale tentar outro nome.</p>}
             {withoutSearch.length > 0 && <p className="mt-1 text-sm text-muted">Sem pesquisa, ficaram de fora: {LIST_FORMAT.format(withoutSearch.map((source) => source.name))}.</p>}
+            {hiddenIn.length > 0 && (
+              <p className="mt-1 text-sm text-muted">
+                O filtro +18 escondeu obras adultas ou sem classificação de: {LIST_FORMAT.format(hiddenIn.map((section) => section.source.name))}. {TURN_OFF_NOTE}
+              </p>
+            )}
+            {uncheckedIn.length > 0 && (
+              <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted">
+                Não deu para conferir a classificação de obras de: {LIST_FORMAT.format(uncheckedIn.map((section) => section.source.name))}.
+                <Button size="sm" onClick={() => uncheckedIn.forEach((section) => retrySource(section.source))}>
+                  Tentar de novo
+                </Button>
+              </p>
+            )}
           </>
         )}
         {!showingFollowing &&
@@ -373,6 +391,7 @@ export function ExploreScreen() {
                 {section.source.name}
                 {sources.length > 1 && <span className="text-sm font-normal text-muted">{languageName(section.source.language)}</span>}
                 {section.status === "loading" && <Spinner size={14} />}
+                {section.status === "loading" && <span className="p-enter-late text-sm font-normal text-muted">{CHECKING_NOTE}</span>}
               </h2>
               {section.status === "loading" && <GridSkeleton />}
               {section.status === "failed" && (
@@ -382,8 +401,21 @@ export function ExploreScreen() {
                   </SourceTrouble>
                 </div>
               )}
-              {section.status === "ready" && section.results.length === 0 && <p className="text-sm text-muted">Nada encontrado.</p>}
+              {section.status === "ready" && section.results.length === 0 && !(section.hidden > 0) && !(section.unverified > 0) && <p className="text-sm text-muted">Nada encontrado.</p>}
               {section.results.length > 0 && <SeriesGrid items={section.results} onOpen={openSeries} />}
+              {section.status === "ready" && section.hidden > 0 && (
+                <p className="mt-3 text-sm text-muted">
+                  O filtro +18 escondeu {section.hidden === 1 ? "1 obra, adulta ou sem classificação" : `${section.hidden} obras, adultas ou sem classificação`}. {TURN_OFF_NOTE}
+                </p>
+              )}
+              {section.status === "ready" && section.unverified > 0 && (
+                <p className="mt-3 flex flex-wrap items-center gap-2 text-sm text-muted">
+                  Não deu para conferir a classificação de {section.unverified === 1 ? "1 obra" : `${section.unverified} obras`} agora.
+                  <Button size="sm" onClick={() => retrySource(section.source)}>
+                    Tentar de novo
+                  </Button>
+                </p>
+              )}
               {section.hasMore && (
                 <div className="mt-3">
                   <Button onClick={() => void loadMore(section)} loading={section.loadingMore}>
@@ -399,6 +431,8 @@ export function ExploreScreen() {
 }
 
 const LIST_FORMAT = new Intl.ListFormat("pt-BR", { type: "conjunction" });
+const CHECKING_NOTE = "Conferindo a classificação das obras. Na primeira visita, pode passar de um minuto.";
+const TURN_OFF_NOTE = "Para ver, desligue o filtro em Plugins.";
 const NAMES_SHOWN = 3;
 
 const troubleLayout = (text: string, actions: ReactNode) => (

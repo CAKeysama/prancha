@@ -86,6 +86,8 @@ O texto aparece para a pessoa: escreva em português e diga o que aconteceu. Um 
 | `unknown` | Com o filtro +18 ligado, que é o padrão, a fonte fica desabilitada. Declare a classificação real. |
 | `adult` | Com o filtro +18 ligado, a extensão não instala, e resultados marcados como `adult` são descartados, em qualquer fonte. |
 
+Um resultado cujo título ou gêneros indiquem sexualização de menores é descartado em qualquer classificação, com o filtro ligado ou desligado. A obra deixa de aparecer no Prancha.
+
 ## Limites de execução
 
 Passar de um limite encerra só aquela chamada, e o erro fica naquela fonte.

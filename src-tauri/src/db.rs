@@ -16,6 +16,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0003_extensions.sql"),
     include_str!("../migrations/0004_online_reading.sql"),
     include_str!("../migrations/0005_series_library.sql"),
+    include_str!("../migrations/0006_series_classification.sql"),
 ];
 
 pub fn schema_version() -> i64 {
@@ -161,6 +162,40 @@ mod tests {
         conn.execute_batch("INSERT INTO source_repositories (id, url, name, index_url, public_key, key_fingerprint, added_at) VALUES ('r', 'https://r/prancha-repo.json', 'R', 'https://r/i', 'k', 'f', 1);").unwrap();
         migrate(&mut conn).unwrap();
         assert_eq!(setting(&conn).as_deref(), Some("true"));
+    }
+
+    /// Só a obra de extensão do Mihon que nunca trouxe gêneros perde a confiança que tinha.
+    #[test]
+    fn series_stored_before_the_classification_get_the_state_they_earned() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        configure(&conn).unwrap();
+        for sql in &MIGRATIONS[..5] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.pragma_update(None, "user_version", 5).unwrap();
+        let install = |id: &str, entry: &str| {
+            conn.execute("INSERT INTO installed_extensions (id, repository_id, repository_name, public_key, key_fingerprint, name, version, entry, file_name, sha256, installed_at, updated_at) VALUES (?1, 'r', 'R', 'k', 'f', 'E', '1.0.0', ?2, 'e', 'h', 1, 1)", [id, entry]).unwrap();
+        };
+        install("ponte", r#"{"runtime":"suwayomi"}"#);
+        install("nativa", r#"{"runtime":"wasm-component"}"#);
+        install("quebrada", "nao é json");
+        let series = |remote: &str, extension: &str, genres: &str, checked: Option<i64>| {
+            conn.execute("INSERT INTO online_series (extension_id, source_id, remote_id, title, genres, last_checked_at, created_at, updated_at) VALUES (?1, 's', ?2, ?2, ?3, ?4, 1, 1)", rusqlite::params![extension, remote, genres, checked]).unwrap();
+        };
+        series("com-generos", "ponte", r#"["Ação"]"#, None);
+        series("nunca-aberta", "ponte", "[]", None);
+        series("aberta-sem-generos", "ponte", "[]", Some(1));
+        series("nativa", "nativa", "[]", None);
+        series("sem-extensao", "removida", "[]", None);
+        series("entrada-quebrada", "quebrada", "[]", None);
+        migrate(&mut conn).unwrap();
+        let state = |remote: &str| conn.query_row("SELECT classification FROM online_series WHERE remote_id = ?1", [remote], |r| r.get::<_, String>(0)).unwrap();
+        assert_eq!(state("com-generos"), "known");
+        assert_eq!(state("nunca-aberta"), "pending");
+        assert_eq!(state("aberta-sem-generos"), "unknown");
+        assert_eq!(state("nativa"), "known");
+        assert_eq!(state("sem-extensao"), "pending", "sem saber de onde veio, não vale como segura");
+        assert_eq!(state("entrada-quebrada"), "pending", "uma entrada ilegível não impede o app de abrir nem vale como segura");
     }
 
     #[test]
