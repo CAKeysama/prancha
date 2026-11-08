@@ -1,24 +1,23 @@
-name: Página de downloads
+name: Site e página de downloads
 
-# Gera a página a partir do CHANGELOG.md e das releases publicadas. Nada é commitado de volta, então não há repetição.
+# Gera as páginas a partir do CHANGELOG.md e das releases publicadas. Nada é commitado de volta, então não há repetição.
+# O release.yml dispara este workflow depois de cada versão; mudanças no site entram no ar no merge.
 on:
   push:
     branches: [main]
     paths:
       - CHANGELOG.md
       - scripts/build-downloads.mjs
+      - scripts/build-site.mjs
       - scripts/changelog.mjs
       - scripts/downloads.template.html
-      - site/fonts/**
-      - site/assets/favicon.svg
+      - site/**
       - .github/workflows/pages.yml
-  # Sem o evento `release`: ele roda na tag, e o ambiente github-pages só aceita a main. O release.yml dispara esta página.
+  # Sem o evento `release`: ele roda na tag, e o ambiente github-pages só aceita a main. O release.yml dispara este workflow.
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
@@ -26,9 +25,13 @@ concurrency:
 
 jobs:
   deploy:
-    name: Gerar e publicar
+    name: Página de downloads no GitHub Pages
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -58,3 +61,52 @@ jobs:
 
       - id: deployment
         uses: actions/deploy-pages@v5
+
+  site:
+    name: Site oficial na Vercel
+    # Sem as variáveis da Vercel, o job fica de fora em vez de falhar. Ver docs/RELEASING.md.
+    if: vars.VERCEL_ORG_ID != '' && vars.VERCEL_PROJECT_ID != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SITE_URL: https://prancha-beta.vercel.app
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      # Só para as fontes de node_modules que o build-site.mjs copia.
+      - run: npm ci --ignore-scripts
+
+      # As imagens mostram obras de terceiros e ficam fora do git: vêm do próprio site no ar.
+      # Uma imagem nova precisa de um deploy à mão, uma vez, da pasta site. Ver docs/RELEASING.md.
+      - name: Traz as imagens de vitrine do site no ar
+        run: |
+          mkdir -p site/assets/prints
+          for file in $(grep -oE 'assets/prints/[A-Za-z0-9._-]+' site/index.html | sort -u); do
+            if ! curl -fsS --retry 3 -o "site/$file" "$SITE_URL/$file"; then
+              echo "::error::$file não está em $SITE_URL. Publique a pasta site à mão uma vez, com a imagem nova."
+              exit 1
+            fi
+          done
+
+      - name: Atualiza versão, links, tamanho e SHA-256 com a release mais recente
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/build-site.mjs
+
+      - name: Publica
+        working-directory: site
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+        run: |
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "::error::Falta o segredo VERCEL_TOKEN. Ver docs/RELEASING.md."
+            exit 1
+          fi
+          npx --yes vercel@65.2.0 deploy --prod --yes --token "$VERCEL_TOKEN"

@@ -416,22 +416,64 @@
 
       footer {
         border-top: 1px solid var(--border);
-        padding: 24px 0 40px;
+        padding: 48px 0 40px;
         font-size: 13px;
         color: var(--muted);
       }
-      footer .wrap {
+      .footer-main {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 40px;
+        padding-bottom: 32px;
+        border-bottom: 1px solid var(--border);
+      }
+      .footer-brand .brand {
+        width: fit-content;
+        color: var(--text);
+      }
+      .footer-brand p {
+        margin: 10px 0 0;
+        max-width: 34ch;
+        font-size: 14px;
+      }
+      .footer-links {
+        display: grid;
+        grid-template-columns: repeat(3, auto);
+        gap: 32px 64px;
+      }
+      .footer-links h2 {
+        margin: 0 0 12px;
+        color: var(--text);
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .footer-links ul {
+        display: grid;
+        gap: 8px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .footer-links a {
+        font-size: 14px;
+        text-decoration: none;
+        transition: color 120ms ease;
+      }
+      .footer-links a:hover {
+        color: var(--text);
+      }
+      .footer-meta {
         display: flex;
         flex-wrap: wrap;
         justify-content: space-between;
         gap: 12px;
+        padding-top: 20px;
       }
       details summary {
         cursor: pointer;
       }
       .credits {
-        flex-basis: 100%;
-        margin: 8px 0 0;
+        margin: 12px 0 0;
         max-width: 92ch;
       }
       code {
@@ -482,6 +524,21 @@
           flex-basis: 100%;
           margin-right: 0;
           text-align: center;
+        }
+        .footer-main {
+          grid-template-columns: minmax(0, 1fr);
+          gap: 32px;
+        }
+        .footer-links {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        /* Linhas mais altas no toque, sem mudar o tamanho do texto. */
+        .footer-links ul {
+          gap: 0;
+        }
+        .footer-links a {
+          display: inline-block;
+          padding: 6px 0;
         }
       }
       @media (max-width: 420px) {
@@ -704,12 +761,53 @@
 
     <footer>
       <div class="wrap">
-        <span>Prancha 0.4.0 · Código aberto (MIT) · <a href="https://github.com/CAKeysama/prancha">GitHub</a></span>
-        <details>
-          <summary>Verificar o download (SHA-256)</summary>
-          <p>EXE <code>229bcf20e2b5aa1c683bfa04d09d19787b265ab59e7f63f4030ee8d36b9a6d3c</code></p>
-          <p>MSI <code>238a02d60ebd05e84e62b5a9707cb17c17f0e09d04580ea525edd6203d40e1d0</code></p>
-        </details>
+        <div class="footer-main">
+          <div class="footer-brand">
+            <a class="brand" href="#" aria-label="Prancha, voltar ao início">
+              <svg viewBox="64 64 896 896" aria-hidden="true">
+                <rect x="64" y="64" width="896" height="896" rx="200" fill="var(--accent-emphasis)" />
+                <rect x="232" y="224" width="250" height="576" rx="36" fill="#fff" />
+                <rect x="542" y="224" width="250" height="258" rx="36" fill="#fff" />
+                <rect x="542" y="542" width="250" height="258" rx="36" fill="#fff" fill-opacity="0.72" />
+              </svg>
+              Prancha
+            </a>
+            <p>Leitor de quadrinhos para Windows, que funciona sem internet.</p>
+          </div>
+          <nav class="footer-links" aria-label="Rodapé">
+            <div>
+              <h2>Baixar</h2>
+              <ul>
+                <li><a href="https://github.com/CAKeysama/prancha/releases/download/v0.4.0/Prancha_0.4.0_x64-setup.exe">Instalador</a></li>
+                <li><a href="https://github.com/CAKeysama/prancha/releases/download/v0.4.0/Prancha_0.4.0_x64_pt-BR.msi">Versão MSI</a></li>
+                <li><a href="downloads">Todas as versões</a></li>
+              </ul>
+            </div>
+            <div>
+              <h2>Projeto</h2>
+              <ul>
+                <li><a href="https://github.com/CAKeysama/prancha">Código no GitHub</a></li>
+                <li><a href="https://github.com/CAKeysama/prancha/blob/main/CHANGELOG.md">O que mudou</a></li>
+                <li><a href="https://github.com/CAKeysama/prancha/blob/main/LICENSE">Licença MIT</a></li>
+              </ul>
+            </div>
+            <div>
+              <h2>Ajuda</h2>
+              <ul>
+                <li><a href="https://github.com/CAKeysama/prancha/issues/new">Relatar um problema</a></li>
+                <li><a href="https://github.com/CAKeysama/prancha/blob/main/docs/extensions/README.md">Fontes de leitura</a></li>
+              </ul>
+            </div>
+          </nav>
+        </div>
+        <div class="footer-meta">
+          <span>Prancha 0.4.0 · Código aberto (MIT)</span>
+          <details>
+            <summary>Verificar o download (SHA-256)</summary>
+            <p>EXE <code>229bcf20e2b5aa1c683bfa04d09d19787b265ab59e7f63f4030ee8d36b9a6d3c</code></p>
+            <p>MSI <code>238a02d60ebd05e84e62b5a9707cb17c17f0e09d04580ea525edd6203d40e1d0</code></p>
+          </details>
+        </div>
         <p class="credits">
           Imagens do próprio app. <em>Ultra Equipado</em> (Overgeared): história de Lee Dong Wook e Park Saenal, arte de Team Argo, estúdio Redice, lida por uma fonte externa.
           <a href="https://www.peppercarrot.com"><em>Pepper&amp;Carrot</em></a>: David Revoy, <a href="https://creativecommons.org/licenses/by/4.0/deed.pt-br">CC BY 4.0</a>.
