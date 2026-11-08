@@ -346,6 +346,8 @@ describe("janela de novidades", () => {
 describe("seção Atualizações", () => {
   const openSection = async (user: ReturnType<typeof userEvent.setup>) => {
     await user.click(await screen.findByRole("button", { name: "Configurações" }));
+    // As opções ficam por categoria.
+    await user.click(within(await screen.findByRole("navigation", { name: "Categorias das configurações" })).getByRole("button", { name: "Atualizações" }));
     return screen.findByRole("region", { name: "Atualizações" });
   };
 

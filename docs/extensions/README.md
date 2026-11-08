@@ -30,6 +30,19 @@ Se a chave de um repositório mudar, a sincronização para, o último catálogo
 
 Remover um repositório tira o catálogo dele da lista. As extensões já instaladas continuam funcionando, mas não recebem atualizações, e nada da biblioteca é apagado.
 
+## Recomendados
+
+Abaixo da lista, **Repositórios** mostra uma lista curta mantida pelo projeto. Só entram repositórios que o Prancha adiciona e usa hoje: um formato que precisaria de adaptação só aparece aqui depois que o adaptador existir, como aconteceu com o do Mihon. **Adicionar** segue os passos acima, e a chave aparece antes de você confiar.
+
+A lista é o arquivo [`extensions/recomendados.json`](../../extensions/recomendados.json) deste repositório. O aplicativo traz uma cópia, guarda a última baixada na pasta de dados e consulta a publicada na ramificação `main` no máximo uma vez por dia (ou quando você escolhe **Atualizar lista**). Sem rede, ou com um arquivo publicado inválido, continua com a cópia que já tem.
+
+A lista só descreve. Ela não traz código, não muda configurações e não adiciona nada sozinha. Cada entrada é conferida antes de aparecer, e a que não passar é descartada:
+
+- `schemaVersion` precisa ser `1`; no máximo 30 entradas, e um `id` repetido vale só na primeira.
+- `id`: letras minúsculas, dígitos, `.`, `-` e `_`, até 64 caracteres.
+- `name` até 60 caracteres; `description` e `note` até 240; nenhum caractere de controle.
+- `url` é obrigatório e precisa ser HTTPS, na porta 443, num endereço público.
+
 ## Instalar, atualizar e remover extensões
 
 Em **Extensões**, a aba **Disponíveis** mostra o catálogo dos seus repositórios, com pesquisa, filtro por idioma e ordenação. Abra uma extensão para ver as permissões dela antes de instalar:

@@ -42,7 +42,7 @@ export const TextField = forwardRef<HTMLInputElement, FieldProps & InputHTMLAttr
   },
 );
 
-export function TextArea({ label, hint, badge, className, id, ...rest }: FieldProps & TextareaHTMLAttributes<HTMLTextAreaElement>) {
+export function TextArea({ label, hint, error, badge, className, id, ...rest }: FieldProps & TextareaHTMLAttributes<HTMLTextAreaElement>) {
   const auto = useId();
   const inputId = id ?? auto;
   return (
@@ -51,8 +51,18 @@ export function TextArea({ label, hint, badge, className, id, ...rest }: FieldPr
         {label}
         {badge}
       </label>
-      <textarea id={inputId} className={cn(CONTROL, "min-h-20 py-1.5")} {...rest} />
-      {hint && <p className="mt-1 text-xs text-muted">{hint}</p>}
+      <textarea
+        id={inputId}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={hint || error ? `${inputId}-hint` : undefined}
+        className={cn(CONTROL, "min-h-20 py-1.5", error && "border-danger")}
+        {...rest}
+      />
+      {(error || hint) && (
+        <p id={`${inputId}-hint`} className={cn("mt-1 text-xs", error ? "text-danger" : "text-muted")}>
+          {error ?? hint}
+        </p>
+      )}
     </div>
   );
 }

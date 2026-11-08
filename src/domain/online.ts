@@ -25,6 +25,25 @@ export interface RepositoryPreview {
   external: boolean;
 }
 
+/** Só entra na lista o que o Prancha adiciona e usa hoje. */
+export interface RecommendedRepository {
+  id: string;
+  name: string;
+  description: string;
+  url: string;
+  note: string | null;
+  added: boolean;
+}
+
+export interface RecommendedList {
+  entries: RecommendedRepository[];
+  origin: "remote" | "cache" | "bundled";
+  fetchedAt: number | null;
+  /** A cópia passou de um dia, ou é a embutida: vale pedir a publicada. */
+  stale: boolean;
+  error: string | null;
+}
+
 export type RepositoryStatus = "pending" | "ok" | "error" | "key_changed";
 
 export interface RepositoryInfo {

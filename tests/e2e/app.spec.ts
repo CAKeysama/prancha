@@ -356,29 +356,43 @@ test.describe.serial("biblioteca, formatos e leitor", () => {
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   });
 
-  test("o menu das configurações acompanha a rolagem", async () => {
+  test("configurações por categoria, sem a janela rolar", async () => {
     const page = app.page;
-    const nav = page.getByRole("navigation", { name: "Seções das configurações" });
-    const expectCurrent = (name: string) => expect(nav.getByRole("link", { name })).toHaveAttribute("aria-current", "true");
-    const scrollTo = (id: string, block: ScrollLogicalPosition = "start") => page.locator(`#settings-${id}`).evaluate((el, b) => el.scrollIntoView({ block: b }), block);
-
-    await scrollTo("biblioteca");
-    await expectCurrent("Biblioteca");
-    await scrollTo("geral", "end");
-    await expectCurrent("Geral");
-    await scrollTo("aparencia");
-    await expectCurrent("Aparência");
-
-    // O clique vale até o fim da rolagem, mesmo que a seção não chegue ao topo.
-    await nav.getByRole("link", { name: "Atualizações" }).click();
-    await page.waitForTimeout(1500);
-    await expectCurrent("Atualizações");
-    await scrollTo("aparencia");
-    await expectCurrent("Aparência");
+    const nav = page.getByRole("navigation", { name: "Categorias das configurações" });
+    // A barra lateral ocupa a altura toda e o documento nunca rola: só a área de conteúdo.
+    const windowStill = async () => {
+      const state = await page.evaluate(() => {
+        const bar = document.querySelector('nav[aria-label="Navegação principal"]')!.getBoundingClientRect();
+        return { scroll: document.scrollingElement!.scrollTop, top: bar.top, bottom: bar.bottom, height: window.innerHeight };
+      });
+      expect(state).toEqual({ scroll: 0, top: 0, bottom: state.height, height: state.height });
+    };
+    for (const size of [
+      { width: 1280, height: 800 },
+      { width: 900, height: 600 },
+      { width: 720, height: 520 },
+    ]) {
+      await page.setViewportSize(size);
+      for (const name of ["Leitura", "Atualizações", "Geral"]) {
+        await nav.getByRole("button", { name }).click();
+        await expect(nav.getByRole("button", { name })).toHaveAttribute("aria-current", "true");
+        await windowStill();
+      }
+      // A causa do defeito: pedir para mostrar algo que a área interna não consegue levar ao topo rolava o documento.
+      await page.locator("#setting-sobre").evaluate((el) => el.scrollIntoView({ block: "start" }));
+      await windowStill();
+    }
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.getByRole("searchbox", { name: "Pesquisar nas configurações" }).fill("atalhos");
+    await page.getByRole("region", { name: "Resultados da pesquisa" }).getByRole("button", { name: /^Atalhos de teclado/ }).click();
+    await expect(nav.getByRole("button", { name: "Leitura" })).toHaveAttribute("aria-current", "true");
+    await expect(page.locator("#setting-atalhos")).toBeInViewport();
+    await windowStill();
   });
 
   test("limpar miniaturas não apaga o progresso", async () => {
     const page = app.page;
+    await page.getByRole("navigation", { name: "Categorias das configurações" }).getByRole("button", { name: "Armazenamento" }).click();
     await page.getByRole("button", { name: "Limpar miniaturas" }).click();
     await page.getByRole("dialog", { name: "Limpar as miniaturas?" }).getByRole("button", { name: "Limpar miniaturas" }).click();
     await goLibrary(page);

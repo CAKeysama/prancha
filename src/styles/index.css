@@ -112,6 +112,11 @@
   #root {
     height: 100%;
   }
+  /* A janela nunca rola: só as áreas internas. Com `hidden` no body, um scrollIntoView ou o foco
+     num elemento posicionado fora da tela ainda rolava o documento e deslocava a barra lateral. */
+  html {
+    overflow: hidden;
+  }
   body {
     margin: 0;
     background: var(--color-bg);
@@ -120,7 +125,9 @@
     font-size: var(--text-base);
     line-height: var(--text-base--line-height);
     -webkit-font-smoothing: antialiased;
-    overflow: hidden;
+    /* `relative` contém os elementos absolutos (rótulos só para leitor de tela); `clip` corta sem virar área de rolagem. */
+    position: relative;
+    overflow: clip;
     user-select: none;
   }
   /* Troca de tema discreta, sem mexer no layout. */

@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Boxes, MoreHorizontal, Plus, RefreshCw, ShieldAlert, TriangleAlert } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Boxes, Check, MoreHorizontal, Plus, RefreshCw, ShieldAlert, TriangleAlert } from "lucide-react";
 import { Button, IconButton } from "../../components/Button";
 import { ConfirmDialog, Dialog } from "../../components/Dialog";
 import { EmptyState, ErrorState, Spinner } from "../../components/Feedback";
@@ -9,7 +9,7 @@ import { PageHeader } from "../../components/PageHeader";
 import { useToast } from "../../components/Toast";
 import { useLibraryData } from "../../app/library-events";
 import { useSettings } from "../../app/settings-context";
-import { groupedFingerprint, type RepositoryInfo, type RepositoryPreview } from "../../domain/online";
+import { groupedFingerprint, type RecommendedList, type RepositoryInfo, type RepositoryPreview } from "../../domain/online";
 import { formatDate } from "../../domain/progress";
 import { api, errorMessage } from "../../services/api";
 import { Fact } from "./parts";
@@ -19,13 +19,27 @@ function extensionCount(count: number): string {
 }
 
 /** Endereço, revisão da chave e confirmação explícita: nada é confiado sem a pessoa ver a impressão digital. */
-function AddRepositoryDialog({ onClose, onAdded }: { onClose: () => void; onAdded: () => void }) {
+function AddRepositoryDialog({ initialAddress = "", onClose, onAdded }: { initialAddress?: string; onClose: () => void; onAdded: () => void }) {
   const toast = useToast();
   const { settings } = useSettings();
-  const [address, setAddress] = useState("");
+  const [address, setAddress] = useState(initialAddress);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(Boolean(initialAddress));
   const [preview, setPreview] = useState<RepositoryPreview | null>(null);
+
+  // Um recomendado já chega com o endereço: a consulta começa sozinha, e a pessoa ainda revisa e confirma a chave.
+  useEffect(() => {
+    if (!initialAddress) return;
+    let alive = true;
+    api
+      .repositoryPreview(initialAddress)
+      .then((found) => alive && setPreview(found))
+      .catch((e) => alive && setError(errorMessage(e)))
+      .finally(() => alive && setBusy(false));
+    return () => {
+      alive = false;
+    };
+  }, [initialAddress]);
 
   const review = async () => {
     setBusy(true);
@@ -142,6 +156,92 @@ function AddRepositoryDialog({ onClose, onAdded }: { onClose: () => void; onAdde
   );
 }
 
+/** A lista curta mantida pelo projeto, só com repositórios que o Prancha adiciona e usa. */
+function Recommended({ addedUrls, onAdd }: { addedUrls: string; onAdd: (address: string) => void }) {
+  const toast = useToast();
+  const [list, setList] = useState<RecommendedList | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // A cópia do computador aparece na hora; a publicada é consultada depois, se a cópia passou de um dia.
+  // `addedUrls` muda quando um repositório entra ou sai, e o “Adicionado” é recalculado.
+  useEffect(() => {
+    let alive = true;
+    api
+      .repositoriesRecommended(false)
+      .then((local) => {
+        if (!alive) return;
+        setList(local);
+        if (!local.stale) return;
+        setRefreshing(true);
+        return api
+          .repositoriesRecommended(true)
+          .then((fresh) => alive && setList(fresh))
+          .finally(() => alive && setRefreshing(false));
+      })
+      .catch((e) => alive && setFailure(errorMessage(e)));
+    return () => {
+      alive = false;
+    };
+  }, [addedUrls]);
+
+  const refresh = async () => {
+    setRefreshing(true);
+    try {
+      setList(await api.repositoriesRecommended(true));
+    } catch (e) {
+      toast.error("Não foi possível atualizar a lista", errorMessage(e));
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  if (list && !list.entries.length) return null;
+  return (
+    <section aria-labelledby="recommended-title" className="mt-8">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <h2 id="recommended-title" className="text-lg font-semibold">
+            Recomendados
+          </h2>
+          <p className="text-sm text-muted">Lista mantida pelo projeto Prancha. Adicionar sempre mostra a chave do repositório antes de você confiar.</p>
+        </div>
+        <Button size="sm" variant="ghost" icon={RefreshCw} loading={refreshing} onClick={() => void refresh()}>
+          Atualizar lista
+        </Button>
+      </div>
+      {failure && !list && <p className="mt-3 text-sm text-danger">{failure}</p>}
+      {!list && !failure && <Spinner label="Carregando…" />}
+      {list?.error && (
+        <p role="status" className="mt-2 text-sm text-muted">
+          {list.error} {list.origin === "cache" ? `Mostrando a lista salva em ${formatDate(list.fetchedAt)}.` : "Mostrando a lista que veio com o aplicativo."}
+        </p>
+      )}
+      <ul className="mt-3 space-y-2">
+        {list?.entries.map((entry) => (
+          <li key={entry.id} className="flex flex-wrap items-start gap-3 rounded-lg border border-border bg-surface p-4">
+            <div className="min-w-56 flex-1">
+              <p className="font-semibold">{entry.name}</p>
+              <p className="mt-0.5 text-sm">{entry.description}</p>
+              {entry.note && <p className="mt-1 text-sm text-muted">{entry.note}</p>}
+            </div>
+            {entry.added ? (
+              <span className="inline-flex h-8 items-center gap-1.5 text-sm text-muted">
+                <Check size={14} aria-hidden />
+                Adicionado
+              </span>
+            ) : (
+              <Button icon={Plus} aria-label={`Adicionar ${entry.name}`} onClick={() => onAdd(entry.url)}>
+                Adicionar
+              </Button>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function statusLine(repository: RepositoryInfo): string {
   if (!repository.enabled) return "Desabilitado";
   if (repository.status === "pending") return "Ainda não sincronizado";
@@ -226,7 +326,8 @@ function KeyChangeDialog({ repository, onClose, onDone }: { repository: Reposito
 export function RepositoriesScreen() {
   const toast = useToast();
   const { data: repositories, error, reload } = useLibraryData(() => api.repositories(), []);
-  const [adding, setAdding] = useState(false);
+  /** O endereço com que o diálogo abre: vazio pelo botão do topo, preenchido por um recomendado. */
+  const [adding, setAdding] = useState<string | null>(null);
   const [details, setDetails] = useState<RepositoryInfo | null>(null);
   const [keyChange, setKeyChange] = useState<RepositoryInfo | null>(null);
   const [removing, setRemoving] = useState<RepositoryInfo | null>(null);
@@ -279,11 +380,6 @@ export function RepositoriesScreen() {
     reload();
   };
 
-  const add = (
-    <Button variant="primary" icon={Plus} onClick={() => setAdding(true)}>
-      Adicionar
-    </Button>
-  );
   return (
     <div className="h-full overflow-y-auto">
       <PageHeader
@@ -295,7 +391,9 @@ export function RepositoriesScreen() {
                 Atualizar todos
               </Button>
             )}
-            {add}
+            <Button variant="primary" icon={Plus} onClick={() => setAdding("")}>
+              Adicionar
+            </Button>
           </>
         }
       />
@@ -303,8 +401,8 @@ export function RepositoriesScreen() {
         {error && !repositories && <ErrorState title="Não foi possível abrir os repositórios" message={error} />}
         {!error && !repositories && <Spinner label="Carregando…" />}
         {repositories?.length === 0 && (
-          <EmptyState icon={Boxes} title="Nenhum repositório" actions={add}>
-            Repositórios oferecem extensões de fontes de leitura.
+          <EmptyState icon={Boxes} title="Nenhum repositório">
+            Repositórios oferecem extensões de fontes de leitura. Use “Adicionar”, no topo, para colar um endereço, ou escolha um dos recomendados abaixo.
           </EmptyState>
         )}
         <ul>
@@ -340,8 +438,9 @@ export function RepositoriesScreen() {
             </li>
           ))}
         </ul>
+        {repositories && <Recommended addedUrls={repositories.map((r) => r.url).join("\n")} onAdd={setAdding} />}
       </div>
-      {adding && <AddRepositoryDialog onClose={() => setAdding(false)} onAdded={reload} />}
+      {adding !== null && <AddRepositoryDialog initialAddress={adding} onClose={() => setAdding(null)} onAdded={reload} />}
       {details && <DetailsDialog repository={details} onClose={() => setDetails(null)} />}
       {keyChange && <KeyChangeDialog repository={keyChange} onClose={() => setKeyChange(null)} onDone={reload} />}
       <ConfirmDialog open={removing !== null} title={`Remover ${removing?.name ?? ""}?`} confirmLabel="Remover" destructive onCancel={() => setRemoving(null)} onConfirm={() => void remove()}>

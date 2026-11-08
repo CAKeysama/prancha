@@ -26,6 +26,7 @@ import type {
   RepositoryInfo,
   RepositoryPreview,
   LibrarySeries,
+  RecommendedList,
   SeriesCard,
   SeriesView,
   SourceSummary,
@@ -134,8 +135,11 @@ export const api = {
   updatesCancel: () => call<void>("updates_cancel"),
   updatesHistory: (force: boolean) => call<UpdatesHistory>("updates_history", { force }),
   updatesOpenRelease: (version: string) => call<void>("updates_open_release", { version }),
+  /** Abre o formulário do GitHub já preenchido; quem envia é a pessoa, lá. */
+  openImprovementForm: (title: string, text: string) => call<void>("open_improvement_form", { title, text }),
 
   repositories: () => call<RepositoryInfo[]>("repositories_list"),
+  repositoriesRecommended: (refresh: boolean) => call<RecommendedList>("repositories_recommended", { refresh }),
   repositoryPreview: (address: string) => call<RepositoryPreview>("repository_preview", { address }),
   repositoryAdd: (address: string, fingerprint: string) => call<RepositoryInfo>("repository_add", { address, fingerprint }),
   repositoryAcceptKey: (id: string, fingerprint: string) => call<RepositoryInfo>("repository_accept_key", { id, fingerprint }),

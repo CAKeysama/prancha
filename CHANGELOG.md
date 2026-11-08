@@ -3,6 +3,37 @@
 Tudo o que mudou em cada versão do Prancha. O projeto segue o [versionamento semântico](https://semver.org/lang/pt-BR/),
 e as notas das releases e a [página de downloads](https://cakeysama.github.io/prancha/) são geradas a partir deste arquivo.
 
+## [0.5.0] - 2026-11-08
+
+Ficou mais fácil saber onde ler uma obra e achar uma opção. A pesquisa mostra em quais fontes cada obra está, o filtro +18 confere as obras antes de mostrar, e as configurações ganharam categorias e pesquisa.
+
+### Novidades
+
+- **Em quais fontes a obra está:** pesquisando em mais de uma fonte, cada obra aparece uma vez, com as fontes onde ela está, cada uma com a sua capa. Só títulos iguais ficam juntos, e a fonte que falhou aparece como "não respondeu", sem contar como se a obra não estivesse lá.
+- **Repositórios recomendados:** Repositórios mostra uma lista curta mantida pelo projeto, só com o que o Prancha adiciona e usa: a demonstração e o Keiyoushi. Adicionar um deles mostra a chave antes de você confiar, como um endereço digitado.
+- **Pesquisa nas configurações:** procure pelo que a opção faz, como tema, idioma, atualização ou atalhos, e vá direto até ela.
+- **Sugerir melhoria:** em Configurações, na categoria Geral, escreva a ideia no próprio app. O Prancha abre o formulário do GitHub com o texto preenchido, e você confere e envia por lá.
+
+### Melhorias
+
+- As configurações agora são separadas por categoria: Aparência, Leitura, Biblioteca, Armazenamento, Atualizações e Geral.
+- Downloads saiu do grupo principal do menu e fica embaixo, antes de Plugins.
+- O aviso de verificação anti-robô tem uma mensagem só. Se o site liberar e continuar recusando, **Procurar em outras fontes** vira o caminho principal.
+
+### Correções
+
+- **Filtro +18 nas listas:** nas fontes do Keiyoushi, obras e capas adultas podiam aparecer em populares, recentes e na pesquisa, porque a lista vem sem gêneros. Agora o Prancha consulta os detalhes da obra antes de mostrar e guarda a resposta.
+- Nas configurações, a janela inteira rolava e a barra lateral saía do lugar.
+- A tela vazia de Repositórios tinha dois botões Adicionar.
+
+### Observações
+
+- Com o filtro +18 ligado, a primeira visita a uma lista do Keiyoushi demora mais, porque cada obra é conferida, e num site lento pode passar de um minuto. As seguintes usam a resposta guardada. Uma fonte que nunca informa gêneros fica vazia com o filtro ligado.
+- Título ou gênero que indique sexualização de menores nunca aparece, com o filtro ligado ou desligado. Nada disso é garantia: a classificação é a declarada por terceiros, e o Prancha lê o título e os gêneros, não as imagens.
+- Para enviar uma sugestão, é preciso ter uma conta no GitHub. Nada é enviado antes de você confirmar na página.
+- O banco de dados se atualiza sozinho na primeira abertura, e a biblioteca e o progresso são mantidos.
+- Requer Windows 10 ou 11 de 64 bits. Os instaladores não têm assinatura digital, então o Windows SmartScreen pode pedir confirmação.
+
 ## [0.4.0] - 2026-11-03
 
 Agora é clicar e ler, de um capítulo para o outro, sem baixar nada e sem botão de próximo. As obras das fontes entram na biblioteca como as HQs, as fontes viraram um plugin opcional, e obras em tiras têm um modo próprio.
