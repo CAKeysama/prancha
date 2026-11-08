@@ -5,7 +5,7 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import userEvent from "@testing-library/user-event";
 import { clearMocks, mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { App } from "../../src/app/App";
-import { chapterFinished, chapterStream, groupByTitle, nextHistory, runLimited, sortedChapters, titleKey, type CatalogItem, type ChapterView, type DownloadView, type RepositoryInfo, type SeriesCard, type SourceSummary } from "../../src/domain/online";
+import { chapterFinished, chapterStream, groupByTitle, nextHistory, runLimited, sortedChapters, titleKey, type CatalogItem, type ChapterView, type DownloadView, type RecommendedList, type RepositoryInfo, type SeriesCard, type SourceSummary } from "../../src/domain/online";
 
 const MIHON_MESSAGE = "Este repositório distribui extensões para Mihon e não possui pacotes compatíveis com o Prancha.";
 const FINGERPRINT = "6660b9881c97baa88baa6554bd13968143242814febe85825bc8a69b736ff054";
@@ -118,6 +118,7 @@ beforeEach(() => {
     list_collections: () => [],
     updates_snapshot: () => ({ currentVersion: "0.2.0", available: null, declinedVersion: null, failedVersion: null, welcome: null, updatedAt: null, lastCheckAt: null, needsAdmin: false }),
     repositories_list: () => [],
+    repositories_recommended: () => ({ entries: [], origin: "bundled", fetchedAt: null, stale: false, error: null }),
     extension_catalog: () => [],
     extension_catalog_languages: () => [],
     extensions_list: () => [],
@@ -164,6 +165,94 @@ describe("Plugins", () => {
     await waitFor(() => expect(calls.some((c) => c.cmd === "online_stop")).toBe(true));
     for (const name of ONLINE) expect(screen.queryByRole("button", { name })).toBeNull();
     expect(calls.find((c) => c.cmd === "set_setting" && c.args.key === "plugins.online")?.args.value).toBe(false);
+  });
+});
+
+const RECOMMENDED: RecommendedList = {
+  entries: [
+    { id: "keiyoushi", name: "Keiyoushi", description: "Extensões para o Mihon.", url: "https://github.com/keiyoushi/extensions/raw/repo/index.pb", note: "Roda pelo Suwayomi.", added: false },
+    { id: "demo", name: "Demonstração do Prancha", description: "Obras de teste.", url: "https://exemplo.test/prancha-repo.json", note: null, added: true },
+  ],
+  origin: "cache",
+  fetchedAt: 1,
+  stale: false,
+  error: null,
+};
+
+describe("Repositórios recomendados", () => {
+  it("sem repositórios, mostra um só botão de adicionar", async () => {
+    await open("Repositórios");
+    expect(await screen.findByText("Nenhum repositório")).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "Adicionar" })).toHaveLength(1);
+  });
+
+  it("oferece adicionar só o que ainda não está na lista", async () => {
+    handlers.repositories_recommended = () => RECOMMENDED;
+    await open("Repositórios");
+    const section = await screen.findByRole("region", { name: "Recomendados" });
+    const [keiyoushi, demo] = within(section).getAllByRole("listitem");
+    expect(within(keiyoushi!).getByText("Roda pelo Suwayomi.")).toBeTruthy();
+    expect(within(keiyoushi!).getByRole("button", { name: "Adicionar Keiyoushi" })).toBeTruthy();
+    expect(within(demo!).getByText("Adicionado")).toBeTruthy();
+    expect(within(demo!).queryByRole("button")).toBeNull();
+  });
+
+  it("adicionar um recomendado passa pela revisão da chave", async () => {
+    handlers.repositories_recommended = () => RECOMMENDED;
+    handlers.repository_preview = () => ({
+      url: "https://github.com/keiyoushi/extensions/raw/repo/repo.json",
+      id: "mihon-0123456789abcdef",
+      name: "Keiyoushi",
+      description: null,
+      website: null,
+      publicKey: "",
+      fingerprint: FINGERPRINT,
+      extensionCount: 10,
+      alreadyAdded: false,
+      external: true,
+    });
+    await open("Repositórios");
+    await userEvent.click(await screen.findByRole("button", { name: "Adicionar Keiyoushi" }));
+    const dialog = await screen.findByRole("dialog", { name: "Confiar neste repositório?" });
+    expect(calls.find((c) => c.cmd === "repository_preview")?.args).toEqual({ address: RECOMMENDED.entries[0]!.url });
+    expect(within(dialog).getByText(/sem o isolamento do Prancha/)).toBeTruthy();
+    expect(calls.some((c) => c.cmd === "repository_add")).toBe(false);
+  });
+
+  it("um recomendado que falha na consulta deixa o endereço para corrigir", async () => {
+    handlers.repositories_recommended = () => RECOMMENDED;
+    handlers.repository_preview = () => reject("repo_network", "Não foi possível conectar ao repositório.");
+    await open("Repositórios");
+    await userEvent.click(await screen.findByRole("button", { name: "Adicionar Keiyoushi" }));
+    expect(await screen.findByText("Não foi possível conectar ao repositório.")).toBeTruthy();
+    expect((screen.getByLabelText("Endereço") as HTMLInputElement).value).toBe(RECOMMENDED.entries[0]!.url);
+  });
+
+  it("uma cópia antiga aparece na hora e é trocada pela publicada", async () => {
+    handlers.repositories_recommended = ({ refresh }) => (refresh ? { ...RECOMMENDED, origin: "remote" } : { ...RECOMMENDED, entries: [RECOMMENDED.entries[1]!], stale: true });
+    await open("Repositórios");
+    expect(await screen.findByText("Keiyoushi")).toBeTruthy();
+    expect(calls.filter((c) => c.cmd === "repositories_recommended").map((c) => c.args.refresh)).toEqual([false, true]);
+  });
+
+  it("sem rede, avisa e mostra a lista salva", async () => {
+    handlers.repositories_recommended = () => ({ ...RECOMMENDED, error: "Não foi possível consultar a lista mais recente agora." });
+    await open("Repositórios");
+    expect(await screen.findByText(/Não foi possível consultar a lista mais recente agora\. Mostrando a lista salva em/)).toBeTruthy();
+    expect(screen.getByText("Keiyoushi")).toBeTruthy();
+  });
+});
+
+describe("Barra lateral", () => {
+  it("deixa Downloads com os utilitários, depois das telas de leitura online", async () => {
+    render(<App />);
+    const nav = await screen.findByRole("navigation", { name: "Navegação principal" });
+    const downloads = await within(nav).findByRole("button", { name: "Downloads" });
+    const repositories = within(nav).getByRole("button", { name: "Repositórios" });
+    const plugins = within(nav).getByRole("button", { name: "Plugins" });
+    expect(repositories.compareDocumentPosition(downloads) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(downloads.compareDocumentPosition(plugins) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(downloads.closest("ul")).toBeNull();
   });
 });
 

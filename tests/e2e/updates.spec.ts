@@ -94,6 +94,7 @@ for (const theme of ["dark", "light"]) {
     test("seção Atualizações nas configurações", async () => {
       const page = app.page;
       await page.getByRole("button", { name: "Configurações" }).click();
+      await page.getByRole("navigation", { name: "Categorias das configurações" }).getByRole("button", { name: "Atualizações" }).click();
       const section = page.getByRole("region", { name: "Atualizações" });
       await expect(section.getByText(`v${current}`, { exact: true })).toBeVisible();
       await expect(section.getByText(`Nova versão: v${NEXT}`)).toBeVisible();
@@ -138,6 +139,7 @@ for (const theme of ["dark", "light"]) {
       await shot("indicador-estreito");
 
       await narrow.getByRole("button", { name: "Configurações" }).click();
+      await narrow.getByRole("navigation", { name: "Categorias das configurações" }).getByRole("button", { name: "Atualizações" }).click();
       const section = narrow.getByRole("region", { name: "Atualizações" });
       const row = section.getByRole("list", { name: "Versões publicadas" }).getByText("v0.0.1");
       await row.scrollIntoViewIfNeeded();

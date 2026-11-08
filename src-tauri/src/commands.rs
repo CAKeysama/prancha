@@ -20,6 +20,7 @@ use crate::error::{AppError, AppResult};
 use crate::extensions::downloads::{self, DownloadView};
 use crate::extensions::install::{self, InstalledExtension};
 use crate::extensions::net::Cancel;
+use crate::extensions::recommended::{self, RecommendedList};
 use crate::extensions::repository::{self, CatalogItem, CatalogQuery, RepositoryInfo, RepositoryPreview};
 use crate::extensions::sources::{self, BrowsePage, ChapterSession, ComicOrigin, SeriesCard, SeriesView, SourceSummary};
 use crate::extensions::suwayomi;
@@ -842,12 +843,38 @@ pub async fn updates_open_release(app: AppHandle, version: String) -> AppResult<
     open_in_browser(&app, &url)
 }
 
-/// Endereço fixo: a tela não escolhe o que abrir. O formulário é `.github/ISSUE_TEMPLATE/melhoria.yml`.
-const IMPROVEMENT_FORM: &str = "https://github.com/CAKeysama/prancha/issues/new?template=melhoria.yml";
+/// Endereço fixo: a tela só manda o texto. O formulário é `.github/ISSUE_TEMPLATE/melhoria.yml`.
+const IMPROVEMENT_FORM: &str = "https://github.com/CAKeysama/prancha/issues/new";
+const IMPROVEMENT_TEMPLATE: &str = "melhoria.yml";
+/// O campo `id: ideia` do formulário; o GitHub preenche campos pelo `id` na consulta do endereço.
+const IMPROVEMENT_FIELD: &str = "ideia";
+const IMPROVEMENT_TITLE_MAX: usize = 100;
+const IMPROVEMENT_TEXT_MAX: usize = 1500;
+/// Se a pessoa não estiver conectada, o GitHub repete o endereço inteiro no login; 4000 deixa folga para isso.
+const IMPROVEMENT_URL_MAX: usize = 4000;
 
+/// O texto vai codificado na consulta: `&` ou `#` digitados não viram outros parâmetros.
+fn improvement_url(title: &str, text: &str) -> AppResult<String> {
+    let (title, text) = (title.trim(), text.trim());
+    let invalid = |message: &str| Err(AppError::user("invalid", message));
+    if title.is_empty() || text.is_empty() {
+        return invalid("Preencha o título e a descrição.");
+    }
+    if title.chars().count() > IMPROVEMENT_TITLE_MAX || text.chars().count() > IMPROVEMENT_TEXT_MAX {
+        return invalid("O título ou a descrição passou do tamanho máximo.");
+    }
+    let url = url::Url::parse_with_params(IMPROVEMENT_FORM, [("template", IMPROVEMENT_TEMPLATE), ("title", &format!("Melhoria: {title}")), (IMPROVEMENT_FIELD, text)])
+        .map_err(|e| AppError::user("internal", format!("Falha interna: {e}")))?;
+    if url.as_str().len() > IMPROVEMENT_URL_MAX {
+        return invalid("A sugestão ficou longa demais para enviar pelo navegador. Encurte a descrição e tente de novo.");
+    }
+    Ok(url.into())
+}
+
+/// Só abre o formulário já preenchido: quem envia é a pessoa, no GitHub.
 #[tauri::command]
-pub async fn open_improvement_form(app: AppHandle) -> AppResult<()> {
-    open_in_browser(&app, IMPROVEMENT_FORM)
+pub async fn open_improvement_form(app: AppHandle, title: String, text: String) -> AppResult<()> {
+    open_in_browser(&app, &improvement_url(&title, &text)?)
 }
 
 fn open_in_browser(app: &AppHandle, url: &str) -> AppResult<()> {
@@ -863,6 +890,12 @@ fn open_in_browser(app: &AppHandle, url: &str) -> AppResult<()> {
 #[tauri::command]
 pub async fn repositories_list(state: S<'_>) -> AppResult<Vec<RepositoryInfo>> {
     blocking(&state, |c| repository::list(&c.db())).await
+}
+
+/// Lista curta mantida pelo projeto. Só descreve: adicionar continua pela revisão da chave.
+#[tauri::command]
+pub async fn repositories_recommended(state: S<'_>, refresh: bool) -> AppResult<RecommendedList> {
+    blocking(&state, move |c| recommended::load(c, refresh)).await
 }
 
 #[tauri::command]
@@ -1195,7 +1228,33 @@ mod tests {
 
     #[test]
     fn improvement_form_points_to_a_template_in_the_repo() {
-        let (_, file) = IMPROVEMENT_FORM.split_once("template=").unwrap();
-        assert!(Path::new(env!("CARGO_MANIFEST_DIR")).join("../.github/ISSUE_TEMPLATE").join(file).is_file());
+        let template = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../.github/ISSUE_TEMPLATE").join(IMPROVEMENT_TEMPLATE)).unwrap();
+        assert!(template.lines().any(|line| line.trim() == format!("id: {IMPROVEMENT_FIELD}")), "o campo preenchido pelo endereço precisa existir no formulário");
+    }
+
+    #[test]
+    fn improvement_url_carries_the_text_as_plain_values() {
+        let url = url::Url::parse(&improvement_url("  Modo noturno & mais ", "Ler à noite #1\nsem cansar &labels=bug").unwrap()).unwrap();
+        assert_eq!(url.as_str().split('?').next(), Some(IMPROVEMENT_FORM));
+        let pairs: Vec<(String, String)> = url.query_pairs().map(|(k, v)| (k.into_owned(), v.into_owned())).collect();
+        assert_eq!(
+            pairs,
+            [
+                ("template".into(), IMPROVEMENT_TEMPLATE.into()),
+                ("title".into(), "Melhoria: Modo noturno & mais".into()),
+                (IMPROVEMENT_FIELD.into(), "Ler à noite #1\nsem cansar &labels=bug".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn improvement_url_refuses_empty_or_oversized_text() {
+        assert!(improvement_url("  ", "texto").is_err());
+        assert!(improvement_url("Título", "\n ").is_err());
+        assert!(improvement_url(&"a".repeat(IMPROVEMENT_TITLE_MAX + 1), "texto").is_err());
+        assert!(improvement_url("Título", &"a".repeat(IMPROVEMENT_TEXT_MAX + 1)).is_err());
+        // Dentro do limite de caracteres, mas com acentos que triplicam no endereço.
+        assert!(improvement_url("Título", &"çã".repeat(IMPROVEMENT_TEXT_MAX / 2)).is_err());
+        assert!(improvement_url("Título", &"a".repeat(IMPROVEMENT_TEXT_MAX)).is_ok());
     }
 }

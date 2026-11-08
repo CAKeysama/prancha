@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ExternalLink, FolderOpen, GraduationCap, HardDrive, ImageMinus, RefreshCw, RotateCcw, ScanSearch, Scale, Trash2 } from "lucide-react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ChevronRight, ExternalLink, FolderOpen, GraduationCap, HardDrive, ImageMinus, MessageSquarePlus, RefreshCw, RotateCcw, ScanSearch, Scale, Search, SearchX, Trash2, X } from "lucide-react";
 import { Button } from "../../components/Button";
 import { ConfirmDialog, Dialog } from "../../components/Dialog";
-import { Kbd, Spinner } from "../../components/Feedback";
-import { Segmented, Select, Switch, TextField } from "../../components/Form";
+import { EmptyState, Kbd, Spinner } from "../../components/Feedback";
+import { Segmented, Select, Switch, TextArea, TextField } from "../../components/Form";
 import { PageHeader } from "../../components/PageHeader";
 import { useToast } from "../../components/Toast";
 import { cn } from "../../components/cn";
@@ -11,6 +11,7 @@ import { formatBytes, formatDate } from "../../domain/progress";
 import { parseNotes, type ReleaseInfo, type UpdatesHistory } from "../../domain/updates";
 import { FIT_LABELS, MODE_LABELS } from "../../domain/reader";
 import type { Settings } from "../../domain/settings";
+import { PLACE_LABELS, SETTINGS_CATEGORIES, searchSettings, type SettingEntry, type SettingsCategory } from "../../domain/settings-search";
 import {
   DEFAULT_SHORTCUTS,
   SHORTCUT_ACTIONS,
@@ -31,45 +32,60 @@ import { useUpdates } from "../updates/updates-context";
 import { APP_DESCRIPTION, APP_NAME } from "../../app/config";
 import licenses from "../../generated/licenses.json";
 
-const SECTIONS = [
-  { id: "aparencia", label: "Aparência" },
-  { id: "leitura", label: "Leitura" },
-  { id: "biblioteca", label: "Biblioteca" },
-  { id: "armazenamento", label: "Armazenamento" },
-  { id: "atualizacoes", label: "Atualizações" },
-  { id: "geral", label: "Geral" },
-] as const;
+/** A opção escolhida na pesquisa, destacada por um instante. */
+const Highlight = createContext<string | null>(null);
 
-/** Onde o topo de uma seção para quando se rola até ela: o `scroll-mt-20` abaixo, com 1px de folga. */
-const SECTION_TOP = 81;
-
-function Section({ id, title, description, children }: { id: string; title: string; description?: string; children: ReactNode }) {
+/** Âncora de uma opção: o índice da pesquisa (`domain/settings-search.ts`) aponta para estes `id`s. */
+function Anchor({ id, children }: { id: string; children: ReactNode }) {
+  const on = useContext(Highlight) === id;
   return (
-    <section id={`settings-${id}`} aria-labelledby={`settings-${id}-title`} className="scroll-mt-20 border-b border-border py-6 last:border-b-0">
-      <h2 id={`settings-${id}-title`} className="text-lg font-semibold">
-        {title}
-      </h2>
-      {description && <p className="mt-0.5 text-sm text-muted">{description}</p>}
-      <div className="mt-4 space-y-5">{children}</div>
-    </section>
-  );
-}
-
-function SettingRow({ label, description, children }: { label: string; description?: ReactNode; children: ReactNode }) {
-  return (
-    <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2">
-      <div className="min-w-56 flex-1">
-        <p className="font-medium">{label}</p>
-        {description && <p className="text-sm text-muted">{description}</p>}
-      </div>
-      <div className="shrink-0">{children}</div>
+    <div id={`setting-${id}`} className={cn("-mx-3 rounded-md px-3 py-1 transition-colors", on ? "bg-accent-subtle duration-150" : "duration-700")}>
+      {children}
     </div>
   );
 }
 
-function SegmentedRow<T extends string>({ label, description, ...segmented }: { label: string; description?: ReactNode; value: T; onChange: (v: T) => void; options: Array<{ value: T; label: string }> }) {
+function Section({ id, title, description, children }: { id: string; title: string; description?: string; children: ReactNode }) {
   return (
-    <SettingRow label={label} description={description}>
+    <section aria-labelledby={`settings-${id}-title`} className="py-6">
+      <h2 id={`settings-${id}-title`} className="text-lg font-semibold">
+        {title}
+      </h2>
+      {description && <p className="mt-0.5 text-sm text-muted">{description}</p>}
+      <div className="mt-3 space-y-3">{children}</div>
+    </section>
+  );
+}
+
+function SettingRow({ id, label, description, children }: { id: string; label: string; description?: ReactNode; children: ReactNode }) {
+  return (
+    <Anchor id={id}>
+      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2">
+        <div className="min-w-56 flex-1">
+          <p className="font-medium">{label}</p>
+          {description && <p className="text-sm text-muted">{description}</p>}
+        </div>
+        <div className="shrink-0">{children}</div>
+      </div>
+    </Anchor>
+  );
+}
+
+function SegmentedRow<T extends string>({
+  id,
+  label,
+  description,
+  ...segmented
+}: {
+  id: string;
+  label: string;
+  description?: ReactNode;
+  value: T;
+  onChange: (v: T) => void;
+  options: Array<{ value: T; label: string }>;
+}) {
+  return (
+    <SettingRow id={id} label={label} description={description}>
       <Segmented label={label} hideLabel {...segmented} />
     </SettingRow>
   );
@@ -247,32 +263,37 @@ function StorageSection() {
   };
   return (
     <Section id="armazenamento" title="Armazenamento" description="Limpar caches não apaga suas HQs nem o progresso.">
-      <SettingRow label="Pasta de dados do aplicativo" description={info ? <span className="font-mono text-xs break-all select-text">{info.dataDir}</span> : "Carregando…"}>
+      <SettingRow id="pasta" label="Pasta de dados do aplicativo" description={info ? <span className="font-mono text-xs break-all select-text">{info.dataDir}</span> : "Carregando…"}>
         <Button icon={FolderOpen} onClick={() => void api.openDataDir().catch((e) => toast.error("Não foi possível abrir a pasta", errorMessage(e)))}>
           Abrir pasta
         </Button>
       </SettingRow>
-      {info && (
-        <dl className="grid grid-cols-3 gap-3 max-sm:grid-cols-1">
-          {[
-            ["Catálogo (banco de dados)", info.databaseBytes],
-            ["Miniaturas de capas", info.coversBytes],
-            ["Cache de páginas (CBR/CB7)", info.pagesBytes],
-          ].map(([label, bytes]) => (
-            <div key={label as string} className="rounded-md border border-border bg-surface px-3 py-2">
-              <dt className="text-xs text-muted">{label}</dt>
-              <dd className="font-mono text-base">{formatBytes(bytes as number)}</dd>
-            </div>
-          ))}
-        </dl>
-      )}
+      <Anchor id="uso">
+        <p className="font-medium">Espaço usado</p>
+        {info ? (
+          <dl className="mt-2 grid grid-cols-3 gap-3 max-sm:grid-cols-1">
+            {[
+              ["Catálogo (banco de dados)", info.databaseBytes],
+              ["Miniaturas de capas", info.coversBytes],
+              ["Cache de páginas (CBR/CB7)", info.pagesBytes],
+            ].map(([label, bytes]) => (
+              <div key={label as string} className="rounded-md border border-border bg-surface px-3 py-2">
+                <dt className="text-xs text-muted">{label}</dt>
+                <dd className="font-mono text-base">{formatBytes(bytes as number)}</dd>
+              </div>
+            ))}
+          </dl>
+        ) : (
+          <p className="text-sm text-muted">Carregando…</p>
+        )}
+      </Anchor>
       {covers && <Spinner label={`Recriando capas: ${covers.done} de ${covers.total}`} />}
-      <SettingRow label="Limpar miniaturas em cache" description="Remove as capas geradas. Elas são recriadas automaticamente a partir dos arquivos.">
+      <SettingRow id="limpar-miniaturas" label="Limpar miniaturas em cache" description="Remove as capas geradas. Elas são recriadas automaticamente a partir dos arquivos.">
         <Button icon={ImageMinus} loading={busy === "covers"} onClick={() => setConfirm("covers")}>
           Limpar miniaturas
         </Button>
       </SettingRow>
-      <SettingRow label="Limpar cache de páginas" description="Remove as páginas extraídas de arquivos CBR e CB7. Elas são extraídas de novo ao abrir a HQ.">
+      <SettingRow id="limpar-paginas" label="Limpar cache de páginas" description="Remove as páginas extraídas de arquivos CBR e CB7. Elas são extraídas de novo ao abrir a HQ.">
         <Button icon={Trash2} loading={busy === "pages"} onClick={() => setConfirm("pages")}>
           Limpar cache de páginas
         </Button>
@@ -336,10 +357,11 @@ function UpdatesSection() {
   const releases = history?.releases ?? [];
   return (
     <Section id="atualizacoes" title="Atualizações">
-      <SettingRow label="Versão instalada" description={snapshot?.updatedAt ? `Atualizada em ${formatDate(snapshot.updatedAt)}.` : undefined}>
+      <SettingRow id="versao" label="Versão instalada" description={snapshot?.updatedAt ? `Atualizada em ${formatDate(snapshot.updatedAt)}.` : undefined}>
         <span className="font-mono text-base">{snapshot ? `v${snapshot.currentVersion}` : "…"}</span>
       </SettingRow>
       <SettingRow
+        id="procurar"
         label={available ? `Nova versão: v${available.version}` : "Procurar nova versão"}
         description={
           <span role="status">{result ?? (!available && snapshot?.lastCheckAt ? `Última verificação em ${formatDate(snapshot.lastCheckAt)}.` : "")}</span>
@@ -356,15 +378,174 @@ function UpdatesSection() {
           )}
         </div>
       </SettingRow>
-      {history?.stale && <p className="text-sm text-muted">{releases.length ? "Sem conexão: estas são as notas guardadas neste computador." : "Não foi possível carregar as versões agora."}</p>}
-      {releases.length > 0 && (
-        <ul aria-label="Versões publicadas" className="divide-y divide-border rounded-md border border-border bg-surface">
-          {releases.map((release) => (
-            <ReleaseRow key={release.version} release={release} installed={release.version === snapshot?.currentVersion} />
+      <Anchor id="historico">
+        <p className="font-medium">Versões publicadas</p>
+        {!history && <p className="text-sm text-muted">Carregando…</p>}
+        {history?.stale && <p className="text-sm text-muted">{releases.length ? "Sem conexão: estas são as notas guardadas neste computador." : "Não foi possível carregar as versões agora."}</p>}
+        {releases.length > 0 && (
+          <ul aria-label="Versões publicadas" className="mt-2 divide-y divide-border rounded-md border border-border bg-surface">
+            {releases.map((release) => (
+              <ReleaseRow key={release.version} release={release} installed={release.version === snapshot?.currentVersion} />
+            ))}
+          </ul>
+        )}
+      </Anchor>
+    </Section>
+  );
+}
+
+function SearchField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="relative">
+      <Search size={15} aria-hidden className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-muted" />
+      <label htmlFor="settings-search" className="sr-only">
+        Pesquisar nas configurações
+      </label>
+      <input
+        id="settings-search"
+        type="search"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape" && value) {
+            e.stopPropagation();
+            onChange("");
+          }
+        }}
+        placeholder="Pesquisar"
+        autoComplete="off"
+        spellCheck={false}
+        className="h-8 w-full rounded-md border border-border-control bg-bg pr-8 pl-8 text-base placeholder:text-muted focus-visible:border-accent focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-accent [&::-webkit-search-cancel-button]:hidden"
+      />
+      {value && (
+        <button
+          type="button"
+          aria-label="Apagar a pesquisa"
+          onClick={() => onChange("")}
+          className="absolute top-1/2 right-1.5 inline-flex size-6 -translate-y-1/2 items-center justify-center rounded text-muted hover:bg-hover hover:text-fg"
+        >
+          <X size={14} aria-hidden />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function SearchResults({ query, results, onChoose, onClear }: { query: string; results: SettingEntry[]; onChoose: (entry: SettingEntry) => void; onClear: () => void }) {
+  const count = results.length === 1 ? "1 opção encontrada" : `${results.length} opções encontradas`;
+  return (
+    <section aria-label="Resultados da pesquisa" className="py-6">
+      <p role="status" className={cn("text-sm text-muted", !results.length && "sr-only")}>
+        {results.length ? count : "Nenhuma opção encontrada"}
+      </p>
+      {results.length > 0 ? (
+        <ul className="mt-2 divide-y divide-border overflow-hidden rounded-md border border-border">
+          {results.map((entry) => (
+            <li key={entry.id}>
+              <button type="button" onClick={() => onChoose(entry)} className="flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-hover focus-visible:-outline-offset-2">
+                <span className="min-w-0 flex-1">
+                  <span className="block font-medium">{entry.title}</span>
+                  <span className="block text-sm text-muted">{entry.description}</span>
+                </span>
+                <span className="shrink-0 rounded-full border border-border px-2 text-xs text-muted">{PLACE_LABELS[entry.place]}</span>
+                <ChevronRight size={16} aria-hidden className="shrink-0 text-muted" />
+              </button>
+            </li>
           ))}
         </ul>
+      ) : (
+        <EmptyState icon={SearchX} title={`Nada encontrado para “${query.trim()}”`} actions={<Button onClick={onClear}>Limpar pesquisa</Button>}>
+          Tente outra palavra, como “tema”, “atalhos” ou “cache”.
+        </EmptyState>
       )}
-    </Section>
+    </section>
+  );
+}
+
+interface Draft {
+  title: string;
+  text: string;
+}
+const EMPTY_DRAFT: Draft = { title: "", text: "" };
+const TITLE_MAX = 100;
+const TEXT_MAX = 1500;
+
+/** O texto fica com a tela de configurações: fechar ou falhar não apaga o que foi escrito. */
+function SuggestionDialog({ draft, onChange, onClose, onSent }: { draft: Draft; onChange: (d: Draft) => void; onClose: () => void; onSent: () => void }) {
+  const toast = useToast();
+  const [errors, setErrors] = useState<{ title?: string; text?: string }>({});
+  const [failure, setFailure] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const form = useRef<HTMLFormElement>(null);
+  const send = async () => {
+    const next = { title: draft.title.trim() ? undefined : "Escreva um título.", text: draft.text.trim() ? undefined : "Descreva a sua ideia." };
+    setErrors(next);
+    if (next.title || next.text) return;
+    setBusy(true);
+    setFailure(null);
+    try {
+      await api.openImprovementForm(draft.title, draft.text);
+      toast.success("Formulário aberto no navegador", "Confira o texto e envie a sugestão pelo GitHub.");
+      onSent();
+    } catch (e) {
+      setFailure(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  useEffect(() => {
+    // Depois da validação, o foco vai para o primeiro campo vazio.
+    form.current?.querySelector<HTMLElement>("[aria-invalid='true']")?.focus();
+  }, [errors]);
+  return (
+    <Dialog
+      open
+      title="Sugerir uma melhoria"
+      description="A sugestão abre no GitHub já preenchida. Lá, você confere e envia; é preciso ter uma conta, e ela fica pública. Não inclua dados pessoais."
+      onClose={onClose}
+      footer={
+        <>
+          <Button onClick={onClose}>Cancelar</Button>
+          <Button variant="primary" icon={ExternalLink} loading={busy} onClick={() => void send()}>
+            Abrir no GitHub
+          </Button>
+        </>
+      }
+    >
+      <form
+        ref={form}
+        noValidate
+        className="space-y-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!busy) void send();
+        }}
+      >
+        <TextField
+          label="Título"
+          value={draft.title}
+          maxLength={TITLE_MAX}
+          onChange={(e) => onChange({ ...draft, title: e.target.value })}
+          error={errors.title}
+          hint="Uma frase curta, como “Marcar páginas favoritas”."
+          data-autofocus
+        />
+        <TextArea
+          label="Descrição"
+          value={draft.text}
+          maxLength={TEXT_MAX}
+          rows={6}
+          onChange={(e) => onChange({ ...draft, text: e.target.value })}
+          error={errors.text}
+          hint={`O que você gostaria que o Prancha fizesse. ${draft.text.length} de ${TEXT_MAX} caracteres.`}
+        />
+      </form>
+      {failure && (
+        <p role="alert" className="mt-3 text-sm text-danger">
+          {failure}
+        </p>
+      )}
+    </Dialog>
   );
 }
 
@@ -376,33 +557,51 @@ export function SettingsScreen() {
   const nav = useNav();
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [licensesOpen, setLicensesOpen] = useState(false);
+  const [suggesting, setSuggesting] = useState(false);
+  const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [verifying, setVerifying] = useState(false);
-  const [active, setActive] = useState<string>("aparencia");
+  const [category, setCategory] = useState<SettingsCategory>("aparencia");
+  const [query, setQuery] = useState("");
+  const [target, setTarget] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
-  // Depois de um clique, a seção escolhida fica destacada até a rolagem terminar, mesmo que não chegue ao topo.
-  const clicked = useRef(false);
+  const results = useMemo(() => searchSettings(query), [query]);
+  const searching = query.trim().length > 0;
   useEffect(() => void api.appInfo().then(setAppInfo).catch(() => undefined), []);
 
+  // Só a área das configurações rola até a opção escolhida; a janela fica parada.
   useEffect(() => {
-    const el = scroller.current;
-    if (!el) return;
-    const onScroll = () => {
-      if (clicked.current) return;
-      const line = el.getBoundingClientRect().top + SECTION_TOP;
-      const atEnd = el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
-      const current = atEnd ? SECTIONS.length - 1 : SECTIONS.findLastIndex((s) => document.getElementById(`settings-${s.id}`)!.getBoundingClientRect().top <= line);
-      setActive(SECTIONS[Math.max(0, current)]!.id);
-    };
-    const onScrollEnd = () => {
-      clicked.current = false;
-    };
-    el.addEventListener("scroll", onScroll, { passive: true });
-    el.addEventListener("scrollend", onScrollEnd);
-    return () => {
-      el.removeEventListener("scroll", onScroll);
-      el.removeEventListener("scrollend", onScrollEnd);
-    };
-  }, []);
+    if (!target) return;
+    const box = scroller.current;
+    const row = document.getElementById(`setting-${target}`);
+    if (box && row) {
+      const header = box.querySelector("header")?.offsetHeight ?? 0;
+      const top = row.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop - header - 16;
+      box.scrollTo({ top, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+      // Num grupo de opções, o foco vai para a escolhida, como faria o Tab.
+      (row.querySelector<HTMLElement>("[role='radio'][aria-checked='true']") ?? row.querySelector<HTMLElement>("button, input, select, textarea"))?.focus({ preventScroll: true });
+    }
+    const timer = window.setTimeout(() => setTarget(null), 1600);
+    return () => window.clearTimeout(timer);
+  }, [target]);
+
+  const toTop = () => {
+    if (scroller.current) scroller.current.scrollTop = 0;
+  };
+  const openCategory = (id: SettingsCategory) => {
+    setQuery("");
+    setTarget(null);
+    setCategory(id);
+    toTop();
+  };
+  const choose = (entry: SettingEntry) => {
+    setQuery("");
+    if (entry.place === "plugins") {
+      nav.navigate({ name: "plugins" });
+      return;
+    }
+    setCategory(entry.place);
+    setTarget(entry.id);
+  };
 
   const verify = async () => {
     setVerifying(true);
@@ -419,231 +618,281 @@ export function SettingsScreen() {
   return (
     <div ref={scroller} className="h-full overflow-y-auto">
       <PageHeader title="Configurações" />
-      <div className="mx-auto flex max-w-5xl gap-8 px-6">
-        <nav aria-label="Seções das configurações" className="sticky top-20 h-fit w-44 shrink-0 py-6 max-md:hidden">
-          <ul className="space-y-0.5">
-            {SECTIONS.map((s) => (
-              <li key={s.id}>
-                <a
-                  href={`#settings-${s.id}`}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    clicked.current = true;
-                    setActive(s.id);
-                    document.getElementById(`settings-${s.id}`)?.scrollIntoView({ behavior: "smooth" });
-                  }}
-                  aria-current={active === s.id ? "true" : undefined}
-                  className={cn("block rounded-md px-3 py-1.5 text-base", active === s.id ? "bg-hover font-semibold text-fg" : "text-muted hover:bg-hover hover:text-fg")}
-                >
-                  {s.label}
-                </a>
-              </li>
-            ))}
-          </ul>
-        </nav>
+      <div className="mx-auto flex max-w-5xl gap-8 px-6 max-md:flex-col max-md:gap-0">
+        <aside className="w-52 shrink-0 py-6 max-md:w-full max-md:pb-0 md:sticky md:top-14 md:self-start">
+          <SearchField
+            value={query}
+            onChange={(v) => {
+              setQuery(v);
+              toTop();
+            }}
+          />
+          <nav aria-label="Categorias das configurações" className="mt-3">
+            <ul className="flex flex-col gap-0.5 max-md:flex-row max-md:flex-wrap max-md:gap-1">
+              {SETTINGS_CATEGORIES.map((c) => {
+                const current = !searching && c.id === category;
+                return (
+                  <li key={c.id}>
+                    <button
+                      type="button"
+                      onClick={() => openCategory(c.id)}
+                      aria-current={current ? "true" : undefined}
+                      className={cn(
+                        "block w-full rounded-md px-3 py-1.5 text-left text-base max-md:w-auto max-md:border",
+                        current ? "bg-hover font-semibold text-fg max-md:border-border-control" : "text-muted hover:bg-hover hover:text-fg max-md:border-border",
+                      )}
+                    >
+                      {c.label}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </nav>
+        </aside>
         <div className="min-w-0 flex-1">
-          <Section id="aparencia" title="Aparência">
-            <SegmentedRow
-              label="Tema"
-              description={settings["appearance.theme"] === "system" ? `Seguindo o sistema (agora: ${effectiveTheme === "dark" ? "escuro" : "claro"}).` : undefined}
-              value={settings["appearance.theme"]}
-              onChange={(v) => save("appearance.theme", v)}
-              options={[
-                { value: "dark", label: "Escuro" },
-                { value: "light", label: "Claro" },
-                { value: "system", label: "Seguir o sistema" },
-              ]}
-            />
-            <SegmentedRow
-              label="Densidade da biblioteca"
-              value={settings["appearance.density"]}
-              onChange={(v) => save("appearance.density", v)}
-              options={[
-                { value: "comfortable", label: "Confortável" },
-                { value: "compact", label: "Compacta" },
-              ]}
-            />
-            <SegmentedRow
-              label="Visualização da biblioteca"
-              value={settings["library.view"]}
-              onChange={(v) => save("library.view", v)}
-              options={[
-                { value: "grid", label: "Grade" },
-                { value: "list", label: "Lista" },
-              ]}
-            />
-            <SegmentedRow
-              label="Tamanho das miniaturas"
-              value={settings["appearance.thumbSize"]}
-              onChange={(v) => save("appearance.thumbSize", v)}
-              options={[
-                { value: "small", label: "Pequeno" },
-                { value: "medium", label: "Médio" },
-                { value: "large", label: "Grande" },
-              ]}
-            />
-          </Section>
+          {searching ? (
+            <SearchResults query={query} results={results} onChoose={choose} onClear={() => setQuery("")} />
+          ) : (
+            <Highlight.Provider value={target}>
+              {category === "aparencia" && (
+                <Section id="aparencia" title="Aparência">
+                  <SegmentedRow
+                    id="tema"
+                    label="Tema"
+                    description={settings["appearance.theme"] === "system" ? `Seguindo o sistema (agora: ${effectiveTheme === "dark" ? "escuro" : "claro"}).` : undefined}
+                    value={settings["appearance.theme"]}
+                    onChange={(v) => save("appearance.theme", v)}
+                    options={[
+                      { value: "dark", label: "Escuro" },
+                      { value: "light", label: "Claro" },
+                      { value: "system", label: "Seguir o sistema" },
+                    ]}
+                  />
+                  <SegmentedRow
+                    id="densidade"
+                    label="Densidade da biblioteca"
+                    value={settings["appearance.density"]}
+                    onChange={(v) => save("appearance.density", v)}
+                    options={[
+                      { value: "comfortable", label: "Confortável" },
+                      { value: "compact", label: "Compacta" },
+                    ]}
+                  />
+                  <SegmentedRow
+                    id="visualizacao"
+                    label="Visualização da biblioteca"
+                    value={settings["library.view"]}
+                    onChange={(v) => save("library.view", v)}
+                    options={[
+                      { value: "grid", label: "Grade" },
+                      { value: "list", label: "Lista" },
+                    ]}
+                  />
+                  <SegmentedRow
+                    id="miniaturas"
+                    label="Tamanho das miniaturas"
+                    value={settings["appearance.thumbSize"]}
+                    onChange={(v) => save("appearance.thumbSize", v)}
+                    options={[
+                      { value: "small", label: "Pequeno" },
+                      { value: "medium", label: "Médio" },
+                      { value: "large", label: "Grande" },
+                    ]}
+                  />
+                </Section>
+              )}
 
-          <Section id="leitura" title="Leitura">
-            <SettingRow label="Modo de página">
-              <Select label="Modo de página" hideLabel value={settings["reader.mode"]} onChange={(e) => save("reader.mode", e.target.value as Settings["reader.mode"])} className="w-48">
-                {(["single", "double", "vertical", "webtoon"] as const).map((m) => (
-                  <option key={m} value={m}>
-                    {MODE_LABELS[m]}
-                  </option>
-                ))}
-              </Select>
-            </SettingRow>
-            <SegmentedRow
-              label="Direção de leitura"
-              description="Direita para a esquerda é o padrão de mangás."
-              value={settings["reader.direction"]}
-              onChange={(v) => save("reader.direction", v)}
-              options={[
-                { value: "ltr", label: "Esquerda → direita" },
-                { value: "rtl", label: "Direita → esquerda" },
-              ]}
-            />
-            <SettingRow label="Ajuste padrão da imagem">
-              <Select label="Ajuste padrão da imagem" hideLabel value={settings["reader.fit"]} onChange={(e) => save("reader.fit", e.target.value as Settings["reader.fit"])} className="w-48">
-                {(["page", "width", "height"] as const).map((f) => (
-                  <option key={f} value={f}>
-                    {FIT_LABELS[f]}
-                  </option>
-                ))}
-              </Select>
-            </SettingRow>
-            <Switch
-              label="Capa sozinha na página dupla"
-              description="Mostra a primeira página isolada para que os pares fiquem alinhados como no impresso."
-              checked={settings["reader.coverAlone"]}
-              onChange={(v) => save("reader.coverAlone", v)}
-            />
-            <SegmentedRow
-              label="Roda do mouse"
-              description="Em página única ou dupla, ao chegar ao fim da página."
-              value={settings["reader.wheel"]}
-              onChange={(v) => save("reader.wheel", v)}
-              options={[
-                { value: "page", label: "Vira a página" },
-                { value: "scroll", label: "Só rola" },
-              ]}
-            />
-            <SegmentedRow
-              label="Ao avançar depois da última página"
-              value={settings["reader.end"]}
-              onChange={(v) => save("reader.end", v)}
-              options={[
-                { value: "stay", label: "Permanecer no leitor" },
-                { value: "library", label: "Voltar à biblioteca" },
-              ]}
-            />
-            <SegmentedRow
-              label="Controles do leitor"
-              description="Ocultos, reaparecem ao mover o mouse ou pelo botão “Mostrar controles”."
-              value={settings["reader.controls"]}
-              onChange={(v) => save("reader.controls", v)}
-              options={[
-                { value: "autohide", label: "Ocultar sozinhos" },
-                { value: "always", label: "Sempre visíveis" },
-              ]}
-            />
-            <ShortcutEditor />
-          </Section>
+              {category === "leitura" && (
+                <Section id="leitura" title="Leitura">
+                  <SettingRow id="modo" label="Modo de página">
+                    <Select label="Modo de página" hideLabel value={settings["reader.mode"]} onChange={(e) => save("reader.mode", e.target.value as Settings["reader.mode"])} className="w-48">
+                      {(["single", "double", "vertical", "webtoon"] as const).map((m) => (
+                        <option key={m} value={m}>
+                          {MODE_LABELS[m]}
+                        </option>
+                      ))}
+                    </Select>
+                  </SettingRow>
+                  <SegmentedRow
+                    id="direcao"
+                    label="Direção de leitura"
+                    description="Direita para a esquerda é o padrão de mangás."
+                    value={settings["reader.direction"]}
+                    onChange={(v) => save("reader.direction", v)}
+                    options={[
+                      { value: "ltr", label: "Esquerda → direita" },
+                      { value: "rtl", label: "Direita → esquerda" },
+                    ]}
+                  />
+                  <SettingRow id="ajuste" label="Ajuste padrão da imagem">
+                    <Select label="Ajuste padrão da imagem" hideLabel value={settings["reader.fit"]} onChange={(e) => save("reader.fit", e.target.value as Settings["reader.fit"])} className="w-48">
+                      {(["page", "width", "height"] as const).map((f) => (
+                        <option key={f} value={f}>
+                          {FIT_LABELS[f]}
+                        </option>
+                      ))}
+                    </Select>
+                  </SettingRow>
+                  <Anchor id="capa-sozinha">
+                    <Switch
+                      label="Capa sozinha na página dupla"
+                      description="Mostra a primeira página isolada para que os pares fiquem alinhados como no impresso."
+                      checked={settings["reader.coverAlone"]}
+                      onChange={(v) => save("reader.coverAlone", v)}
+                    />
+                  </Anchor>
+                  <SegmentedRow
+                    id="roda"
+                    label="Roda do mouse"
+                    description="Em página única ou dupla, ao chegar ao fim da página."
+                    value={settings["reader.wheel"]}
+                    onChange={(v) => save("reader.wheel", v)}
+                    options={[
+                      { value: "page", label: "Vira a página" },
+                      { value: "scroll", label: "Só rola" },
+                    ]}
+                  />
+                  <SegmentedRow
+                    id="fim"
+                    label="Ao avançar depois da última página"
+                    value={settings["reader.end"]}
+                    onChange={(v) => save("reader.end", v)}
+                    options={[
+                      { value: "stay", label: "Permanecer no leitor" },
+                      { value: "library", label: "Voltar à biblioteca" },
+                    ]}
+                  />
+                  <SegmentedRow
+                    id="controles"
+                    label="Controles do leitor"
+                    description="Ocultos, reaparecem ao mover o mouse ou pelo botão “Mostrar controles”."
+                    value={settings["reader.controls"]}
+                    onChange={(v) => save("reader.controls", v)}
+                    options={[
+                      { value: "autohide", label: "Ocultar sozinhos" },
+                      { value: "always", label: "Sempre visíveis" },
+                    ]}
+                  />
+                  <Anchor id="atalhos">
+                    <ShortcutEditor />
+                  </Anchor>
+                </Section>
+              )}
 
-          <Section id="biblioteca" title="Biblioteca">
-            <SettingRow label="Arquivos duplicados" description="Duplicatas são identificadas pelo conteúdo, não pelo nome do arquivo.">
-              <Select label="Arquivos duplicados" hideLabel value={settings["library.duplicates"]} onChange={(e) => save("library.duplicates", e.target.value as Settings["library.duplicates"])} className="w-56">
-                <option value="skip">Ignorar e avisar</option>
-                <option value="allow">Importar mesmo assim</option>
-              </Select>
-            </SettingRow>
-            <SettingRow label="Ordenação padrão da biblioteca">
-              <div className="flex gap-2">
-                <Select label="Ordenação padrão" hideLabel value={settings["library.sort"]} onChange={(e) => save("library.sort", e.target.value as SortKey)} className="w-44">
-                  <option value="title">Título</option>
-                  <option value="added">Data de adição</option>
-                  <option value="opened">Último acesso</option>
-                  <option value="progress">Progresso</option>
-                </Select>
-                <Select label="Direção da ordenação" hideLabel value={settings["library.sortDesc"] ? "desc" : "asc"} onChange={(e) => save("library.sortDesc", e.target.value === "desc")} className="w-36">
-                  <option value="asc">Crescente</option>
-                  <option value="desc">Decrescente</option>
-                </Select>
-              </div>
-            </SettingRow>
-            <SettingRow label="Verificar arquivos" description="Procura HQs cujos arquivos foram movidos ou excluídos e marca-as como ausentes.">
-              <Button icon={ScanSearch} loading={verifying} onClick={() => void verify()}>
-                Verificar arquivos agora
-              </Button>
-            </SettingRow>
-            <SettingRow label="Atualizar capas" description="Recria todas as miniaturas a partir dos arquivos originais.">
-              <Button
-                icon={RefreshCw}
-                onClick={() =>
-                  void api
-                    .regenerateCovers()
-                    .then(() => toast.info("Recriando capas em segundo plano"))
-                    .catch((e) => toast.error("Não foi possível recriar as capas", errorMessage(e)))
-                }
-              >
-                Recriar todas as capas
-              </Button>
-            </SettingRow>
-          </Section>
+              {category === "biblioteca" && (
+                <Section id="biblioteca" title="Biblioteca">
+                  <SettingRow id="duplicados" label="Arquivos duplicados" description="Duplicatas são identificadas pelo conteúdo, não pelo nome do arquivo.">
+                    <Select label="Arquivos duplicados" hideLabel value={settings["library.duplicates"]} onChange={(e) => save("library.duplicates", e.target.value as Settings["library.duplicates"])} className="w-56">
+                      <option value="skip">Ignorar e avisar</option>
+                      <option value="allow">Importar mesmo assim</option>
+                    </Select>
+                  </SettingRow>
+                  <SettingRow id="ordenacao" label="Ordenação padrão da biblioteca">
+                    <div className="flex gap-2">
+                      <Select label="Ordenação padrão" hideLabel value={settings["library.sort"]} onChange={(e) => save("library.sort", e.target.value as SortKey)} className="w-44">
+                        <option value="title">Título</option>
+                        <option value="added">Data de adição</option>
+                        <option value="opened">Último acesso</option>
+                        <option value="progress">Progresso</option>
+                      </Select>
+                      <Select label="Direção da ordenação" hideLabel value={settings["library.sortDesc"] ? "desc" : "asc"} onChange={(e) => save("library.sortDesc", e.target.value === "desc")} className="w-36">
+                        <option value="asc">Crescente</option>
+                        <option value="desc">Decrescente</option>
+                      </Select>
+                    </div>
+                  </SettingRow>
+                  <SettingRow id="verificar" label="Verificar arquivos" description="Procura HQs cujos arquivos foram movidos ou excluídos e marca-as como ausentes.">
+                    <Button icon={ScanSearch} loading={verifying} onClick={() => void verify()}>
+                      Verificar arquivos agora
+                    </Button>
+                  </SettingRow>
+                  <SettingRow id="capas" label="Atualizar capas" description="Recria todas as miniaturas a partir dos arquivos originais.">
+                    <Button
+                      icon={RefreshCw}
+                      onClick={() =>
+                        void api
+                          .regenerateCovers()
+                          .then(() => toast.info("Recriando capas em segundo plano"))
+                          .catch((e) => toast.error("Não foi possível recriar as capas", errorMessage(e)))
+                      }
+                    >
+                      Recriar todas as capas
+                    </Button>
+                  </SettingRow>
+                </Section>
+              )}
 
-          <StorageSection />
+              {category === "armazenamento" && <StorageSection />}
 
-          <UpdatesSection />
+              {category === "atualizacoes" && <UpdatesSection />}
 
-          <Section id="geral" title="Geral">
-            <SettingRow label="Idioma" description="No momento, a interface está disponível apenas em português do Brasil.">
-              <span className="text-base">Português (Brasil)</span>
-            </SettingRow>
-            <SettingRow label="Tutorial de primeira execução" description="Mostra novamente o passo a passo para adicionar e ler uma HQ.">
-              <Button
-                icon={GraduationCap}
-                onClick={() => {
-                  onboarding.restart();
-                  nav.navigate({ name: "home" });
-                }}
-              >
-                Abrir tutorial
-              </Button>
-            </SettingRow>
-            <SettingRow label="Sugerir uma melhoria" description="Abre um formulário no GitHub, onde é preciso ter uma conta. A sugestão fica pública.">
-              <Button icon={ExternalLink} onClick={() => void api.openImprovementForm().catch((e) => toast.error("Não foi possível abrir o navegador", errorMessage(e)))}>
-                Abrir formulário
-              </Button>
-            </SettingRow>
-            <SettingRow label="Licenças de terceiros">
-              <Button icon={Scale} onClick={() => setLicensesOpen(true)}>
-                Ver licenças
-              </Button>
-            </SettingRow>
-            <div className="rounded-md border border-border bg-surface p-4">
-              <p className="flex items-center gap-2 font-semibold">
-                <HardDrive size={16} aria-hidden /> Sobre o {APP_NAME}
-              </p>
-              <p className="mt-1 text-sm text-muted">{APP_DESCRIPTION}. Funciona no seu computador, sem conta. A internet só é usada para procurar e baixar atualizações.</p>
-              <dl className="mt-3 grid grid-cols-[160px_1fr] gap-y-1 text-sm">
-                <dt className="text-muted">Versão</dt>
-                <dd className="font-mono">{appInfo?.version ?? "…"}</dd>
-                <dt className="text-muted">Tauri</dt>
-                <dd className="font-mono">{appInfo?.tauriVersion ?? "…"}</dd>
-                <dt className="text-muted">Esquema do banco</dt>
-                <dd className="font-mono">{appInfo ? `v${appInfo.schemaVersion}` : "…"}</dd>
-                <dt className="text-muted">Formatos</dt>
-                <dd>CBZ, CBR, CB7, CBT, PDF e pastas de imagens (JPEG, PNG, WebP, GIF, BMP, AVIF)</dd>
-                <dt className="text-muted">Componentes principais</dt>
-                <dd>Tauri, React, SQLite, PDF.js, UnRAR, sevenz-rust2, zip, image</dd>
-              </dl>
-
-            </div>
-          </Section>
+              {category === "geral" && (
+                <Section id="geral" title="Geral">
+                  <SettingRow id="idioma" label="Idioma" description="No momento, a interface está disponível apenas em português do Brasil.">
+                    <span className="text-base">Português (Brasil)</span>
+                  </SettingRow>
+                  <SettingRow id="tutorial" label="Tutorial de primeira execução" description="Mostra novamente o passo a passo para adicionar e ler uma HQ.">
+                    <Button
+                      icon={GraduationCap}
+                      onClick={() => {
+                        onboarding.restart();
+                        nav.navigate({ name: "home" });
+                      }}
+                    >
+                      Abrir tutorial
+                    </Button>
+                  </SettingRow>
+                  <SettingRow id="sugerir" label="Sugerir uma melhoria" description="Escreva sua ideia aqui; ela abre no GitHub já preenchida para você enviar. É preciso ter uma conta, e a sugestão fica pública.">
+                    <Button icon={MessageSquarePlus} onClick={() => setSuggesting(true)}>
+                      Escrever sugestão
+                    </Button>
+                  </SettingRow>
+                  <SettingRow id="licencas" label="Licenças de terceiros">
+                    <Button icon={Scale} onClick={() => setLicensesOpen(true)}>
+                      Ver licenças
+                    </Button>
+                  </SettingRow>
+                  <Anchor id="sobre">
+                    <div className="rounded-md border border-border bg-surface p-4">
+                      <p className="flex items-center gap-2 font-semibold">
+                        <HardDrive size={16} aria-hidden /> Sobre o {APP_NAME}
+                      </p>
+                      <p className="mt-1 text-sm text-muted">
+                        {APP_DESCRIPTION}. Funciona no seu computador, sem conta. A internet é usada para procurar atualizações e, com o plugin Fontes de leitura, para repositórios e fontes online.
+                      </p>
+                      <dl className="mt-3 grid grid-cols-[160px_1fr] gap-y-1 text-sm">
+                        <dt className="text-muted">Versão</dt>
+                        <dd className="font-mono">{appInfo?.version ?? "…"}</dd>
+                        <dt className="text-muted">Tauri</dt>
+                        <dd className="font-mono">{appInfo?.tauriVersion ?? "…"}</dd>
+                        <dt className="text-muted">Esquema do banco</dt>
+                        <dd className="font-mono">{appInfo ? `v${appInfo.schemaVersion}` : "…"}</dd>
+                        <dt className="text-muted">Formatos</dt>
+                        <dd>CBZ, CBR, CB7, CBT, PDF e pastas de imagens (JPEG, PNG, WebP, GIF, BMP, AVIF)</dd>
+                        <dt className="text-muted">Componentes principais</dt>
+                        <dd>Tauri, React, SQLite, PDF.js, UnRAR, sevenz-rust2, zip, image</dd>
+                      </dl>
+                    </div>
+                  </Anchor>
+                </Section>
+              )}
+            </Highlight.Provider>
+          )}
         </div>
       </div>
       <LicensesDialog open={licensesOpen} onClose={() => setLicensesOpen(false)} />
+      {suggesting && (
+        <SuggestionDialog
+          draft={draft}
+          onChange={setDraft}
+          onClose={() => setSuggesting(false)}
+          onSent={() => {
+            setDraft(EMPTY_DRAFT);
+            setSuggesting(false);
+          }}
+        />
+      )}
     </div>
   );
 }

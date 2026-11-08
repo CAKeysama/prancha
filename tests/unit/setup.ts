@@ -27,6 +27,7 @@ Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true
 Object.defineProperty(HTMLElement.prototype, "clientHeight", { configurable: true, get: () => 768 });
 
 window.scrollTo ??= () => undefined;
+Element.prototype.scrollTo ??= () => undefined;
 Element.prototype.scrollIntoView ??= () => undefined;
 
 import { afterEach } from "vitest";

@@ -147,6 +147,7 @@ pub fn run() {
             commands::updates_open_release,
             commands::open_improvement_form,
             commands::repositories_list,
+            commands::repositories_recommended,
             commands::repository_preview,
             commands::repository_add,
             commands::repository_accept_key,

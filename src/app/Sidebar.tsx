@@ -20,7 +20,6 @@ const ITEMS: Array<{ route: Route; label: string; icon: LucideIcon }> = [
 
 const ONLINE_ITEMS: Array<{ route: Route; label: string; icon: LucideIcon }> = [
   { route: { name: "explore" }, label: "Explorar", icon: Compass },
-  { route: { name: "downloads" }, label: "Downloads", icon: Download },
   { route: { name: "extensions" }, label: "Extensões", icon: Puzzle },
   { route: { name: "repositories" }, label: "Repositórios", icon: Boxes },
 ];
@@ -90,6 +89,8 @@ export function Sidebar({ current }: { current: Route["name"] }) {
       </div>
       <div className="mt-3 border-t border-border pt-3">
         <UpdateIndicator narrow={narrow} />
+        {/* Fica com os utilitários: continua à mão sem disputar atenção com a leitura. */}
+        {settings["plugins.online"] && item({ name: "downloads" }, "Downloads", Download)}
         {item({ name: "plugins" }, "Plugins", Blocks)}
         {item({ name: "settings" }, "Configurações", Settings)}
       </div>
