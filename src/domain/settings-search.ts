@@ -1,7 +1,7 @@
 // Índice da pesquisa das configurações: cada opção com as palavras que alguém usaria para procurá-la,
 // não só o título que aparece na tela. Os `id`s são as âncoras `setting-<id>` da tela.
 
-export type SettingsCategory = "aparencia" | "leitura" | "biblioteca" | "notificacoes" | "armazenamento" | "atualizacoes" | "privacidade" | "geral";
+export type SettingsCategory = "aparencia" | "leitura" | "biblioteca" | "notificacoes" | "armazenamento" | "atualizacoes" | "integracoes" | "privacidade" | "geral";
 /** `plugins` aponta para a tela Plugins, onde moram as opções de leitura online. */
 export type SettingPlace = SettingsCategory | "plugins";
 
@@ -12,6 +12,7 @@ export const SETTINGS_CATEGORIES: ReadonlyArray<{ id: SettingsCategory; label: s
   { id: "notificacoes", label: "Notificações" },
   { id: "armazenamento", label: "Armazenamento" },
   { id: "atualizacoes", label: "Atualizações" },
+  { id: "integracoes", label: "Integrações" },
   { id: "privacidade", label: "Privacidade" },
   { id: "geral", label: "Geral" },
 ];
@@ -65,6 +66,9 @@ export const SETTINGS_INDEX: readonly SettingEntry[] = [
   { id: "versao", place: "atualizacoes", title: "Versão instalada", description: "A versão do Prancha neste computador.", keywords: ["versão", "número"] },
   { id: "procurar", place: "atualizacoes", title: "Procurar nova versão", description: "Verifica se há atualização e instala.", keywords: ["atualizar", "atualização", "update", "nova versão", "instalar"] },
   { id: "historico", place: "atualizacoes", title: "Versões publicadas", description: "As notas de cada versão.", keywords: ["histórico", "novidades", "changelog", "notas", "o que mudou"] },
+
+  { id: "myanimelist", place: "integracoes", title: "MyAnimeList", description: "Conecta sua conta para associar as obras e atualizar os capítulos lidos.", keywords: ["mal", "myanimelist", "anime list", "conta", "login", "entrar", "conectar", "desconectar", "sincronizar", "lista", "progresso", "tracker", "rastreador"] },
+  { id: "mal-sincronizacao", place: "integracoes", title: "Sincronização com o MyAnimeList", description: "Atualizações pendentes, falhas e tentar de novo.", keywords: ["mal", "fila", "pendente", "erro", "falha", "sincronização", "tentar de novo"] },
 
   { id: "telemetria", place: "privacidade", title: "Estatísticas de uso", description: "Telemetria voluntária: versão, fontes usadas, falhas e tempos, sem conteúdo nem dados pessoais.", keywords: ["telemetria", "privacidade", "dados", "coleta", "estatísticas", "métricas", "analytics", "consentimento", "rastreamento", "anônimo"] },
   { id: "telemetria-identificador", place: "privacidade", title: "Identificador da instalação", description: "Troca o identificador aleatório usado pela telemetria.", keywords: ["identificador", "id", "renovar", "trocar", "anônimo", "telemetria"] },

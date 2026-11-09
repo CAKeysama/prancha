@@ -84,6 +84,7 @@ Ficam em **Settings → Secrets and variables → Actions** do repositório. Nad
 | `TAURI_SIGNING_PRIVATE_KEY` e `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Segredo | Assinar as atualizações. Ver abaixo. |
 | `RELEASE_TOKEN` | Segredo | Publicar a release e a tag na conta CAKeysama. É um [token fine-grained](https://github.com/settings/personal-access-tokens/new) só deste repositório, com **Contents: Read and write**. Sem ele, ou vencido, a release sai como `github-actions[bot]`, com um aviso na execução. |
 | `VERCEL_TOKEN` | Segredo | Publicar o site oficial. É um [token da Vercel](https://vercel.com/account/tokens) com acesso ao projeto `prancha`. |
+| `MAL_CLIENT_ID` | Variável | O identificador do aplicativo no [MyAnimeList](MYANIMELIST.md#configuração-feita-uma-vez). É público (aparece no endereço de autorização) e entra nos instaladores na compilação. Sem ele, a integração com o MAL fica escondida no app. |
 | `VERCEL_ORG_ID` e `VERCEL_PROJECT_ID` | Variável | Qual projeto da Vercel recebe o site: são o `orgId` e o `projectId` de `site/.vercel/project.json`. Sem elas, o job do site fica de fora. |
 
 Na Vercel, em **Settings → Environment Variables** do projeto `prancha`, fica uma variável opcional:

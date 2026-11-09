@@ -1279,9 +1279,23 @@ pub async fn chapter_reading_end(state: S<'_>, id: i64) -> AppResult<ChapterRead
     changing(&state, move |c| reading::end(&c.db(), id)).await
 }
 
+/// Chegar ao fim do capítulo é o único momento em que o progresso vai para o MyAnimeList. A fila só é gravada aqui;
+/// a rede fica com a thread do MAL, e uma falha dela nunca impede a leitura de ser registrada.
 #[tauri::command]
 pub async fn chapter_reading_complete(state: S<'_>, id: i64) -> AppResult<ChapterReadInfo> {
-    changing(&state, move |c| reading::complete(&mut c.db(), id)).await
+    changing(&state, move |c| {
+        let info = reading::complete(&mut c.db(), id)?;
+        match crate::mal::enqueue_completion(&c.db(), id) {
+            Ok(true) => {
+                (c.emit)(crate::mal::EVENT_CHANGED, json!({}));
+                c.mal.notify();
+            }
+            Ok(false) => {}
+            Err(e) => log::warn!("myanimelist: capítulo não enfileirado: {}", e.code()),
+        }
+        Ok(info)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -1536,4 +1550,86 @@ pub async fn telemetry_record(state: S<'_>, events: Vec<Value>) -> AppResult<usi
 pub async fn telemetry_ready(state: S<'_>) -> AppResult<()> {
     state.telemetry.ready();
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// MyAnimeList (ver mal/mod.rs). A rede só entra no que a pessoa pede ou ao abrir uma obra, sempre fora da
+// thread principal; os tokens nunca chegam à interface.
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn mal_status(state: S<'_>) -> AppResult<crate::mal::Status> {
+    blocking(&state, |c| c.mal.status(&c.db())).await
+}
+
+/// Abre a autorização no navegador e espera a pessoa voltar (até alguns minutos, ou `mal_connect_cancel`).
+#[tauri::command]
+pub async fn mal_connect(app: AppHandle, state: S<'_>) -> AppResult<crate::mal::Status> {
+    blocking(&state, move |c| {
+        c.mal.connect(&|url| {
+            app.opener()
+                .open_url(url, None::<&str>)
+                .map_err(|_| AppError::user("open_failed", "Não foi possível abrir o navegador para entrar no MyAnimeList."))
+        })
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn mal_connect_cancel(state: S<'_>) -> AppResult<()> {
+    state.mal.cancel_connect();
+    Ok(())
+}
+
+/// Devolve quantas atualizações pendentes foram descartadas.
+#[tauri::command]
+pub async fn mal_disconnect(state: S<'_>) -> AppResult<i64> {
+    blocking(&state, |c| c.mal.disconnect(&mut c.db())).await
+}
+
+/// A associação da obra. Com `lookup`, procura no MAL se ainda não há nada decidido.
+#[tauri::command]
+pub async fn mal_series(state: S<'_>, series_id: i64, lookup: bool) -> AppResult<crate::mal::SeriesStatus> {
+    blocking(&state, move |c| c.mal.series_status(series_id, lookup)).await
+}
+
+#[tauri::command]
+pub async fn mal_search(state: S<'_>, series_id: i64, query: String) -> AppResult<Vec<crate::mal::Candidate>> {
+    blocking(&state, move |c| c.mal.search(series_id, &query)).await
+}
+
+#[tauri::command]
+pub async fn mal_link(state: S<'_>, series_id: i64, mal_id: i64) -> AppResult<crate::mal::SeriesStatus> {
+    blocking(&state, move |c| c.mal.link(series_id, mal_id)).await
+}
+
+#[tauri::command]
+pub async fn mal_unlink(state: S<'_>, series_id: i64) -> AppResult<crate::mal::SeriesStatus> {
+    blocking(&state, move |c| c.mal.unlink(series_id)).await
+}
+
+#[tauri::command]
+pub async fn mal_reset_link(state: S<'_>, series_id: i64) -> AppResult<crate::mal::SeriesStatus> {
+    blocking(&state, move |c| c.mal.reset_link(series_id)).await
+}
+
+#[tauri::command]
+pub async fn mal_retry(state: S<'_>) -> AppResult<usize> {
+    blocking(&state, |c| c.mal.retry(&c.db())).await
+}
+
+#[tauri::command]
+pub async fn mal_discard_failed(state: S<'_>) -> AppResult<usize> {
+    blocking(&state, |c| c.mal.discard_failed(&c.db())).await
+}
+
+/// A página da obra no site do MAL, no navegador.
+#[tauri::command]
+pub async fn mal_open(app: AppHandle, mal_id: i64) -> AppResult<()> {
+    if mal_id <= 0 {
+        return Err(AppError::user("mal_not_found", "Esta obra não foi encontrada no MyAnimeList."));
+    }
+    app.opener()
+        .open_url(format!("https://myanimelist.net/manga/{mal_id}"), None::<&str>)
+        .map_err(|_| AppError::user("open_failed", "Não foi possível abrir o navegador."))
 }

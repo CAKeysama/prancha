@@ -3,6 +3,24 @@
 Tudo o que mudou em cada versão do Prancha. O projeto segue o [versionamento semântico](https://semver.org/lang/pt-BR/),
 e as notas das releases e a [página de downloads](https://cakeysama.github.io/prancha/) são geradas a partir deste arquivo.
 
+## [0.11.0] - 2026-11-09
+
+Integração com o MyAnimeList: conecte a conta e o Prancha associa as obras das fontes ao catálogo do MAL e atualiza os capítulos lidos quando você termina um capítulo. O menu do botão direito do navegador saiu do app.
+
+### Novidades
+
+- Configurações › Integrações: conecte e desconecte a conta do MyAnimeList pelo site do MAL, sem digitar a senha no Prancha, e veja o estado da conta e da sincronização.
+- Ao abrir uma obra das fontes, o Prancha procura a obra correspondente no MAL pelos títulos alternativos, pelo tipo, pelo autor e pela quantidade de capítulos, e associa sozinho só quando não há dúvida.
+- Na página da obra, a linha MyAnimeList mostra a obra associada e a sincronização, e Corrigir abre a pesquisa para escolher outra ou marcar que a obra não está no MAL.
+- Concluir um capítulo no leitor atualiza os capítulos lidos no MAL em segundo plano, sem segurar a leitura.
+
+### Melhorias
+
+- A sincronização nunca diminui um progresso mais adiantado no MAL, não marca a obra como concluída e não envia nada ao abrir uma obra ou um capítulo.
+- Atualizações que falham ficam numa fila guardada no computador e são tentadas de novo com espera crescente, inclusive depois de fechar e abrir o app.
+- O acesso ao MAL fica cifrado pelo Windows e é renovado sozinho; se expirar, o app avisa e nada pendente se perde.
+- O menu do botão direito do navegador (Voltar, Atualizar, Imprimir…) não aparece mais em nenhuma tela; nos campos de texto, o menu de copiar e colar continua.
+
 ## [0.10.0] - 2026-11-09
 
 O projeto ganhou uma página de visão geral, com as versões publicadas, os downloads dos instaladores e as verificações automáticas, tudo com dados públicos do GitHub.

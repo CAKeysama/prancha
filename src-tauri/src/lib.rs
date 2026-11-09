@@ -10,6 +10,7 @@ pub mod formats;
 pub mod guided;
 pub mod import;
 pub mod library;
+pub mod mal;
 pub mod natural;
 pub mod notifications;
 pub mod pages;
@@ -130,6 +131,7 @@ pub fn run() {
                     }
                     connect_native_notifications(app.handle(), &core);
                     start_telemetry(app, &core);
+                    core.mal.spawn();
                     app.manage(core.clone());
                     std::thread::spawn(move || {
                         // Antes dos downloads: nada da obra que não pode aparecer volta a baixar.
@@ -283,6 +285,18 @@ pub fn run() {
             commands::telemetry_forget,
             commands::telemetry_record,
             commands::telemetry_ready,
+            commands::mal_status,
+            commands::mal_connect,
+            commands::mal_connect_cancel,
+            commands::mal_disconnect,
+            commands::mal_series,
+            commands::mal_search,
+            commands::mal_link,
+            commands::mal_unlink,
+            commands::mal_reset_link,
+            commands::mal_retry,
+            commands::mal_discard_failed,
+            commands::mal_open,
         ])
         .build(tauri::generate_context!())
         .expect("erro ao executar o Prancha")
