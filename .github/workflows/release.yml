@@ -13,9 +13,11 @@ on:
 permissions:
   contents: read
 
-# O merge cria a tag com a release, e a tag dispara este workflow de novo: a segunda execução espera e vê que já foi publicada.
+# O merge cria a tag com a release, e a tag dispara este workflow de novo: essa segunda execução só vê que já foi publicada.
+# A main e as tags ficam em filas separadas. Cada fila guarda uma só execução esperando, e uma nova tira a anterior: na mesma
+# fila, a tag de uma versão recém-publicada cancelava a próxima versão que esperava a vez (foi o que aconteceu com a 0.7.1).
 concurrency:
-  group: release
+  group: release-${{ github.ref_type }}
   cancel-in-progress: false
 
 jobs:
