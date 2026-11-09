@@ -334,20 +334,6 @@ test.describe.serial("extensões: da adição do repositório à leitura offline
     await nav(page, "Favoritos");
     await expect(saved).toBeVisible();
 
-    // O filtro +18 só muda depois de a pessoa confirmar a idade.
-    await nav(page, "Plugins");
-    const filter = page.getByRole("switch", { name: /Esconder conteúdo \+18/ });
-    await expect(filter).toBeChecked();
-    await filter.click();
-    const confirm = page.getByRole("dialog", { name: "Mostrar conteúdo +18?" });
-    await confirm.getByRole("button", { name: "Cancelar" }).click();
-    await expect(filter).toBeChecked();
-    await filter.click();
-    await confirm.getByRole("button", { name: "Tenho 18 anos ou mais" }).click();
-    await expect(filter).not.toBeChecked();
-    await filter.click();
-    await expect(filter).toBeChecked();
-
     await openSeries(page, "farol", "Farol de Papel");
   });
 

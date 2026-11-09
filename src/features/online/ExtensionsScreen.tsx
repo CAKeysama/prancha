@@ -231,7 +231,6 @@ function InstalledDialog({ extension, onClose }: { extension: InstalledExtension
             {extension.sources.map((source) => (
               <li key={source.id}>
                 {source.name} · {languageName(source.language)}
-                {!source.available && <span className="text-muted"> · escondida pelo filtro +18</span>}
               </li>
             ))}
           </ul>

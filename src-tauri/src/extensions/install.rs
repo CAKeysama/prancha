@@ -10,11 +10,10 @@ use serde::Serialize;
 use super::net::{Access, Limits, NetError, Request};
 use super::repository::{self, Capabilities, ExtensionEntry, MAX_ARTIFACT_BYTES};
 use super::runtime::{ContentKind, ContentRating, Grant, Installed, ReadingDirection, SourceInfo};
-use super::{rating_store, signing, suwayomi};
+use super::{signing, suwayomi};
 use crate::core::Core;
 use crate::db::now_ms;
 use crate::error::{AppError, AppResult};
-use crate::library;
 
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(120);
 const MAX_SIGNATURE_BYTES: u64 = 1024;
@@ -53,8 +52,6 @@ pub struct InstalledSource {
     pub direction: String,
     pub supports_latest: bool,
     pub supports_search: bool,
-    /// Uma fonte sem classificação fica desabilitada, sem opção para liberar.
-    pub available: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -84,26 +81,19 @@ fn sources_of(conn: &Connection, extension_id: &str) -> AppResult<Vec<InstalledS
         "SELECT source_id, name, language, description, kinds, rating, direction, supports_latest, supports_search FROM extension_sources WHERE extension_id = ?1 ORDER BY name COLLATE NATSORT",
     )?;
     let rows = statement.query_map([extension_id], |r| {
-        let rating: String = r.get(5)?;
         Ok(InstalledSource {
             id: r.get(0)?,
             name: r.get(1)?,
             language: r.get(2)?,
             description: r.get(3)?,
             kinds: serde_json::from_str(&r.get::<_, String>(4)?).unwrap_or_default(),
-            available: rating_is_available(conn, &rating),
-            rating,
+            rating: r.get(5)?,
             direction: r.get(6)?,
             supports_latest: r.get::<_, i64>(7)? != 0,
             supports_search: r.get::<_, i64>(8)? != 0,
         })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)
-}
-
-/// Adulto ou sem classificação só com o filtro +18 desligado.
-pub fn rating_is_available(conn: &Connection, rating: &str) -> bool {
-    matches!(rating, "general" | "teen") || library::adult_allowed(conn)
 }
 
 fn extension_from_row(conn: &Connection, row: &Row) -> AppResult<InstalledExtension> {
@@ -275,13 +265,10 @@ fn check_declared_sources(entry: &ExtensionEntry, found: &[SourceInfo]) -> AppRe
 }
 
 /// O que vale para qualquer extensão, antes de baixar qualquer coisa.
-fn check_allowed(row: &CatalogRow, adult_allowed: bool) -> AppResult<()> {
+fn check_allowed(row: &CatalogRow) -> AppResult<()> {
     let entry = &row.entry;
     if row.status == "key_changed" {
         return Err(refused("extension_provenance", "A chave deste repositório mudou. Revise a chave nova antes de instalar."));
-    }
-    if entry.content_rating == "adult" && !adult_allowed {
-        return Err(refused("extension_rating", "Esta extensão é +18. Para instalar, desligue o filtro +18 em Plugins."));
     }
     if let Some(reason) = repository::incompatibility(entry, env!("CARGO_PKG_VERSION")) {
         return Err(refused("extension_incompatible", reason));
@@ -338,7 +325,7 @@ struct Package {
 
 /// O pacote pronto para registrar. Uma extensão do Suwayomi fica com ele: aqui ela não tem arquivo.
 fn fetch_package(core: &Core, row: &CatalogRow, repository_id: &str, updating: bool) -> AppResult<Package> {
-    check_allowed(row, library::adult_allowed(&core.db()))?;
+    check_allowed(row)?;
     if row.entry.runtime == suwayomi::RUNTIME {
         let mut sources = suwayomi::install_extension(core, &row.repository_url, &row.fingerprint, &row.entry.id, updating)?;
         sources.retain(|source| repository::is_valid_id(&source.id) && source_is_presentable(source));
@@ -371,8 +358,6 @@ fn write_sources(conn: &Connection, extension_id: &str, sources: &[SourceInfo]) 
             source.min_interval_ms,
         ])?;
     }
-    // A classificação das fontes pode ter mudado: as obras desta extensão são conferidas de novo.
-    rating_store::analyze_extension(conn, extension_id)?;
     Ok(())
 }
 
@@ -479,8 +464,6 @@ pub fn remove(core: &Core, id: &str) -> AppResult<()> {
         suwayomi::uninstall_extension(core, id);
     }
     core.db().execute("DELETE FROM installed_extensions WHERE id = ?1", [id])?;
-    // Sem a fonte, a classificação dela deixa de valer para as obras que ficaram.
-    rating_store::analyze_extension(&core.db(), id)?;
     remove_package_if_unused(core, &file_name);
     if let Ok(engine) = core.engine() {
         engine.forget(&sha256);

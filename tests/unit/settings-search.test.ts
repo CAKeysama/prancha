@@ -26,7 +26,6 @@ describe("pesquisa das configurações", () => {
   it("acha pelas palavras-chave, não só pelo título que aparece na tela", () => {
     expect(ids("modo escuro")).toEqual(["tema"]);
     expect(ids("dark")).toEqual(["tema"]);
-    expect(ids("+18")).toEqual(["conteudo-adulto", "conteudo-suspeito"]);
     expect(ids("liberar espaço").sort()).toEqual(["limpar-miniaturas", "limpar-paginas"]);
   });
 

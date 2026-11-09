@@ -6,8 +6,6 @@ import { NewCount } from "../../components/NewCount";
 import { useToast } from "../../components/Toast";
 import { cn } from "../../components/cn";
 import type { SeriesCard } from "../../domain/online";
-import { ratingBadge, type RatingState } from "../../domain/rating";
-import { useSettings } from "../../app/settings-context";
 import { api, errorMessage, type VerifiableSite } from "../../services/api";
 import { onlineCoverUrl } from "../../services/urls";
 
@@ -23,30 +21,7 @@ export function Fact({ label, children }: { label: string; children: ReactNode }
 
 const COVER_BOX = "relative aspect-[2/3] w-full overflow-hidden rounded-md border border-border bg-surface";
 
-/**
- * O selo +18 da obra, o mesmo em todas as telas, porque toda capa de obra passa por aqui.
- * Discreto: só "+18" ou "+18?" no canto, com o nome do estado para quem passa o mouse ou usa leitor de tela.
- */
-export function RatingMark({ state }: { state: RatingState | undefined }) {
-  const { settings } = useSettings();
-  const badge = ratingBadge(state, settings["content.suspect"]);
-  if (!badge) return null;
-  return (
-    <span
-      title={badge.title}
-      data-testid="rating-mark"
-      className={cn(
-        "pointer-events-none absolute top-1 right-1 z-10 rounded px-1 py-px text-[10px] leading-4 font-semibold",
-        badge.tone === "strong" ? "bg-danger-emphasis text-on-emphasis" : "border border-border bg-elevated/90 text-muted",
-      )}
-    >
-      <span aria-hidden>{badge.label}</span>
-      <span className="sr-only">{badge.title}</span>
-    </span>
-  );
-}
-
-type CoverSeries = Pick<SeriesCard, "id" | "title" | "hasCover"> & { ratingState?: RatingState };
+type CoverSeries = Pick<SeriesCard, "id" | "title" | "hasCover">;
 
 /** A imagem vem pelo protocolo do app: quem fala com o servidor da fonte é o backend. */
 export function OnlineCover({ series, eager, className }: { series: CoverSeries; eager?: boolean; className?: string }) {
@@ -56,13 +31,11 @@ export function OnlineCover({ series, eager, className }: { series: CoverSeries;
     return (
       <div className={cn(COVER_BOX, className)} role="img" aria-label={`Capa substituta de ${series.title}`}>
         <PlaceholderCover title={series.title} />
-        <RatingMark state={series.ratingState} />
       </div>
     );
   }
   return (
     <div className={cn(COVER_BOX, className)}>
-      <RatingMark state={series.ratingState} />
       {!loaded && <div className="p-skeleton absolute inset-0 bg-elevated" aria-hidden />}
       <img
         src={onlineCoverUrl(series.id)}

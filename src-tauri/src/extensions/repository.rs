@@ -15,7 +15,6 @@ use super::{signing, suwayomi};
 use crate::core::Core;
 use crate::db::now_ms;
 use crate::error::{AppError, AppResult};
-use crate::library;
 
 pub const MANIFEST_FILE: &str = "prancha-repo.json";
 pub const RUNTIME: &str = "wasm-component";
@@ -559,7 +558,6 @@ fn fetch_index(net: &Net, key: &Key, repository_id: &str, index_url: &str, etag:
             return Err(invalid(format!("O índice não é válido: {} aparece duas vezes.", entry.id)));
         }
     }
-    // Entradas adultas ficam guardadas: quem decide se aparecem é o filtro +18, na hora de listar.
     Ok(Some(Fetched { generated_at, etag: response.etag, entries: index.extensions }))
 }
 
@@ -606,7 +604,7 @@ pub struct RepositoryInfo {
 }
 
 const INFO_COLUMNS: &str = "id, url, name, description, website, public_key, key_fingerprint, pending_public_key, enabled, status, last_error, last_sync_at, last_success_at,
-    (SELECT count(*) FROM repository_extensions e WHERE e.repository_id = source_repositories.id AND (json_extract(e.entry, '$.contentRating') != 'adult' OR EXISTS (SELECT 1 FROM settings WHERE key = 'content.adult' AND value = 'true'))),
+    (SELECT count(*) FROM repository_extensions e WHERE e.repository_id = source_repositories.id),
     added_at";
 
 fn info_from_row(row: &Row) -> rusqlite::Result<RepositoryInfo> {
@@ -653,7 +651,6 @@ pub fn preview(core: &Core, address: &str) -> AppResult<RepositoryPreview> {
     let (url, manifest, key) = fetch_manifest(&core.net, address)?;
     let fetched = fetch_index(&core.net, &key, &manifest.id, &manifest.index_url, None)?.ok_or_else(|| invalid("O índice não pôde ser lido."))?;
     let already_added = core.db().query_row("SELECT 1 FROM source_repositories WHERE id = ?1 OR url = ?2", [&manifest.id, &url], |_| Ok(())).optional()?.is_some();
-    let adult_allowed = library::adult_allowed(&core.db());
     Ok(RepositoryPreview {
         url,
         id: manifest.id,
@@ -662,7 +659,7 @@ pub fn preview(core: &Core, address: &str) -> AppResult<RepositoryPreview> {
         website: manifest.website,
         public_key: manifest.public_key,
         fingerprint: key.fingerprint(),
-        extension_count: fetched.entries.iter().filter(|entry| adult_allowed || entry.content_rating != "adult").count(),
+        extension_count: fetched.entries.len(),
         already_added,
         external: matches!(key, Key::Mihon(_)),
     })
@@ -845,9 +842,7 @@ pub fn catalog(conn: &Connection, query: &CatalogQuery, app_version: &str) -> Ap
          LEFT JOIN installed_extensions i ON i.id = r.extension_id
          WHERE (?1 IS NULL OR r.name LIKE ?1 ESCAPE '\\' OR r.extension_id LIKE ?1 ESCAPE '\\')
            AND (?2 IS NULL OR EXISTS (SELECT 1 FROM json_each(r.entry, '$.languages') WHERE value = ?2))
-           AND (json_extract(r.entry, '$.contentRating') != 'adult' OR {adult})
          ORDER BY {order} LIMIT ?3 OFFSET ?4",
-        adult = library::ADULT_ALLOWED_SQL,
     ))?;
     let rows = statement.query_map(params![text, query.language, query.limit.unwrap_or(200).clamp(1, 5000), query.offset.unwrap_or(0).max(0)], |row| {
         Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, Option<String>>(3)?, row.get::<_, Option<String>>(4)?))
@@ -867,11 +862,10 @@ pub fn catalog(conn: &Connection, query: &CatalogQuery, app_version: &str) -> Ap
 
 /// Idiomas do catálogo, para o filtro.
 pub fn catalog_languages(conn: &Connection) -> AppResult<Vec<String>> {
-    let mut statement = conn.prepare(&format!(
+    let mut statement = conn.prepare(
         "SELECT DISTINCT j.value FROM repository_extensions r JOIN source_repositories s ON s.id = r.repository_id AND s.enabled = 1, json_each(r.entry, '$.languages') j
-         WHERE json_extract(r.entry, '$.contentRating') != 'adult' OR {adult} ORDER BY 1",
-        adult = library::ADULT_ALLOWED_SQL,
-    ))?;
+         ORDER BY 1",
+    )?;
     let rows = statement.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?;
     Ok(rows)
 }

@@ -596,7 +596,7 @@ function NotificationsSection() {
         <Anchor id="notif-nativas">
           <Switch
             label="Mostrar notificações do sistema"
-            description="Capítulos novos, nova versão disponível e problemas de sincronização. Obras +18 aparecem sem o nome."
+            description="Capítulos novos, nova versão disponível e problemas de sincronização."
             checked={native}
             onChange={(v) => save("notifications.native", v)}
           />

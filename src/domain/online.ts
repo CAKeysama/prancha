@@ -1,6 +1,5 @@
 // Repositórios, extensões, fontes e downloads, como chegam do backend.
 
-import type { RatingOrigin, RatingState } from "./rating";
 import type { ReaderChapter } from "./reader";
 import type { ReaderMode } from "./settings";
 import type { ReadStatus } from "./types";
@@ -112,7 +111,6 @@ export interface InstalledSource {
   direction: string;
   supportsLatest: boolean;
   supportsSearch: boolean;
-  available: boolean;
 }
 
 export interface InstalledExtension {
@@ -170,16 +168,12 @@ export interface SeriesCard {
   favorite: boolean;
   /** Capítulos novos: chegaram depois da primeira sincronização e ainda não foram abertos nem marcados como lidos. */
   newCount: number;
-  ratingState: RatingState;
-  ratingOrigin: RatingOrigin;
 }
 
 export interface BrowsePage {
   results: SeriesCard[];
   hasMore: boolean;
-  /** Obras que o filtro +18 escondeu. Com ele desligado, aparecem. */
-  hidden: number;
-  /** Obras que não puderam ser conferidas agora: ficam de fora com o filtro ligado ou desligado. */
+  /** Obras que não puderam ser conferidas agora: ficam de fora e podem aparecer em outra tentativa. */
   unverified: number;
 }
 
@@ -289,7 +283,6 @@ export interface LibrarySeries extends SeriesReading {
   lastOpenedAt: number | null;
   following: boolean;
   newCount: number;
-  ratingState: RatingState;
 }
 
 export interface ComicOrigin {

@@ -60,19 +60,15 @@ Em **Instaladas** você vê as fontes de cada extensão, atualiza quando há ver
 
 Cada fonte responde no seu tempo. Uma lenta não segura as outras, e a que falhar aparece no topo com o motivo e o que dá para fazer, sem contar como se a obra não estivesse lá. Com uma fonte só, e fora da pesquisa, os resultados ficam em grade, separados por fonte. Também dá para filtrar por fonte, idioma e tipo, ver populares e recentes, e carregar mais resultados.
 
-## Filtro +18
+## Obras bloqueadas
 
-Em **Plugins**, **Esconder conteúdo +18** começa ligado. Enquanto estiver, obras, fontes e extensões adultas ou sem classificação não aparecem em tela nenhuma, e as extensões assim não instalam. Para desligar, você confirma ter 18 anos, e pode ligar de novo quando quiser.
+O Prancha não filtra conteúdo +18: o que as fontes oferecem aparece em todas as telas. A classificação que cada repositório declara fica só como informação.
 
-Nas fontes do Keiyoushi, a marca vem da fonte inteira, e cada obra só é reconhecida como +18 pelos gêneros (adulto, hentai, ecchi e parecidos). Como a lista nem sempre traz os gêneros, o Prancha consulta os detalhes da obra antes de mostrá-la e guarda a resposta. A primeira visita a uma lista demora mais, e num site lento pode passar de um minuto. As seguintes não consultam de novo. A tela diz o que ficou de fora, sem dizer os títulos:
+Título ou gênero que indique sexualização de menores nunca aparece. A obra sai do aplicativo com a capa e não é consultada de novo. Capítulos que já estavam na biblioteca continuam lá, como qualquer arquivo.
 
-- Com gêneros adultos: só aparece com o filtro desligado.
-- Sem gêneros, porque a fonte não informa: só aparece com o filtro desligado. Uma fonte que nunca informa gêneros fica vazia com o filtro ligado, e o Explorar avisa.
-- Sem resposta, porque o site falhou: fica de fora nos dois casos, e **Tentar de novo** confere outra vez.
+Nas fontes do Keiyoushi, a lista nem sempre traz os gêneros, então o Prancha consulta os detalhes da obra antes de mostrá-la e guarda a resposta. A primeira visita a uma lista demora mais, e num site lento pode passar de um minuto. As seguintes não consultam de novo. A obra cujo site falhou na consulta fica de fora até **Tentar de novo** conferir outra vez.
 
-Título ou gênero que indique sexualização de menores nunca aparece, com o filtro ligado ou desligado. A obra sai do aplicativo com a capa e não é consultada de novo. Capítulos que já estavam na biblioteca continuam lá, como qualquer arquivo.
-
-Nada disso é garantia. A classificação é a declarada por terceiros e pode estar errada, e o Prancha lê o título e os gêneros, não as imagens nem a sinopse: uma obra com gêneros comuns e capa sexualizada ainda aparece, e a lista de palavras não reconhece tudo.
+Nada disso é garantia: o Prancha lê o título e os gêneros, não as imagens nem a sinopse, e a lista de palavras não reconhece tudo.
 
 ## Obras na biblioteca
 

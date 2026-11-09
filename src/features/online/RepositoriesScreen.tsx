@@ -8,7 +8,6 @@ import { Menu } from "../../components/Menu";
 import { PageHeader } from "../../components/PageHeader";
 import { useToast } from "../../components/Toast";
 import { useLibraryData } from "../../app/library-events";
-import { useSettings } from "../../app/settings-context";
 import { groupedFingerprint, type RecommendedList, type RepositoryInfo, type RepositoryPreview } from "../../domain/online";
 import { formatDate } from "../../domain/progress";
 import { api, errorMessage } from "../../services/api";
@@ -21,7 +20,6 @@ function extensionCount(count: number): string {
 /** Endereço, revisão da chave e confirmação explícita: nada é confiado sem a pessoa ver a impressão digital. */
 function AddRepositoryDialog({ initialAddress = "", onClose, onAdded }: { initialAddress?: string; onClose: () => void; onAdded: () => void }) {
   const toast = useToast();
-  const { settings } = useSettings();
   const [address, setAddress] = useState(initialAddress);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(Boolean(initialAddress));
@@ -147,7 +145,7 @@ function AddRepositoryDialog({ initialAddress = "", onClose, onAdded }: { initia
       {preview.external && (
         <p className="mt-2 flex items-start gap-2 text-sm">
           <ShieldAlert size={16} className="mt-0.5 shrink-0 text-danger" aria-hidden />
-          Elas foram feitas para o Mihon e rodam sem o isolamento do Prancha, com acesso aos seus arquivos e à internet. A primeira instalação baixa o Suwayomi, um programa de terceiros de cerca de 340 MB.{!settings["content.adult"] && " Com o filtro +18 ligado, só aparecem as marcadas como sem conteúdo adulto."}
+          Elas foram feitas para o Mihon e rodam sem o isolamento do Prancha, com acesso aos seus arquivos e à internet. A primeira instalação baixa o Suwayomi, um programa de terceiros de cerca de 340 MB.
         </p>
       )}
       {preview.alreadyAdded && <p className="mt-2 text-sm text-danger">Este repositório já foi adicionado.</p>}

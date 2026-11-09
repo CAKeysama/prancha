@@ -32,8 +32,6 @@ import { onDownloadChanged } from "../../services/events";
 import { useComicActions } from "../library/comic-actions";
 import { searchAcrossSources } from "./ExploreScreen";
 import { Fact, OnlineCover, SourceTrouble, siteAnswered } from "./parts";
-import { RatingDialog } from "./RatingDialog";
-import { RATING_ORIGIN_LABELS, RATING_STATE_LABELS } from "../../domain/rating";
 
 let requestCounter = 0;
 
@@ -171,7 +169,6 @@ export function SeriesScreen({ id }: { id: number }) {
   const [refreshing, setRefreshing] = useState(true);
   const [attempt, setAttempt] = useState(0);
   const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [ratingOpen, setRatingOpen] = useState(false);
 
   const readStored = useCallback(() => {
     api
@@ -421,13 +418,6 @@ export function SeriesScreen({ id }: { id: number }) {
               {view.status && <Fact label="Situação">{SERIES_STATUS_LABELS[view.status] ?? view.status}</Fact>}
               {view.genres.length > 0 && <Fact label="Gêneros">{view.genres.join(", ")}</Fact>}
               <Fact label="Fonte">{view.sourceName ?? "Fonte não instalada"}</Fact>
-              <Fact label="Classificação">
-                <span className="mr-2">{RATING_STATE_LABELS[view.ratingState]}</span>
-                <span className="mr-2 text-sm text-muted">{RATING_ORIGIN_LABELS[view.ratingOrigin]}</span>
-                <Button size="sm" variant="ghost" onClick={() => setRatingOpen(true)}>
-                  Ver motivo ou corrigir
-                </Button>
-              </Fact>
               {view.language && <Fact label="Idioma">{languageName(view.language)}</Fact>}
               {view.lastCheckedAt && <Fact label="Última consulta">{formatDate(view.lastCheckedAt)}</Fact>}
             </dl>
@@ -474,14 +464,6 @@ export function SeriesScreen({ id }: { id: number }) {
           </div>
         </div>
       </div>
-      {ratingOpen && (
-        <RatingDialog
-          seriesId={view.id}
-          title={view.title}
-          onClose={() => setRatingOpen(false)}
-          onChanged={(details) => setView((current) => current && { ...current, ratingState: details.state, ratingOrigin: details.origin })}
-        />
-      )}
     </div>
   );
 }

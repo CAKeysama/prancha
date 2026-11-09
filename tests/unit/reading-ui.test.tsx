@@ -140,7 +140,7 @@ function source(id: string, name: string): SourceSummary {
 }
 
 function card(id: number, title: string, overrides: Partial<SeriesCard> = {}): SeriesCard {
-  return { id, extensionId: "ext", sourceId: "a", sourceName: "Fonte A", remoteId: String(id), title, hasCover: false, summary: null, author: null, genres: [], status: null, language: "pt-BR", following: false, chapterSort: "asc", lastCheckedAt: null, lastUpdateAt: null, favorite: false, newCount: 0, ratingState: "none", ratingOrigin: "inferred", ...overrides };
+  return { id, extensionId: "ext", sourceId: "a", sourceName: "Fonte A", remoteId: String(id), title, hasCover: false, summary: null, author: null, genres: [], status: null, language: "pt-BR", following: false, chapterSort: "asc", lastCheckedAt: null, lastUpdateAt: null, favorite: false, newCount: 0, ...overrides };
 }
 
 function chapter(id: number, title: string, overrides: Partial<ChapterView> = {}): ChapterView {
@@ -397,7 +397,7 @@ describe("Lista de capítulos da obra", () => {
 
 describe("Obras na biblioteca", () => {
   function librarySeries(id: number, title: string, overrides: Partial<LibrarySeries> = {}): LibrarySeries {
-    return { id, title, hasCover: false, sourceName: "Fonte A", favorite: false, addedAt: id, lastOpenedAt: null, following: true, newCount: 0, ratingState: "none", readStatus: "unread", chapterCount: 10, chaptersRead: 0, resume: null, collections: [], ...overrides };
+    return { id, title, hasCover: false, sourceName: "Fonte A", favorite: false, addedAt: id, lastOpenedAt: null, following: true, newCount: 0, readStatus: "unread", chapterCount: 10, chaptersRead: 0, resume: null, collections: [], ...overrides };
   }
 
   it("mostra quantos capítulos novos a obra tem, só acima de zero", async () => {

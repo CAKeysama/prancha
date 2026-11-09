@@ -1,6 +1,6 @@
 //! Chama as fontes, filtra o que chega e guarda o que a biblioteca online precisa lembrar.
 //! Tudo que vem de uma extensão é tratado como dado de terceiros: tamanho limitado, sem endereços fora das regras
-//! e conteúdo adulto só com o filtro +18 desligado.
+//! e nenhuma obra que indique sexualização de menores.
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -13,11 +13,10 @@ use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::Serialize;
 
 use super::net::{Access, Cancel, Limits, Request};
-use super::runtime::{ComicDetails, ContentRating, Filter, Installed, Page, PublicationStatus, SearchPage, SearchResult};
+use super::runtime::{ComicDetails, Filter, Installed, Page, PublicationStatus, SearchPage};
 use super::suwayomi::{self, Browse};
-use super::rating::{self, Declared, State};
 use super::reading::{self, ReadState};
-use super::{downloads, install, minors, rating_store};
+use super::{downloads, install, minors};
 use crate::core::Core;
 use crate::covers;
 use crate::db::now_ms;
@@ -144,15 +143,14 @@ pub struct SourceSummary {
     pub supports_search: bool,
 }
 
-/// Fontes que podem aparecer em Explorar: de extensões habilitadas e dentro do filtro +18.
+/// Fontes que podem aparecer em Explorar: as de extensões habilitadas.
 pub fn available_sources(conn: &Connection) -> AppResult<Vec<SourceSummary>> {
-    let mut statement = conn.prepare(&format!(
+    let mut statement = conn.prepare(
         "SELECT s.extension_id, e.name, e.repository_name, s.source_id, s.name, s.language, s.description, s.kinds, s.rating, s.direction, s.supports_latest, s.supports_search
          FROM extension_sources s JOIN installed_extensions e ON e.id = s.extension_id
-         WHERE e.enabled = 1 AND (s.rating IN ('general', 'teen') OR {adult})
+         WHERE e.enabled = 1
          ORDER BY s.name COLLATE NATSORT, e.name COLLATE NATSORT",
-        adult = library::ADULT_ALLOWED_SQL,
-    ))?;
+    )?;
     let rows = statement.query_map([], |r| {
         Ok(SourceSummary {
             extension_id: r.get(0)?,
@@ -191,12 +189,9 @@ pub fn source_row(conn: &Connection, extension_id: &str, source_id: &str) -> App
     row.ok_or_else(|| AppError::user("source_not_found", "Esta fonte não está disponível."))
 }
 
-/// A fonte existe, está dentro do filtro +18 e a extensão está habilitada.
+/// A fonte existe e a extensão está habilitada.
 fn usable(core: &Core, extension_id: &str, source_id: &str) -> AppResult<(Installed, SourceRow)> {
     let row = source_row(&core.db(), extension_id, source_id)?;
-    if !install::rating_is_available(&core.db(), &row.rating) {
-        return Err(AppError::user("source_disabled", "Esta fonte é +18 ou não informa a classificação. Para usar, desligue o filtro +18 em Plugins."));
-    }
     Ok((install::runnable(core, extension_id)?, row))
 }
 
@@ -261,14 +256,10 @@ pub struct SeriesCard {
     pub favorite: bool,
     /// Capítulos que chegaram depois da primeira sincronização e ainda não foram abertos nem marcados como lidos.
     pub new_count: i64,
-    /// Classificação +18: `confirmed`, `suspect`, `none` ou `insufficient`.
-    pub rating_state: String,
-    /// Quem decidiu: `repository`, `inferred` ou `manual`.
-    pub rating_origin: String,
 }
 
 const CARD_SELECT: &str = "SELECT o.id, o.extension_id, o.source_id, s.name, o.remote_id, o.title, o.cover_url, o.summary, o.author, o.genres, o.status, o.language, o.following, o.chapter_sort, o.last_checked_at, o.last_update_at, o.favorite,
-        (SELECT count(*) FROM online_chapters n WHERE n.series_id = o.id AND n.acknowledged_at IS NULL), o.rating_state, o.rating_origin
+        (SELECT count(*) FROM online_chapters n WHERE n.series_id = o.id AND n.acknowledged_at IS NULL)
     FROM online_series o LEFT JOIN extension_sources s ON s.extension_id = o.extension_id AND s.source_id = o.source_id";
 
 fn card_from_row(r: &Row) -> rusqlite::Result<SeriesCard> {
@@ -291,8 +282,6 @@ fn card_from_row(r: &Row) -> rusqlite::Result<SeriesCard> {
         last_update_at: r.get(15)?,
         favorite: r.get::<_, i64>(16)? != 0,
         new_count: r.get(17)?,
-        rating_state: r.get(18)?,
-        rating_origin: r.get(19)?,
     })
 }
 
@@ -317,17 +306,11 @@ struct NewSeries<'a> {
     genres: Option<String>,
     status: Option<&'static str>,
     language: Option<&'a str>,
-    adult: bool,
-    /// `None` quando esta informação não diz nada sobre a classificação da obra.
+    /// `None` quando esta informação não diz se os detalhes da obra já foram conferidos.
     classification: Option<&'static str>,
-    /// A classificação que a própria obra declarou, se declarou.
-    declared: Option<Declared>,
-    /// A fonte acabou de declarar a obra como +18, por ela mesma ou pela fonte inteira de uma extensão nativa.
-    declared_adult: bool,
 }
 
-/// O que a fonte deixou de informar não apaga o que já se sabia. Devolve a obra e a classificação com que ela ficou.
-/// A classificação +18 é refeita aqui, só se algo que ela usa mudou.
+/// O que a fonte deixou de informar não apaga o que já se sabia. Devolve a obra e se os detalhes dela já foram conferidos.
 fn upsert_series(core: &Core, conn: &Connection, series: &NewSeries) -> AppResult<(i64, String)> {
     let previous: Option<(i64, Option<String>)> = conn
         .query_row(
@@ -343,8 +326,8 @@ fn upsert_series(core: &Core, conn: &Connection, series: &NewSeries) -> AppResul
     }
     let now = now_ms();
     let stored = conn.query_row(
-        "INSERT INTO online_series (extension_id, source_id, remote_id, title, cover_url, summary, author, genres, status, language, created_at, updated_at, adult, classification, declared_rating, declared_adult_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, coalesce(?8, '[]'), ?9, ?10, ?11, ?11, ?12, coalesce(?13, 'pending'), ?14, CASE WHEN ?15 THEN ?11 END)
+        "INSERT INTO online_series (extension_id, source_id, remote_id, title, cover_url, summary, author, genres, status, language, created_at, updated_at, classification)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, coalesce(?8, '[]'), ?9, ?10, ?11, ?11, coalesce(?12, 'pending'))
          ON CONFLICT (extension_id, source_id, remote_id) DO UPDATE SET
             title = excluded.title,
             cover_url = coalesce(?5, cover_url),
@@ -354,10 +337,7 @@ fn upsert_series(core: &Core, conn: &Connection, series: &NewSeries) -> AppResul
             status = coalesce(?9, status),
             language = coalesce(?10, language),
             updated_at = excluded.updated_at,
-            adult = max(adult, ?12),
-            classification = CASE WHEN classification = 'known' THEN 'known' ELSE coalesce(?13, classification) END,
-            declared_rating = coalesce(?14, declared_rating),
-            declared_adult_at = CASE WHEN ?15 THEN ?11 ELSE declared_adult_at END
+            classification = CASE WHEN classification = 'known' THEN 'known' ELSE coalesce(?12, classification) END
          RETURNING id, classification",
         params![
             series.extension_id,
@@ -371,14 +351,10 @@ fn upsert_series(core: &Core, conn: &Connection, series: &NewSeries) -> AppResul
             series.status,
             series.language,
             now,
-            series.adult,
-            series.classification,
-            series.declared.map(Declared::as_str),
-            series.declared_adult
+            series.classification
         ],
         |r| Ok((r.get(0)?, r.get(1)?)),
     )?;
-    rating_store::analyze(conn, stored.0)?;
     Ok(stored)
 }
 
@@ -417,29 +393,8 @@ pub fn forget_blocked(core: &Core, conn: &Connection) -> AppResult<usize> {
 pub struct BrowsePage {
     pub results: Vec<SeriesCard>,
     pub has_more: bool,
-    /// Obras que o filtro +18 escondeu. Com ele desligado, aparecem.
-    pub hidden: usize,
-    /// Obras que a consulta não conseguiu conferir agora: ficam de fora com o filtro ligado ou desligado, e podem aparecer em outra tentativa.
+    /// Obras que a consulta não conseguiu conferir agora: ficam de fora e podem aparecer em outra tentativa.
     pub unverified: usize,
-}
-
-/// A marca antiga: a da obra, se houver, ou a da fonte. Continua gravada, mas quem decide o filtro é `rating`.
-fn rated_adult(source: &SourceRow, rating: &Option<ContentRating>) -> bool {
-    !matches!(source.rating.as_str(), "general" | "teen") || matches!(rating, Some(ContentRating::Adult))
-}
-
-fn declared(rating: &Option<ContentRating>) -> Option<Declared> {
-    rating.as_ref().map(|rating| match rating {
-        ContentRating::General => Declared::General,
-        ContentRating::Teen => Declared::Teen,
-        ContentRating::Adult => Declared::Adult,
-        ContentRating::Unknown => Declared::Unknown,
-    })
-}
-
-/// Uma declaração explícita de +18, que fica no histórico da obra. A marca de uma fonte do Mihon não conta: pode ser mista.
-fn declares_adult(extension: &Installed, source: &SourceRow, rating: &Option<ContentRating>) -> bool {
-    matches!(rating, Some(ContentRating::Adult)) || (!extension.bridged && source.rating == "adult")
 }
 
 fn genres_json(genres: &[String]) -> Option<String> {
@@ -479,10 +434,7 @@ fn store_details(core: &Core, conn: &Connection, place: &SeriesPlace, known_titl
             genres: genres_json(&genres),
             status: details.status.map(status_name),
             language: clean(details.language.as_deref(), 20).as_deref().or(Some(place.source.language.as_str())),
-            adult: rated_adult(place.source, &details.rating),
             classification: Some(if !place.extension.bridged || !genres.is_empty() { "known" } else { "unknown" }),
-            declared: declared(&details.rating),
-            declared_adult: declares_adult(place.extension, place.source, &details.rating),
         },
     )?;
     Ok(())
@@ -529,10 +481,8 @@ fn check_series(core: &Core, extension: &Installed, source_id: &str, source: &So
 fn store_page(core: &Core, extension: &Installed, source_id: &str, source: &SourceRow, page: SearchPage, genres: &HashMap<String, Vec<String>>, cancel: Option<&Cancel>) -> AppResult<BrowsePage> {
     let mut ids = Vec::new();
     let mut to_check = Vec::new();
-    let mut hidden = 0;
     {
         let mut conn = core.db();
-        let adult_allowed = library::adult_allowed(&conn);
         let tx = conn.transaction()?;
         let mut seen = HashSet::new();
         for result in page.results.iter().filter(|r| !r.id.is_empty() && r.id.len() <= MAX_REMOTE_ID_BYTES).take(MAX_RESULTS) {
@@ -544,12 +494,6 @@ fn store_page(core: &Core, extension: &Installed, source_id: &str, source: &Sour
             let blocked: bool = tx.query_row("SELECT EXISTS (SELECT 1 FROM blocked_series WHERE extension_id = ?1 AND source_id = ?2 AND remote_id = ?3)", [extension.id.as_str(), source_id, result.id.as_str()], |r| r.get(0))?;
             if blocked || minors::sexualizes_minors(&title, &listed_genres) {
                 block_series(core, &tx, &extension.id, source_id, &result.id)?;
-                continue;
-            }
-            // Com o filtro ligado, o que a própria lista já confirma como +18 nem entra no banco, a não ser que a pessoa
-            // tenha corrigido a classificação desta obra.
-            if !adult_allowed && listed_confirmed(&tx, extension, source_id, source, result, &title, &listed_genres)? {
-                hidden += 1;
                 continue;
             }
             let (id, classification) = upsert_series(
@@ -566,10 +510,7 @@ fn store_page(core: &Core, extension: &Installed, source_id: &str, source: &Sour
                     genres: genres_json(&listed_genres),
                     status: result.status.map(status_name),
                     language: Some(&source.language),
-                    adult: rated_adult(source, &result.rating),
                     classification: (!extension.bridged || !listed_genres.is_empty()).then_some("known"),
-                    declared: declared(&result.rating),
-                    declared_adult: declares_adult(extension, source, &result.rating),
                 },
             )?;
             if classification == "pending" {
@@ -586,13 +527,12 @@ fn store_page(core: &Core, extension: &Installed, source_id: &str, source: &Sour
     let conn = core.db();
     let mut results = Vec::new();
     let mut unverified = 0;
-    // A lista nem sempre traz os gêneros: a obra recusada ao abrir não volta para ela.
-    let mut state = conn.prepare(&format!("SELECT o.classification, {safe} OR {adult} FROM online_series o WHERE o.id = ?1", safe = library::SERIES_SAFE_SQL, adult = library::ADULT_ALLOWED_SQL))?;
+    // A lista nem sempre traz os gêneros: a obra bloqueada ao abrir os detalhes não volta para ela.
+    let mut state = conn.prepare("SELECT o.classification FROM online_series o WHERE o.id = ?1")?;
     for id in ids {
-        match state.query_row([id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, bool>(1)?))).optional()? {
-            Some((classification, _)) if classification == "pending" => unverified += 1,
-            Some((_, true)) => results.push(card(&conn, id)?),
-            Some(_) => hidden += 1,
+        match state.query_row([id], |r| r.get::<_, String>(0)).optional()? {
+            Some(classification) if classification == "pending" => unverified += 1,
+            Some(_) => results.push(card(&conn, id)?),
             None => {}
         }
     }
@@ -602,34 +542,7 @@ fn store_page(core: &Core, extension: &Installed, source_id: &str, source: &Sour
             return Err(error);
         }
     }
-    Ok(BrowsePage { results, has_more: page.has_more, hidden, unverified })
-}
-
-/// A lista sozinha já confirma a obra como +18, e não há correção da pessoa dizendo o contrário.
-fn listed_confirmed(conn: &Connection, extension: &Installed, source_id: &str, source: &SourceRow, result: &SearchResult, title: &str, genres: &[String]) -> AppResult<bool> {
-    let summary = clean(result.summary.as_deref(), MAX_TEXT_CHARS);
-    let meta = rating::Metadata {
-        origin: String::new(),
-        runtime: Some(if extension.bridged { rating::Runtime::Bridged } else { rating::Runtime::Native }),
-        title: title.to_string(),
-        alt_titles: rating::alt_titles_from(summary.as_deref()),
-        description: summary,
-        genres: rating::normalize_genres(genres),
-        series_rating: declared(&result.rating),
-        source_rating: Declared::parse(&source.rating),
-        declared_adult_at: None,
-        cover: None,
-        observed_at: 0,
-    };
-    if rating::classify(&meta, &rating::Params::DEFAULT).state != State::Confirmed {
-        return Ok(false);
-    }
-    let corrected: bool = conn.query_row(
-        "SELECT EXISTS (SELECT 1 FROM series_rating_overrides WHERE extension_id = ?1 AND source_id = ?2 AND remote_id = ?3)",
-        [extension.id.as_str(), source_id, result.id.as_str()],
-        |r| r.get(0),
-    )?;
-    Ok(!corrected)
+    Ok(BrowsePage { results, has_more: page.has_more, unverified })
 }
 
 fn kind_filter(kind: Option<&str>) -> Vec<Filter> {
@@ -881,14 +794,6 @@ pub fn stored_series(conn: &Connection, id: i64) -> AppResult<SeriesView> {
     Ok(SeriesView { series: card(conn, id)?, reading: reading_of(conn, id, &chapters)?, chapters, source_error: None, source_protected: false })
 }
 
-/// Como `stored_series`, para a interface: a obra fora do filtro +18 não abre, por nenhum caminho.
-pub fn visible_series(conn: &Connection, id: i64) -> AppResult<SeriesView> {
-    if let Some(error) = filtered(conn, id)? {
-        return Err(error);
-    }
-    stored_series(conn, id)
-}
-
 fn remove_if_unused(core: &Core, conn: &Connection, id: i64) -> AppResult<()> {
     let removed = conn.execute(
         "DELETE FROM online_series WHERE id = ?1 AND following = 0 AND favorite = 0 AND NOT EXISTS (SELECT 1 FROM series_collections x WHERE x.series_id = ?1) AND NOT EXISTS (SELECT 1 FROM online_chapters c WHERE c.series_id = ?1 AND (c.comic_id IS NOT NULL OR c.file_path IS NOT NULL OR c.reading_started_at IS NOT NULL OR c.completed_at IS NOT NULL OR EXISTS (SELECT 1 FROM chapter_progress q WHERE q.chapter_id = c.id)))",
@@ -903,10 +808,6 @@ fn remove_if_unused(core: &Core, conn: &Connection, id: i64) -> AppResult<()> {
 /// Atualiza detalhes e capítulos. Se a fonte falhar, mostra o último conhecido e diz o motivo.
 pub fn open_series(core: &Core, id: i64, cancel: Option<&Cancel>) -> AppResult<SeriesView> {
     let series = card(&core.db(), id)?;
-    // Escondida pelo filtro: nem a fonte é consultada, e o que está guardado também não aparece.
-    if let Some(error) = filtered(&core.db(), id)? {
-        return Err(error);
-    }
     let remote = (|| -> AppResult<_> {
         let (extension, source) = usable(core, &series.extension_id, &series.source_id)?;
         let details = if extension.bridged { suwayomi::details(core, &series.remote_id, cancel)? } else { core.engine()?.details(&extension, cancel, &series.source_id, &series.remote_id)? };
@@ -914,11 +815,7 @@ pub fn open_series(core: &Core, id: i64, cancel: Option<&Cancel>) -> AppResult<S
         if minors::sexualizes_minors(&details_title(&details, &series.title), &genres) {
             return Err(AppError::user("series_blocked", "Esta obra não está disponível no Prancha."));
         }
-        // Os detalhes ficam gravados antes de qualquer capítulo: é com eles que a classificação decide.
         store_details(core, &core.db(), &SeriesPlace { extension: &extension, source_id: &series.source_id, source: &source, remote_id: &series.remote_id }, &series.title, &details)?;
-        if let Some(error) = filtered(&core.db(), id)? {
-            return Err(error);
-        }
         let chapters = if extension.bridged { suwayomi::chapters(core, &series.remote_id, cancel)? } else { core.engine()?.chapters(&extension, cancel, &series.source_id, &series.remote_id)? };
         Ok(chapters)
     })();
@@ -936,7 +833,7 @@ pub fn open_series(core: &Core, id: i64, cancel: Option<&Cancel>) -> AppResult<S
             }
             stored_series(&conn, id)
         }
-        Err(error) if matches!(error.code(), "extension_cancelled" | "source_rating" | "source_unrated") => Err(error),
+        Err(error) if error.code() == "extension_cancelled" => Err(error),
         Err(error) if error.code() == "series_blocked" => {
             block_series(core, &core.db(), &series.extension_id, &series.source_id, &series.remote_id)?;
             Err(error)
@@ -948,21 +845,6 @@ pub fn open_series(core: &Core, id: i64, cancel: Option<&Cancel>) -> AppResult<S
             Ok(view)
         }
     }
-}
-
-/// O motivo de a obra não aparecer com as preferências atuais, ou `None` se ela aparece.
-pub(crate) fn filtered(conn: &Connection, id: i64) -> AppResult<Option<AppError>> {
-    let row: Option<(String, bool)> = conn
-        .query_row(&format!("SELECT o.rating_state, {safe} OR {adult} FROM online_series o WHERE o.id = ?1", safe = library::SERIES_SAFE_SQL, adult = library::ADULT_ALLOWED_SQL), [id], |r| Ok((r.get(0)?, r.get(1)?)))
-        .optional()?;
-    Ok(match row {
-        Some((_, true)) | None => None,
-        Some((state, false)) => Some(match State::parse(&state) {
-            Some(State::Confirmed) => AppError::user("source_rating", "Esta obra é +18. Para ver, desligue o filtro +18 em Plugins."),
-            Some(State::Suspect) => AppError::user("source_rating", "Esta obra tem indícios de conteúdo +18. Para ver, escolha mostrar obras suspeitas em Plugins."),
-            _ => AppError::user("source_unrated", "A fonte não informa o suficiente para classificar esta obra. Para ver, escolha mostrar obras suspeitas em Plugins."),
-        }),
-    })
 }
 
 /// A página que a pessoa estava tentando abrir, para a verificação começar por ela.
@@ -1060,9 +942,6 @@ pub fn open_chapter(core: &Core, id: i64, cancel: Option<&Cancel>) -> AppResult<
             (count, library::mark_opened(&conn, info.id, count.max(1))?, Some(info.id))
         }
         None => {
-            if let Some(error) = filtered(&core.db(), chapter.series_id)? {
-                return Err(error);
-            }
             let (extension, _) = usable(core, &chapter.extension_id, &chapter.source_id)?;
             let count = fetch_pages(core, id, &chapter, &extension, cancel)?.len() as i64;
             let stored: Option<(i64, f64, i64)> = core.db().query_row("SELECT page_index, scroll_ratio, updated_at FROM chapter_progress WHERE chapter_id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).optional()?;
@@ -1191,7 +1070,7 @@ pub fn set_chapter_sort(conn: &Connection, id: i64, sort: &str) -> AppResult<Ser
 }
 
 pub fn list_following(conn: &Connection) -> AppResult<Vec<SeriesCard>> {
-    let mut statement = conn.prepare(&format!("{CARD_SELECT} WHERE o.following = 1 AND ({safe} OR {adult}) ORDER BY o.title COLLATE NATSORT", safe = library::SERIES_SAFE_SQL, adult = library::ADULT_ALLOWED_SQL))?;
+    let mut statement = conn.prepare(&format!("{CARD_SELECT} WHERE o.following = 1 ORDER BY o.title COLLATE NATSORT"))?;
     let rows = statement.query_map([], card_from_row)?.collect::<Result<_, _>>()?;
     Ok(rows)
 }
@@ -1239,39 +1118,34 @@ pub struct LibrarySeries {
     pub last_opened_at: Option<i64>,
     pub following: bool,
     pub new_count: i64,
-    pub rating_state: String,
     #[serde(flatten)]
     pub reading: SeriesReading,
 }
 
 /// As obras que a pessoa guardou. O resto do que a fonte mostrou fica só em Explorar.
 pub fn library_series(conn: &Connection) -> AppResult<Vec<LibrarySeries>> {
-    let mut statement = conn.prepare(&format!(
+    let mut statement = conn.prepare(
         "SELECT o.id, o.title, o.cover_url IS NOT NULL, s.name, o.favorite, o.created_at,
                 (SELECT max(max(coalesce(p.updated_at, q.updated_at, 0), coalesce(c.last_read_at, 0))) FROM online_chapters c
                  LEFT JOIN reading_progress p ON p.comic_id = c.comic_id
                  LEFT JOIN chapter_progress q ON q.chapter_id = c.id WHERE c.series_id = o.id),
-                o.following,
-                o.rating_state
+                o.following
          FROM online_series o LEFT JOIN extension_sources s ON s.extension_id = o.extension_id AND s.source_id = o.source_id
-         WHERE ({safe} OR {adult})
-           AND (o.favorite = 1 OR o.following = 1
+         WHERE (o.favorite = 1 OR o.following = 1
                 OR EXISTS (SELECT 1 FROM series_collections x WHERE x.series_id = o.id)
                 OR EXISTS (SELECT 1 FROM online_chapters c JOIN chapter_progress q ON q.chapter_id = c.id WHERE c.series_id = o.id)
                 OR EXISTS (SELECT 1 FROM online_chapters c WHERE c.series_id = o.id AND (c.reading_started_at IS NOT NULL OR c.completed_at IS NOT NULL)))",
-        safe = library::SERIES_SAFE_SQL,
-        adult = library::ADULT_ALLOWED_SQL,
-    ))?;
-    type Listed = (i64, String, bool, Option<String>, bool, i64, Option<i64>, bool, String);
+    )?;
+    type Listed = (i64, String, bool, Option<String>, bool, i64, Option<i64>, bool);
     let rows: Vec<Listed> = statement
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get::<_, Option<i64>>(6)?.filter(|at| *at > 0), r.get(7)?, r.get(8)?)))?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get::<_, Option<i64>>(6)?.filter(|at| *at > 0), r.get(7)?)))?
         .collect::<Result<_, _>>()?;
     let new_counts = reading::new_counts(conn)?;
     rows.into_iter()
-        .map(|(id, title, has_cover, source_name, favorite, added_at, last_opened_at, following, rating_state)| {
+        .map(|(id, title, has_cover, source_name, favorite, added_at, last_opened_at, following)| {
             let reading = reading_of(conn, id, &chapters_of(conn, id)?)?;
             let new_count = new_counts.get(&id).copied().unwrap_or(0);
-            Ok(LibrarySeries { id, title, has_cover, source_name, favorite, added_at, last_opened_at, following, new_count, rating_state, reading })
+            Ok(LibrarySeries { id, title, has_cover, source_name, favorite, added_at, last_opened_at, following, new_count, reading })
         })
         .collect()
 }
@@ -1383,13 +1257,9 @@ pub fn prune_stale(core: &Core, conn: &Connection) -> AppResult<usize> {
 // ---------------------------------------------------------------------------
 
 /// Miniatura da obra. A interface nunca fala com o servidor da fonte: a CSP continua sem endereços externos.
-/// A obra fora do filtro +18 fica sem capa, mesmo com uma já em cache, e nada é pedido ao servidor.
 pub fn cover(core: &Core, id: i64) -> AppResult<Option<Vec<u8>>> {
-    let row: Option<(Option<String>, String, bool)> = core
-        .db()
-        .query_row(&format!("SELECT o.cover_url, o.extension_id, {safe} OR {adult} FROM online_series o WHERE o.id = ?1", safe = library::SERIES_SAFE_SQL, adult = library::ADULT_ALLOWED_SQL), [id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
-        .optional()?;
-    let Some((url, extension_id, true)) = row else { return Ok(None) };
+    let row: Option<(Option<String>, String)> = core.db().query_row("SELECT o.cover_url, o.extension_id FROM online_series o WHERE o.id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?))).optional()?;
+    let Some((url, extension_id)) = row else { return Ok(None) };
     let cached = cover_cache_file(core, id);
     if let Ok(bytes) = std::fs::read(&cached) {
         return Ok(Some(bytes));

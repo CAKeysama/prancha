@@ -115,17 +115,6 @@ pub fn run() {
                         if let Err(e) = extensions::sources::forget_blocked(&core, &core.db()) {
                             log::warn!("limpeza de obras bloqueadas falhou: {e}");
                         }
-                        // Obras guardadas antes do classificador atual, ou nunca analisadas. Não segura a interface.
-                        loop {
-                            match extensions::rating_store::analyze_outdated_batch(&mut core.db()) {
-                                Ok(0) => break,
-                                Ok(_) => {}
-                                Err(e) => {
-                                    log::warn!("classificação +18 das obras guardadas falhou: {e}");
-                                    break;
-                                }
-                            }
-                        }
                         // Antes da verificação, que pode demorar: com a tela aberta, um download novo já estaria correndo.
                         if let Err(e) = extensions::downloads::on_startup(&core) {
                             log::warn!("downloads não retomados: {e}");
@@ -228,8 +217,6 @@ pub fn run() {
             commands::series_set_following,
             commands::source_verify,
             commands::series_library,
-            commands::series_rating,
-            commands::series_set_rating,
             commands::series_set_favorite,
             commands::series_set_collections,
             commands::series_add_to_collection,

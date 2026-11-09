@@ -26,14 +26,13 @@ A decisão e as alternativas estão na [ADR 0002](../adr/0002-repositorios-do-mi
 | Acesso | Só as funções do [contrato](EXTENSION_API.md) | **Sem isolamento:** seus arquivos e a internet, como qualquer programa |
 | Rede | Só os hosts declarados, pelo Prancha | Livre, feita pela própria extensão |
 | Assinatura | Ed25519 do índice e de cada pacote, conferida pelo Prancha | **Nenhuma conferência de pacote.** O Prancha só garante que o repositório continua anunciando a chave aprovada |
-| Conteúdo adulto | Declarado por quem publica | Também declarado por quem publica. `SAFE` é o único que passa pelo filtro +18 ligado |
+| Conteúdo adulto | Declarado por quem publica, só como informação | Também declarado por quem publica, só como informação |
 | Memória | Pequena, por chamada | Cerca de 500 MB enquanto o Prancha estiver aberto, depois do primeiro uso |
 
 Por isso, só instale uma extensão do Mihon se confiar em quem a publica. O Prancha avisa antes de adicionar o repositório e antes de instalar.
 
 ## O que não funciona
 
-- **Extensões marcadas como `MIXED` ou `NSFW`** não aparecem com o filtro +18 ligado, que é o padrão. No Keiyoushi, em 2026-11-02, isso deixa 564 das 1448.
 - **Fontes que dependem de um navegador embutido** falham com um erro.
 - **Login:** o Prancha não oferece onde informar conta nem preferências da extensão.
 - **Repositórios só com `index.min.json`** continuam recebendo a mensagem abaixo, e endereços de `.apk` também:
