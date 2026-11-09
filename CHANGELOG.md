@@ -3,6 +3,38 @@
 Tudo o que mudou em cada versão do Prancha. O projeto segue o [versionamento semântico](https://semver.org/lang/pt-BR/),
 e as notas das releases e a [página de downloads](https://cakeysama.github.io/prancha/) são geradas a partir deste arquivo.
 
+## [0.6.0] - 2026-11-09
+
+Agora o Prancha avisa o que mudou e lembra onde você está em cada capítulo. Há uma central de notificações, cada capítulo mostra se foi lido, está em andamento ou é novo, e o filtro +18 explica o que decidiu e aceita correção.
+
+### Novidades
+
+- **Central de notificações:** um sino no menu lateral mostra as recentes, e a tela Notificações guarda o histórico, com filtros e seleção de várias. Avisa capítulos novos de obras acompanhadas, fontes que falharam ao sincronizar, versão nova do Prancha, downloads concluídos ou com falha, importações com arquivos recusados e HQs com arquivo ausente.
+- **Notificações do Windows:** os avisos importantes também aparecem no sistema quando o Prancha está em segundo plano, e clicar neles leva direto ao que mudou. Em Configurações, na categoria Notificações, você escolhe os tipos, desliga os avisos do sistema ou silencia tudo.
+- **Progresso por capítulo:** cada capítulo fica Não lido, Lendo, Em andamento ou Lido, sozinho, conforme você lê. Chegar ao fim da última página conclui o capítulo, e sair no meio guarda onde parou.
+- **Capítulos novos:** obras acompanhadas mostram quantos capítulos novos chegaram, na biblioteca e em Acompanhando, e cada um tem a marca Novo. O botão **Procurar capítulos novos** em Acompanhando confere todas de uma vez.
+- **Classificação +18 com motivo:** cada obra pode ficar como +18, suspeita, livre ou sem informação suficiente, com um selo discreto na capa. Na obra, **Ver motivo ou corrigir** mostra por que ela foi classificada assim e deixa marcar como +18, como livre ou voltar ao automático.
+- **Obras suspeitas:** em Plugins, você escolhe se as obras suspeitas ficam escondidas, aparecem com marca ou aparecem normalmente, separado do filtro das confirmadas.
+
+### Melhorias
+
+- Na lista de capítulos, ícones marcam como lido, como não lido ou todos os anteriores como lidos. A dica de cada ícone aparece depois de 2 segundos, com o mouse ou pelo teclado.
+- A biblioteca mostra o capítulo e o estado, como "Capítulo 42 · Em andamento", e clicar abre o capítulo no ponto salvo.
+- A estrela de Favoritar e o sino de Acompanhar ficam amarelos quando ligados.
+
+### Correções
+
+- **Filtro +18:** gêneros como "Young Adult", "Ecchi" e "Mature" faziam obras livres sumirem como +18, e uma obra marcada como adulta nunca voltava. Agora o título, os títulos alternativos e a descrição também contam, e uma obra sem informação suficiente não passa como livre.
+
+### Observações
+
+- O banco de dados se atualiza sozinho na primeira abertura, e a biblioteca e o progresso são mantidos. O progresso que já existia vira o estado do capítulo, e nenhum capítulo antigo aparece como novo.
+- Os capítulos novos chegam ao abrir a obra ou pelo botão em Acompanhando: o Prancha ainda não procura sozinho em segundo plano. A primeira sincronização de uma obra serve de referência e não gera aviso.
+- Na primeira abertura, as obras já guardadas são reclassificadas aos poucos, sem travar o app. Até lá, elas seguem a regra do filtro anterior.
+- O filtro +18 lê o título, os gêneros e a descrição, não as imagens. A classificação continua sendo a declarada por terceiros e não é garantia.
+- As notificações do sistema nunca mostram o nome de uma obra +18.
+- Requer Windows 10 ou 11 de 64 bits. Os instaladores não têm assinatura digital, então o Windows SmartScreen pode pedir confirmação.
+
 ## [0.5.0] - 2026-11-08
 
 Ficou mais fácil saber onde ler uma obra e achar uma opção. A pesquisa mostra em quais fontes cada obra está, o filtro +18 confere as obras antes de mostrar, e as configurações ganharam categorias e pesquisa.
