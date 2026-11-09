@@ -3,6 +3,14 @@
 Tudo o que mudou em cada versão do Prancha. O projeto segue o [versionamento semântico](https://semver.org/lang/pt-BR/),
 e as notas das releases e a [página de downloads](https://cakeysama.github.io/prancha/) são geradas a partir deste arquivo.
 
+## [0.7.0] - 2026-11-09
+
+Agora dá para ir mais fundo no catálogo do Explorar: cada fonte mostra 10 obras por vez, e o botão "Mostrar mais" traz as próximas 10.
+
+### Novidades
+
+- **Mostrar mais no Explorar:** em Populares, Recentes e nas pesquisas, cada fonte começa com 10 obras e o botão "Mostrar mais" traz mais 10 por clique, sem repetir obra. Na pesquisa em várias fontes, a leva é de 10 títulos. O Prancha só pede outra página à fonte quando falta obra para completar a leva.
+
 ## [0.6.2] - 2026-11-09
 
 Uma versão de bastidores: as verificações e a publicação de cada versão ficaram bem mais rápidas, para as correções e novidades chegarem antes.
