@@ -58,6 +58,8 @@ jobs:
           workspaces: |
             src-tauri -> target
             extensions -> ../src-tauri/target/extensions-wasm
+          # Muda junto com o opt-level das dependências abaixo, para não reaproveitar dependências compiladas de outro jeito.
+          key: deps-opt2
           save-if: ${{ github.ref == 'refs/heads/main' || github.head_ref == 'claude/project-thread-z2ytyz' }}
 
       - run: npm ci
@@ -66,8 +68,11 @@ jobs:
       - run: npm run build
 
       # Os testes de detecção (--test guided) e o E2E usam páginas reais, que não vão para o git: rodam localmente, antes de cada versão.
+      # As dependências saem otimizadas (o código do Prancha não): em modo debug, o Cranelift do wasmtime compila cada extensão
+      # dos testes muito devagar. Só muda a velocidade, não o que é testado; elas ficam no cache e só recompilam quando mudam.
       - name: Testes do backend
-        run: cargo test --manifest-path src-tauri/Cargo.toml --lib --test backend --test extensions
+        shell: bash
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib --test backend --test extensions --config 'profile.dev.package."*".opt-level=2'
 
   # Um nome só para a proteção da main: passa apenas quando todas as verificações passam.
   checks:
