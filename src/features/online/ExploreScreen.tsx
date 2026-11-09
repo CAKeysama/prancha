@@ -13,6 +13,8 @@ import { GridSkeleton, OnlineCover, SeriesGrid, SourceTrouble, siteAnswered } fr
 
 type Mode = "popular" | "latest" | "following";
 
+type Loaded = Pick<Section, "results" | "page" | "hasMore" | "hidden" | "unverified">;
+
 interface Section {
   source: SourceSummary;
   status: "loading" | "ready" | "failed";
@@ -22,6 +24,8 @@ interface Section {
   hidden: number;
   unverified: number;
   loadingMore: boolean;
+  /** Quantas obras da fonte estão na tela. Cresce de STEP em STEP. */
+  shown: number;
   error: string | null;
   /** O site pediu uma verificação anti-robô. */
   protected: boolean;
@@ -29,6 +33,10 @@ interface Section {
 
 const HISTORY_KEY = "online.searchHistory";
 const CONCURRENT_SOURCES = 3;
+/** "Mostrar mais" põe na tela mais esta quantidade de obras por clique. */
+const STEP = 10;
+/** Teto de páginas pedidas à fonte num clique, para uma fonte que só repete obras não ficar pedindo para sempre. */
+const MAX_PAGES_PER_STEP = 5;
 
 const keyOf = (source: SourceSummary) => `${source.extensionId}/${source.sourceId}`;
 
@@ -62,6 +70,9 @@ export function ExploreScreen() {
   const [language, setLanguage] = useState(memory.language);
   const [kind, setKind] = useState(memory.kind);
   const [sections, setSections] = useState<Section[]>([]);
+  const [titlesShown, setTitlesShown] = useState({ search: "", count: STEP });
+  // Quantas obras cada fonte precisa ter. Um clique durante uma busca aumenta a meta da busca que já está andando.
+  const wanted = useRef(new Map<string, number>());
   const [following, setFollowing] = useState<SeriesCard[] | null>(null);
   const [followingError, setFollowingError] = useState<string | null>(null);
   const [checkingNew, setCheckingNew] = useState(false);
@@ -131,24 +142,60 @@ export function ExploreScreen() {
 
   const showingFollowing = mode === "following" && !query;
 
+  const patchSection = useCallback((source: SourceSummary, thisRun: object, change: Partial<Section>) => {
+    if (run.current === thisRun) setSections((all) => all.map((section) => (keyOf(section.source) === keyOf(source) ? { ...section, ...change } : section)));
+  }, []);
+
+  // Pede as próximas páginas da fonte até ter `target` obras, sem repetir as que já vieram. Muitas fontes trazem menos de STEP por página.
+  const fetchUntil = useCallback(
+    async (source: SourceSummary, thisRun: object, from: Loaded, target: number) => {
+      let state = from;
+      let pages = 0;
+      const goal = () => Math.max(target, wanted.current.get(keyOf(source)) ?? 0);
+      if (state.results.length >= goal() || !state.hasMore) return;
+      patchSection(source, thisRun, { loadingMore: true });
+      try {
+        while (run.current === thisRun && state.results.length < goal() && state.hasMore && pages < MAX_PAGES_PER_STEP) {
+          const id = nextRequest();
+          try {
+            const page = await fetchPage(id, source, mode, query, state.page + 1, kind);
+            const known = new Set(state.results.map((item) => item.id));
+            state = { results: [...state.results, ...page.results.filter((item) => !known.has(item.id))], page: state.page + 1, hasMore: page.hasMore, hidden: state.hidden + page.hidden, unverified: state.unverified + page.unverified };
+            pages++;
+            patchSection(source, thisRun, state);
+          } finally {
+            inFlight.current.delete(id);
+          }
+        }
+      } catch (e) {
+        if (!isCancelled(e)) patchSection(source, thisRun, { error: errorMessage(e) });
+      } finally {
+        patchSection(source, thisRun, { loadingMore: false });
+      }
+    },
+    [mode, query, kind, nextRequest, patchSection],
+  );
+
   const loadFirstPage = useCallback(
     async (source: SourceSummary, thisRun: object) => {
       if (run.current !== thisRun) return;
-      const patch = (change: Partial<Section>) => {
-        if (run.current === thisRun) setSections((all) => all.map((section) => (keyOf(section.source) === keyOf(source) ? { ...section, ...change } : section)));
-      };
+      wanted.current.delete(keyOf(source));
       const id = nextRequest();
+      let first: Loaded | null = null;
       try {
         const page = await fetchPage(id, source, mode, query, 1, kind);
         siteAnswered(source.sourceId);
-        patch({ status: "ready", results: page.results, page: 1, hasMore: page.hasMore, hidden: page.hidden, unverified: page.unverified, error: null, protected: false });
+        first = { results: page.results, page: 1, hasMore: page.hasMore, hidden: page.hidden, unverified: page.unverified };
+        patchSection(source, thisRun, { status: "ready", ...first, shown: STEP, error: null, protected: false });
       } catch (e) {
-        if (!isCancelled(e)) patch({ status: "failed", error: errorMessage(e), protected: e instanceof ApiError && e.code === "source_protected" });
+        if (!isCancelled(e)) patchSection(source, thisRun, { status: "failed", error: errorMessage(e), protected: e instanceof ApiError && e.code === "source_protected" });
       } finally {
         inFlight.current.delete(id);
       }
+      // A primeira leva já chega com STEP obras, mesmo quando a fonte manda menos por página.
+      if (first) await fetchUntil(source, thisRun, first, STEP);
     },
-    [mode, query, kind, nextRequest],
+    [mode, query, kind, nextRequest, patchSection, fetchUntil],
   );
 
   // Cada fonte responde no seu tempo: uma lenta ou com erro não segura as outras.
@@ -156,7 +203,10 @@ export function ExploreScreen() {
     if (showingFollowing) return;
     const thisRun = {};
     run.current = thisRun;
-    setSections(selected.map((source) => ({ source, status: "loading", results: [], page: 1, hasMore: false, hidden: 0, unverified: 0, loadingMore: false, error: null, protected: false })));
+    // Cada rodada recomeça as seções do zero antes de consultar as fontes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSections(selected.map((source) => ({ source, status: "loading", results: [], page: 1, hasMore: false, hidden: 0, unverified: 0, loadingMore: false, shown: STEP, error: null, protected: false })));
+    wanted.current.clear();
     void runLimited(
       selected.map((source) => () => loadFirstPage(source, thisRun)),
       CONCURRENT_SOURCES,
@@ -174,40 +224,34 @@ export function ExploreScreen() {
     void loadFirstPage(source, run.current);
   };
 
+  // Uma pesquisa nova, ou outras fontes, recomeça da primeira leva de títulos.
+  const titleSearch = `${query}\n${kind}\n${selected.map(keyOf).join(",")}`;
+  const shownGroups = titlesShown.search === titleSearch ? titlesShown.count : STEP;
   const groups = useMemo(() => groupByTitle(sections.flatMap(({ source, results }) => results.map((card) => ({ ...card, sourceName: source.name, language: card.language ?? source.language }))), query), [sections, query]);
 
   useEffect(() => {
     if (!showingFollowing) return;
     let alive = true;
-    setFollowingError(null);
     api
       .seriesFollowing()
-      .then((items) => alive && setFollowing(items))
+      .then((items) => {
+        if (!alive) return;
+        setFollowingError(null);
+        setFollowing(items);
+      })
       .catch((e: unknown) => alive && setFollowingError(errorMessage(e)));
     return () => {
       alive = false;
     };
   }, [showingFollowing]);
 
-  const loadMore = async (section: Section) => {
-    const { source } = section;
-    const matches = (other: Section) => keyOf(other.source) === keyOf(source);
-    setSections((all) => all.map((other) => (matches(other) ? { ...other, loadingMore: true } : other)));
-    const id = nextRequest();
-    try {
-      const page = await fetchPage(id, source, mode, query, section.page + 1, kind);
-      setSections((all) =>
-        all.map((other) => {
-          if (!matches(other)) return other;
-          const known = new Set(other.results.map((item) => item.id));
-          return { ...other, results: [...other.results, ...page.results.filter((item) => !known.has(item.id))], page: section.page + 1, hasMore: page.hasMore, hidden: other.hidden + page.hidden, unverified: other.unverified + page.unverified, loadingMore: false };
-        }),
-      );
-    } catch (e) {
-      setSections((all) => all.map((other) => (matches(other) ? { ...other, loadingMore: false, error: isCancelled(e) ? other.error : errorMessage(e) } : other)));
-    } finally {
-      inFlight.current.delete(id);
-    }
+  // Primeiro mostra o que já veio da fonte. Só pede outra página quando falta obra para completar a leva.
+  const showMore = (section: Section) => {
+    if (!run.current) return;
+    const target = section.shown + STEP;
+    patchSection(section.source, run.current, { shown: target });
+    wanted.current.set(keyOf(section.source), target);
+    if (!section.loadingMore) void fetchUntil(section.source, run.current, section, target);
   };
 
   const submit = (text: string) => {
@@ -220,9 +264,15 @@ export function ExploreScreen() {
     }
   };
 
-  const loadMoreEverywhere = () => {
+  // Na pesquisa em várias fontes, a leva é de títulos. Faltando título, cada fonte que tem mais manda a próxima página.
+  const showMoreTitles = () => {
+    const thisRun = run.current;
+    if (!thisRun) return;
+    const target = shownGroups + STEP;
+    setTitlesShown({ search: titleSearch, count: target });
+    if (groups.length >= target) return;
     void runLimited(
-      sections.filter((section) => section.hasMore && !section.loadingMore).map((section) => () => loadMore(section)),
+      sections.filter((section) => section.hasMore && !section.loadingMore).map((section) => () => fetchUntil(section.source, thisRun, section, section.results.length + 1)),
       CONCURRENT_SOURCES,
     );
   };
@@ -388,11 +438,11 @@ export function ExploreScreen() {
                 {failed.length > 0 ? "Nada com esse nome nas fontes que responderam. As outras podem ter." : "Nenhuma fonte encontrou esse nome."} A mesma obra pode ter outro título em cada fonte: vale tentar outro.
               </EmptyState>
             )}
-            {groups.length > 0 && <TitleResults groups={groups} showLanguage={languages.length > 1} onOpen={openSeries} />}
-            {sections.some((section) => section.hasMore) && (
+            {groups.length > 0 && <TitleResults groups={groups.slice(0, shownGroups)} showLanguage={languages.length > 1} onOpen={openSeries} />}
+            {(groups.length > shownGroups || sections.some((section) => section.hasMore)) && (
               <div className="mt-3">
-                <Button onClick={loadMoreEverywhere} loading={sections.some((section) => section.loadingMore)}>
-                  Carregar mais
+                <Button onClick={showMoreTitles} loading={sections.some((section) => section.loadingMore)}>
+                  Mostrar mais
                 </Button>
               </div>
             )}
@@ -432,7 +482,7 @@ export function ExploreScreen() {
                 </div>
               )}
               {section.status === "ready" && section.results.length === 0 && !(section.hidden > 0) && !(section.unverified > 0) && <p className="text-sm text-muted">Nada encontrado.</p>}
-              {section.results.length > 0 && <SeriesGrid items={section.results} onOpen={openSeries} />}
+              {section.results.length > 0 && <SeriesGrid items={section.results.slice(0, section.shown)} onOpen={openSeries} />}
               {section.status === "ready" && section.hidden > 0 && (
                 <p className="mt-3 text-sm text-muted">
                   O filtro +18 escondeu {section.hidden === 1 ? "1 obra, adulta, suspeita ou sem classificação" : `${section.hidden} obras, adultas, suspeitas ou sem classificação`}. {TURN_OFF_NOTE}
@@ -446,10 +496,10 @@ export function ExploreScreen() {
                   </Button>
                 </p>
               )}
-              {section.hasMore && (
+              {section.status === "ready" && (section.results.length > section.shown || section.hasMore) && (
                 <div className="mt-3">
-                  <Button onClick={() => void loadMore(section)} loading={section.loadingMore}>
-                    Carregar mais
+                  <Button onClick={() => showMore(section)} loading={section.loadingMore}>
+                    Mostrar mais
                   </Button>
                 </div>
               )}
