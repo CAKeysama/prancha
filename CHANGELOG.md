@@ -3,6 +3,14 @@
 Tudo o que mudou em cada versão do Prancha. O projeto segue o [versionamento semântico](https://semver.org/lang/pt-BR/),
 e as notas das releases e a [página de downloads](https://cakeysama.github.io/prancha/) são geradas a partir deste arquivo.
 
+## [0.7.3] - 2026-11-09
+
+Outra versão de bastidores: a página de downloads não fica mais para trás quando duas publicações chegam juntas.
+
+### Correções
+
+- A página de downloads espera a publicação anterior terminar e tenta de novo, em vez de falhar quando duas versões saem uma logo depois da outra.
+
 ## [0.7.2] - 2026-11-09
 
 Uma versão de bastidores: mudanças que entram uma logo depois da outra agora saem cada uma como a sua versão, sem uma cancelar a outra.
