@@ -15,10 +15,32 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  checks:
-    name: Tipos, lint, testes e backend
+  # Tipos, lint e testes de interface não dependem do Rust nem do Windows: rodam no Linux, em paralelo com o backend.
+  frontend:
+    name: Tipos, lint e testes de interface
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+
+  backend:
+    name: Build e testes do backend
     runs-on: windows-latest
     timeout-minutes: 45
+    env:
+      # Sem informação de depuração, a pasta target e o cache ficam bem menores e o link no Windows é mais rápido.
+      # As mensagens de falha dos testes continuam com arquivo e linha.
+      CARGO_PROFILE_DEV_DEBUG: 0
     steps:
       - uses: actions/checkout@v7
 
@@ -30,23 +52,44 @@ jobs:
       - name: Prepara o Rust
         run: rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown
 
-      - uses: actions/cache@v6
+      # Guarda só as dependências compiladas (não o código do Prancha) e só na main: os PRs leem o cache da main sem gastar minutos salvando.
+      - uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            src-tauri/target
-          key: rust-test-${{ runner.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}
-          restore-keys: rust-test-${{ runner.os }}-
+          workspaces: |
+            src-tauri -> target
+            extensions -> ../src-tauri/target/extensions-wasm
+          # Muda junto com o opt-level das dependências abaixo, para não reaproveitar dependências compiladas de outro jeito.
+          key: deps-opt2
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - run: npm ci
-      - run: npm run typecheck
-      - run: npm run lint
-      - run: npm test
 
-      # O Tauri embute o frontend ao compilar: o backend precisa dele pronto.
+      # O Tauri embute o frontend ao compilar: o backend precisa dele pronto. É também o build de produção do frontend.
       - run: npm run build
 
       # Os testes de detecção (--test guided) e o E2E usam páginas reais, que não vão para o git: rodam localmente, antes de cada versão.
+      # As dependências saem otimizadas (o código do Prancha não): em modo debug, o Cranelift do wasmtime compila cada extensão
+      # dos testes muito devagar. Só muda a velocidade, não o que é testado; elas ficam no cache e só recompilam quando mudam.
       - name: Testes do backend
-        run: cargo test --manifest-path src-tauri/Cargo.toml --lib --test backend --test extensions
+        shell: bash
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib --test backend --test extensions --config 'profile.dev.package."*".opt-level=2'
+
+  # Um nome só para a proteção da main: passa apenas quando todas as verificações passam.
+  checks:
+    name: Tipos, lint, testes e backend
+    needs: [frontend, backend]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Confere o resultado das verificações
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Resultados: $RESULTS"
+          for result in $RESULTS; do
+            if [ "$result" != success ]; then
+              echo "::error::Uma verificação não passou ($result)."
+              exit 1
+            fi
+          done
