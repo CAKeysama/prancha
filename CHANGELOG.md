@@ -3,6 +3,18 @@
 Tudo o que mudou em cada versão do Prancha. O projeto segue o [versionamento semântico](https://semver.org/lang/pt-BR/),
 e as notas das releases e a [página de downloads](https://cakeysama.github.io/prancha/) são geradas a partir deste arquivo.
 
+## [0.7.2] - 2026-11-09
+
+Uma versão de bastidores: mudanças que entram uma logo depois da outra agora saem cada uma como a sua versão, sem uma cancelar a outra.
+
+### Correções
+
+- Um aviso que ainda ia sumir da tela não tenta mais se atualizar depois que a janela foi fechada.
+
+### Observações
+
+- Nada muda no uso do aplicativo. A 0.7.1 tinha ficado sem publicar porque a fila de publicação descartou ela enquanto a 0.7.0 terminava. Agora cada versão tem a sua própria fila, as publicações podem correr ao mesmo tempo, e a atualização oferecida aos aplicativos instalados é sempre a maior versão publicada.
+
 ## [0.7.1] - 2026-11-09
 
 O filtro +18 saiu do Prancha: ele decidia de forma ambígua o que aparecia, e agora todas as obras, fontes e extensões aparecem.

@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { CircleAlert, CircleCheck, Info, X } from "lucide-react";
 import { cn } from "./cn";
 
@@ -31,13 +31,29 @@ const ICONS = { info: Info, success: CircleCheck, error: CircleAlert };
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<ToastItem[]>([]);
   const next = useRef(1);
+  const timers = useRef(new Set<number>());
+  // Um aviso que ainda ia sumir não mexe mais no estado depois que o provedor sai da tela.
+  useEffect(() => {
+    const pending = timers.current;
+    return () => {
+      pending.forEach((timer) => window.clearTimeout(timer));
+      pending.clear();
+    };
+  }, []);
   const dismiss = useCallback((id: number) => setItems((v) => v.filter((t) => t.id !== id)), []);
   const show = useCallback(
     (t: Omit<ToastItem, "id">) => {
       const id = next.current++;
       setItems((v) => [...v.slice(-3), { ...t, id }]);
       // Erros ficam mais tempo na tela para dar tempo de ler.
-      window.setTimeout(() => dismiss(id), t.tone === "error" ? 9000 : 4500);
+      const timer = window.setTimeout(
+        () => {
+          timers.current.delete(timer);
+          dismiss(id);
+        },
+        t.tone === "error" ? 9000 : 4500,
+      );
+      timers.current.add(timer);
     },
     [dismiss],
   );

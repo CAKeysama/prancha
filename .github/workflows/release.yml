@@ -13,9 +13,12 @@ on:
 permissions:
   contents: read
 
-# O merge cria a tag com a release, e a tag dispara este workflow de novo: a segunda execução espera e vê que já foi publicada.
+# Uma fila por commit. O GitHub guarda uma só execução esperando em cada fila, e uma nova tira a anterior: com uma fila única,
+# a tag de uma versão recém-publicada cancelou a 0.7.1, que esperava a vez. Por commit, merges seguidos publicam cada um a sua
+# versão, ao mesmo tempo, sem um cancelar o outro. A tag que a publicação cria aponta para o mesmo commit: essa segunda execução
+# espera a primeira terminar e só vê que a versão já foi publicada.
 concurrency:
-  group: release
+  group: release-${{ github.sha }}
   cancel-in-progress: false
 
 jobs:
@@ -50,7 +53,9 @@ jobs:
               publish=true
             fi
           elif git ls-remote --exit-code --tags origin "refs/tags/$tag" > /dev/null; then
-            echo "::notice::A $tag já existe: a main não tem versão nova."
+            # Este workflow só roda na main quando o package.json muda: com a tag já existente, dois PRs subiram para a mesma versão.
+            echo "::error::A $tag já existe, então esta mudança não sai como versão nova. Abra um PR com \`npm run version:bump\` para publicar o que entrou."
+            exit 1
           else
             publish=true
           fi
@@ -159,8 +164,17 @@ jobs:
           # Uma versão com sufixo (1.3.0-beta.1) nunca vira a mais recente, e por isso não chega aos aplicativos instalados.
           preview=""
           case "$version" in *-*) preview="--prerelease" ;; esac
-          # Sem a tag, o gh cria uma neste commit; com a tag enviada à mão, usa a que existe.
-          gh release create "$TAG" installers/* --target "$GITHUB_SHA" --title "Prancha $TAG" --notes-file notes.md $preview
+          # Sem a tag, o gh cria uma neste commit; com a tag enviada à mão, usa a que existe. Quem vira a mais recente é decidido
+          # depois, pela maior versão: publicações em paralelo podem terminar fora de ordem.
+          gh release create "$TAG" installers/* --target "$GITHUB_SHA" --title "Prancha $TAG" --notes-file notes.md --latest=false $preview
+          # Os aplicativos instalados procuram atualização na release marcada como a mais recente. Ela é sempre a maior versão
+          # publicada, mesmo quando uma versão menor termina de publicar depois de uma maior.
+          newest="$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases --limit 100 --json tagName --jq '.[].tagName' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)"
+          if [ -n "$newest" ]; then
+            gh release edit "$newest" --repo "$GITHUB_REPOSITORY" --latest
+            echo "::notice::Mais recente: $newest."
+          fi
 
       # Releases criadas por um workflow não disparam outros workflows: o site e a página são atualizados de forma explícita.
       - name: Atualiza o site e a página de downloads

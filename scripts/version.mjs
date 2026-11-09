@@ -38,6 +38,19 @@ export function nextVersion(current, level) {
   return `${major}.${minor}.${patch + 1}`;
 }
 
+/** Compara duas versões X.Y.Z: negativo se `a` é menor, zero se iguais, positivo se `a` é maior. */
+export function compareVersions(a, b) {
+  const parts = (v) => v.split("-")[0].split(".").map(Number);
+  const [x, y] = [parts(a), parts(b)];
+  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return (x[i] ?? 0) - (y[i] ?? 0);
+  return 0;
+}
+
+/** A maior versão publicada, ou `null` sem nenhuma. */
+export function newestReleased(released) {
+  return released.filter((v) => /^\d+\.\d+\.\d+$/.test(v)).reduce((best, v) => (best === null || compareVersions(v, best) > 0 ? v : best), null);
+}
+
 /** As cinco cópias da versão, lidas de um conteúdo por arquivo. */
 export function versionsIn(files) {
   const lock = JSON.parse(files["package-lock.json"]);
@@ -94,7 +107,9 @@ export function review({ commits, baseVersion, headVersions, changelog, released
   }
   if (!commits.length) problems.push("O PR não tem commits além da main.");
   else if (head !== expected) problems.push(`Pelos commits, a mudança é ${level}: a versão tem que ir de ${baseVersion} para ${expected}, e está em ${head}. Rode \`npm run version:bump\`.`);
+  const newest = newestReleased(released);
   if (released.includes(head)) problems.push(`A ${head} já foi publicada. Traga a main para o branch e rode \`npm run version:bump\` de novo.`);
+  else if (head && newest && compareVersions(head, newest) < 0) problems.push(`A ${head} é menor que a ${newest}, já publicada. Traga a main para o branch e rode \`npm run version:bump\` de novo.`);
   const entry = parseChangelog(changelog).find((e) => e.version === head);
   if (!entry) problems.push(`O CHANGELOG.md não tem a entrada \`## [${head}] - AAAA-MM-DD\`.`);
   else if (parseChangelog(changelog)[0].version !== head) problems.push(`A entrada da ${head} tem que ser a primeira do CHANGELOG.md.`);
@@ -142,6 +157,10 @@ function main([command, arg]) {
     const after = versionsIn(readAt(arg))["package.json"];
     if (before === after) {
       console.error(`::error::Esta mudança entrou na main sem versão nova (continua ${after}), então não vai ser publicada. Abra um PR com \`npm run version:bump\` e as notas no CHANGELOG.md.`);
+      process.exit(1);
+    }
+    if (compareVersions(after, before) < 0) {
+      console.error(`::error::A versão desceu de ${before} para ${after}, então não vai ser publicada. Abra um PR com \`npm run version:bump\` e as notas no CHANGELOG.md.`);
       process.exit(1);
     }
     console.log(`Versão nova: ${before} → ${after}.`);

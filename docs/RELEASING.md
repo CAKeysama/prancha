@@ -61,6 +61,12 @@ Se qualquer verificação ou build falhar, nada é publicado e o site continua n
 
 Um merge que não muda a versão não publica nada, e o `versao.yml` fica vermelho na `main` para isso não passar despercebido. Abra um PR só com a versão e as notas para publicar o que entrou.
 
+### Merges seguidos
+
+Cada merge publica a sua versão por conta própria, mesmo com outra ainda saindo: o `release.yml` tem uma fila por commit, e nenhuma execução cancela a de outro merge. As publicações correm em paralelo e podem terminar fora de ordem, por isso a release marcada como a mais recente, que é a que os aplicativos instalados baixam, é sempre a maior versão publicada, conferida no fim de cada publicação.
+
+O que impede duas mudanças de usarem a mesma versão é o PR: a verificação **Versão** recusa uma versão já publicada ou menor que a última publicada, e dois PRs que mudam a versão dão conflito nos mesmos arquivos. Se mesmo assim um merge chegar à `main` com uma versão que já tem tag, o `release.yml` e o `versao.yml` ficam vermelhos em vez de pular em silêncio: abra um PR com `npm run version:bump` para publicar o que entrou.
+
 Depois de editar uma release à mão, atualize as páginas com `gh workflow run pages.yml --ref main`.
 
 Para ensaiar sem publicar nada, rode o `release.yml` à mão, na aba Actions ou com `gh workflow run release.yml --ref main`. Os instaladores ficam guardados como artefato da execução.
