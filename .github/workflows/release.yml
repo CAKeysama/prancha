@@ -93,6 +93,18 @@ jobs:
 
       - run: npm ci
 
+      # Sem o Client ID do MyAnimeList, a versão sairia com a integração escondida: confere antes de compilar, sem mostrar o valor.
+      - name: Confere o Client ID do MyAnimeList
+        if: github.event_name != 'workflow_dispatch'
+        shell: bash
+        env:
+          MAL_CLIENT_ID: ${{ vars.MAL_CLIENT_ID }}
+        run: |
+          if ! printf '%s' "$MAL_CLIENT_ID" | grep -Eq '^[A-Za-z0-9]{16,64}$'; then
+            echo "::error::A variável do repositório MAL_CLIENT_ID está vazia ou não tem o formato de um Client ID. Ver docs/MYANIMELIST.md."
+            exit 1
+          fi
+
       # Sem a chave, a compilação falha aqui: nenhuma versão sai sem assinatura. Ver docs/RELEASING.md.
       - run: npm run tauri build
         env:
@@ -100,6 +112,19 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           # Identificador público do aplicativo no MyAnimeList (variável, não segredo). Sem ele, a integração não aparece.
           PRANCHA_MAL_CLIENT_ID: ${{ vars.MAL_CLIENT_ID }}
+
+      # O Client ID entra no executável na compilação: confere que ele está lá, sem mostrar o valor.
+      - name: Confere o Client ID do MyAnimeList no executável
+        if: vars.MAL_CLIENT_ID != ''
+        shell: bash
+        env:
+          MAL_CLIENT_ID: ${{ vars.MAL_CLIENT_ID }}
+        run: |
+          if ! grep -qaF -- "$MAL_CLIENT_ID" src-tauri/target/release/prancha.exe; then
+            echo "::error::O executável foi compilado sem o Client ID do MyAnimeList."
+            exit 1
+          fi
+          echo "O executável traz o Client ID do MyAnimeList."
 
       - name: Reúne os instaladores, as assinaturas e os SHA-256
         shell: bash
