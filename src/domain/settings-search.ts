@@ -73,6 +73,7 @@ export const SETTINGS_INDEX: readonly SettingEntry[] = [
 
   { id: "fontes-online", place: "plugins", title: "Fontes de leitura", description: "Plugin para procurar e ler obras de repositórios de extensões.", keywords: ["online", "internet", "extensões", "repositórios", "explorar", "plugin"] },
   { id: "conteudo-adulto", place: "plugins", title: "Esconder conteúdo +18", description: "Aparece depois de instalar as Fontes de leitura.", keywords: ["+18", "18", "adulto", "nsfw", "filtro", "classificação"] },
+  { id: "conteudo-suspeito", place: "plugins", title: "Obras suspeitas ou sem classificação", description: "Esconder, mostrar com aviso ou mostrar. Aparece com o filtro +18 ligado.", keywords: ["+18", "suspeita", "suspeito", "sem classificação", "aviso", "filtro", "classificação"] },
 ];
 
 const STOP_WORDS = new Set(["a", "o", "e", "as", "os", "ao", "aos", "de", "da", "do", "das", "dos", "em", "na", "no", "nas", "nos", "para", "por", "com", "um", "uma"]);

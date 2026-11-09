@@ -5,6 +5,8 @@ pub mod install;
 pub mod minors;
 pub mod net;
 pub mod reading;
+pub mod rating;
+pub mod rating_store;
 pub mod recommended;
 pub mod repository;
 pub mod runtime;

@@ -20,6 +20,8 @@ use crate::error::{AppError, AppResult};
 use crate::extensions::downloads::{self, DownloadView};
 use crate::extensions::install::{self, InstalledExtension};
 use crate::extensions::net::Cancel;
+use crate::extensions::rating::State as RatingState;
+use crate::extensions::rating_store::{self, RatingDetails};
 use crate::extensions::recommended::{self, RecommendedList};
 use crate::extensions::reading::{self, ChapterReadInfo};
 use crate::extensions::repository::{self, CatalogItem, CatalogQuery, RepositoryInfo, RepositoryPreview};
@@ -1033,7 +1035,7 @@ pub async fn source_cancel(state: S<'_>, request_id: String) -> AppResult<()> {
 
 #[tauri::command]
 pub async fn series_stored(state: S<'_>, id: i64) -> AppResult<SeriesView> {
-    blocking(&state, move |c| sources::stored_series(&c.db(), id)).await
+    blocking(&state, move |c| sources::visible_series(&c.db(), id)).await
 }
 
 #[tauri::command]
@@ -1126,6 +1128,22 @@ pub async fn source_verify(app: AppHandle, state: S<'_>, chapter_id: Option<i64>
 #[tauri::command]
 pub async fn series_library(state: S<'_>) -> AppResult<Vec<sources::LibrarySeries>> {
     blocking(&state, |c| sources::library_series(&c.db())).await
+}
+
+/// Por que a obra tem a classificação +18 que tem: estado, pontuação, evidências e correções.
+#[tauri::command]
+pub async fn series_rating(state: S<'_>, id: i64) -> AppResult<RatingDetails> {
+    blocking(&state, move |c| rating_store::details(&c.db(), id)).await
+}
+
+/// Corrige a classificação +18 de uma obra. `rating` vazio volta ao automático.
+#[tauri::command]
+pub async fn series_set_rating(state: S<'_>, id: i64, rating: Option<String>, reason: Option<String>) -> AppResult<RatingDetails> {
+    let rating = match rating.as_deref() {
+        None => None,
+        Some(text) => Some(RatingState::parse(text).ok_or_else(|| AppError::user("bad_request", "Classificação inválida."))?),
+    };
+    changing(&state, move |c| rating_store::set_manual(&mut c.db(), id, rating, reason.as_deref())).await
 }
 
 #[tauri::command]

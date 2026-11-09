@@ -400,7 +400,7 @@ export function ExploreScreen() {
             {withoutSearch.length > 0 && <p className="mt-1 text-sm text-muted">Sem pesquisa, ficaram de fora: {LIST_FORMAT.format(withoutSearch.map((source) => source.name))}.</p>}
             {hiddenIn.length > 0 && (
               <p className="mt-1 text-sm text-muted">
-                O filtro +18 escondeu obras adultas ou sem classificação de: {LIST_FORMAT.format(hiddenIn.map((section) => section.source.name))}. {TURN_OFF_NOTE}
+                O filtro +18 escondeu obras adultas, suspeitas ou sem classificação de: {LIST_FORMAT.format(hiddenIn.map((section) => section.source.name))}. {TURN_OFF_NOTE}
               </p>
             )}
             {uncheckedIn.length > 0 && (
@@ -435,7 +435,7 @@ export function ExploreScreen() {
               {section.results.length > 0 && <SeriesGrid items={section.results} onOpen={openSeries} />}
               {section.status === "ready" && section.hidden > 0 && (
                 <p className="mt-3 text-sm text-muted">
-                  O filtro +18 escondeu {section.hidden === 1 ? "1 obra, adulta ou sem classificação" : `${section.hidden} obras, adultas ou sem classificação`}. {TURN_OFF_NOTE}
+                  O filtro +18 escondeu {section.hidden === 1 ? "1 obra, adulta, suspeita ou sem classificação" : `${section.hidden} obras, adultas, suspeitas ou sem classificação`}. {TURN_OFF_NOTE}
                 </p>
               )}
               {section.status === "ready" && section.unverified > 0 && (
@@ -462,7 +462,7 @@ export function ExploreScreen() {
 
 const LIST_FORMAT = new Intl.ListFormat("pt-BR", { type: "conjunction" });
 const CHECKING_NOTE = "Conferindo a classificação das obras. Na primeira visita, pode passar de um minuto.";
-const TURN_OFF_NOTE = "Para ver, desligue o filtro em Plugins.";
+const TURN_OFF_NOTE = "Para ver, mude o filtro em Plugins.";
 const NAMES_SHOWN = 3;
 
 const troubleLayout = (text: string, actions: ReactNode) => (

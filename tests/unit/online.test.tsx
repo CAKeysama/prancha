@@ -94,6 +94,8 @@ function card(id: number, title: string, overrides: Partial<SeriesCard> = {}): S
     lastUpdateAt: null,
     favorite: false,
     newCount: 0,
+    ratingState: "none",
+    ratingOrigin: "inferred",
     ...overrides,
   };
 }
@@ -518,12 +520,12 @@ describe("Explorar", () => {
     // A tela guarda a pesquisa do teste anterior.
     await searchFor("");
     const hiding = await screen.findByRole("region", { name: "Fonte A" });
-    expect(await within(hiding).findByText(/O filtro \+18 escondeu 23 obras, adultas ou sem classificação\. Para ver, desligue o filtro em Plugins\./)).toBeTruthy();
+    expect(await within(hiding).findByText(/O filtro \+18 escondeu 23 obras, adultas, suspeitas ou sem classificação\. Para ver, mude o filtro em Plugins\./)).toBeTruthy();
     expect(within(hiding).queryByText("Nada encontrado.")).toBeNull();
     expect(await within(screen.getByRole("region", { name: "Fonte B" })).findByText("Nada encontrado.")).toBeTruthy();
 
     await searchFor("escondida");
-    expect(await screen.findByText(/O filtro \+18 escondeu obras adultas ou sem classificação de: Fonte A\./)).toBeTruthy();
+    expect(await screen.findByText(/O filtro \+18 escondeu obras adultas, suspeitas ou sem classificação de: Fonte A\./)).toBeTruthy();
     expect(screen.queryByText(/Nenhuma fonte encontrou esse nome/)).toBeNull();
   });
 

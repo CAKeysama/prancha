@@ -354,7 +354,7 @@ fn native_notice(conn: &Connection, n: &NewNotification, id: i64, title: &str, b
     }
     // Uma obra +18 não aparece pelo nome fora do aplicativo.
     let adult = n.series_id.is_some_and(|series| {
-        conn.query_row("SELECT adult = 1 OR classification <> 'known' FROM online_series WHERE id = ?1", [series], |r| r.get::<_, bool>(0)).unwrap_or(true)
+        conn.query_row(&format!("SELECT {} FROM online_series o WHERE o.id = ?1", library::SERIES_FLAGGED_SQL), [series], |r| r.get::<_, bool>(0)).unwrap_or(true)
     });
     if adult && n.kind == Kind::ChaptersNew {
         return Some(NativeNotice { id, title: "Capítulos novos".into(), body: "Uma obra que você acompanha recebeu capítulos novos.".into() });
@@ -798,9 +798,9 @@ mod tests {
         let conn = db::open_in_memory().unwrap();
         conn.execute_batch(
             "INSERT INTO settings (key, value) VALUES ('plugins.online', 'true');
-             INSERT INTO online_series (id, extension_id, source_id, remote_id, title, following, classification, created_at, updated_at) VALUES (1, 'e', 's', 'op', 'One Piece', 1, 'known', 1, 1);
-             INSERT INTO online_series (id, extension_id, source_id, remote_id, title, following, classification, created_at, updated_at) VALUES (2, 'e', 's', 'nar', 'Naruto', 1, 'known', 1, 1);
-             INSERT INTO online_series (id, extension_id, source_id, remote_id, title, following, classification, created_at, updated_at) VALUES (3, 'e', 's', 'x', 'Não acompanhada', 0, 'known', 1, 1);",
+             INSERT INTO online_series (id, extension_id, source_id, remote_id, title, following, classification, rating_state, created_at, updated_at) VALUES (1, 'e', 's', 'op', 'One Piece', 1, 'known', 'none', 1, 1);
+             INSERT INTO online_series (id, extension_id, source_id, remote_id, title, following, classification, rating_state, created_at, updated_at) VALUES (2, 'e', 's', 'nar', 'Naruto', 1, 'known', 'none', 1, 1);
+             INSERT INTO online_series (id, extension_id, source_id, remote_id, title, following, classification, rating_state, created_at, updated_at) VALUES (3, 'e', 's', 'x', 'Não acompanhada', 0, 'known', 'none', 1, 1);",
         )
         .unwrap();
         conn
@@ -1002,7 +1002,7 @@ mod tests {
     #[test]
     fn adult_series_stay_out_of_native_text_and_the_filtered_list() {
         let conn = conn();
-        conn.execute("UPDATE online_series SET adult = 1 WHERE id = 2", []).unwrap();
+        conn.execute("UPDATE online_series SET adult = 1, rating_state = 'confirmed' WHERE id = 2", []).unwrap();
         let a = chapter(&conn, 2, "1", 1);
         let r = discover(&conn, 2, &[a], 1).unwrap();
         let native = r.native.unwrap();

@@ -19,7 +19,7 @@ use http::{Reply, serve};
 use prancha_lib::core::Core;
 use prancha_lib::error::AppError;
 use prancha_lib::extensions::reading::{self, ReadState};
-use prancha_lib::extensions::{downloads, install, sources, suwayomi};
+use prancha_lib::extensions::{downloads, install, rating_store, sources, suwayomi};
 use prancha_lib::library;
 use prancha_lib::notifications;
 use prancha_lib::extensions::net::{Access, Limits, Net, NetError, Request};
@@ -1941,6 +1941,8 @@ fn what_was_stored_before_is_removed_at_startup_without_touching_the_rest() {
             (1, 'e', 's', 'titulo', 'Obra Lolicon', '[]', 1, 'known', 1, 1),
             (2, 'e', 's', 'genero', 'Obra', '[\"Shota\"]', 1, 'known', 1, 1),
             (3, 'e', 's', 'comum', 'Comum', '[\"Ação\"]', 1, 'known', 1, 1);
+         -- A extensão já foi removida; a última análise sabia que a fonte era livre.
+         UPDATE online_series SET known_source_rating = 'general', known_runtime = 'native';
          INSERT INTO online_chapters (id, series_id, remote_id, title, sort_order, file_path) VALUES (1, 1, 'cap', 'Cap', 0, 'capitulo.cbz');
          INSERT INTO chapter_downloads (id, chapter_id, status, created_at, updated_at) VALUES (1, 1, 'paused', 1, 1);",
     )
@@ -1952,6 +1954,10 @@ fn what_was_stored_before_is_removed_at_startup_without_touching_the_rest() {
     std::fs::write(partial.join("0001.png"), b"pagina").unwrap();
 
     assert_eq!(sources::forget_blocked(&core, &conn).unwrap(), 2);
+    // Como na abertura do app: as obras guardadas sem análise são classificadas em seguida.
+    drop(conn);
+    while rating_store::analyze_outdated_batch(&mut core.db()).unwrap() > 0 {}
+    let conn = core.db();
     let left: Vec<String> = sources::library_series(&conn).unwrap().into_iter().map(|series| series.title).collect();
     assert_eq!(left, ["Comum"]);
     assert!(!cover.exists() && !partial.exists(), "nem capa nem páginas soltas ficam no disco");
@@ -2020,6 +2026,8 @@ fn chapter(core: &Core, series: &str, remote: &str) -> i64 {
     )
     .unwrap();
     let series_id: i64 = conn.query_row("SELECT id FROM online_series WHERE remote_id = ?1", [series], |r| r.get(0)).unwrap();
+    // Como toda obra gravada pelo app: já classificada.
+    rating_store::analyze(&conn, series_id).unwrap();
     conn.execute("INSERT INTO online_chapters (series_id, remote_id, title, number, sort_order) VALUES (?1, ?2, 'Capítulo 1', '1', 0)", rusqlite::params![series_id, remote]).unwrap();
     conn.last_insert_rowid()
 }

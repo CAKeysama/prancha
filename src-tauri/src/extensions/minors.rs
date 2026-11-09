@@ -47,7 +47,7 @@ static SEXUAL_FRAGMENTS: Terms = LazyLock::new(|| compact_terms(&["色情", "エ
 static AGE_UNITS: Terms = LazyLock::new(|| ["ano", "anos", "year", "years", "yo", "歳", "才", "岁", "살"].iter().map(|unit| normalized(unit).trim().to_string()).collect());
 
 /// Minúsculas, sem acentos e com as palavras separadas por um espaço, inclusive nas pontas.
-fn normalized(text: &str) -> String {
+pub(super) fn normalized(text: &str) -> String {
     let mut spaced = String::new();
     for c in fold(&text.nfkc().collect::<String>()).chars() {
         match c {

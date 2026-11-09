@@ -214,6 +214,7 @@ describe("biblioteca com obras das fontes", () => {
     chaptersRead: 0,
     resume: null,
     collections: [],
+    ratingState: "none",
     ...overrides,
   });
 

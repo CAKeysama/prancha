@@ -10,7 +10,7 @@ use serde::Serialize;
 use super::net::{Access, Limits, NetError, Request};
 use super::repository::{self, Capabilities, ExtensionEntry, MAX_ARTIFACT_BYTES};
 use super::runtime::{ContentKind, ContentRating, Grant, Installed, ReadingDirection, SourceInfo};
-use super::{signing, suwayomi};
+use super::{rating_store, signing, suwayomi};
 use crate::core::Core;
 use crate::db::now_ms;
 use crate::error::{AppError, AppResult};
@@ -371,6 +371,8 @@ fn write_sources(conn: &Connection, extension_id: &str, sources: &[SourceInfo]) 
             source.min_interval_ms,
         ])?;
     }
+    // A classificação das fontes pode ter mudado: as obras desta extensão são conferidas de novo.
+    rating_store::analyze_extension(conn, extension_id)?;
     Ok(())
 }
 
@@ -477,6 +479,8 @@ pub fn remove(core: &Core, id: &str) -> AppResult<()> {
         suwayomi::uninstall_extension(core, id);
     }
     core.db().execute("DELETE FROM installed_extensions WHERE id = ?1", [id])?;
+    // Sem a fonte, a classificação dela deixa de valer para as obras que ficaram.
+    rating_store::analyze_extension(&core.db(), id)?;
     remove_package_if_unused(core, &file_name);
     if let Ok(engine) = core.engine() {
         engine.forget(&sha256);
