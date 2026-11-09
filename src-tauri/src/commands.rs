@@ -1565,14 +1565,22 @@ pub async fn mal_status(state: S<'_>) -> AppResult<crate::mal::Status> {
 /// Abre a autorização no navegador e espera a pessoa voltar (até alguns minutos, ou `mal_connect_cancel`).
 #[tauri::command]
 pub async fn mal_connect(app: AppHandle, state: S<'_>) -> AppResult<crate::mal::Status> {
-    blocking(&state, move |c| {
+    let opener = app.clone();
+    let status = blocking(&state, move |c| {
         c.mal.connect(&|url| {
-            app.opener()
+            opener
+                .opener()
                 .open_url(url, None::<&str>)
                 .map_err(|_| AppError::user("open_failed", "Não foi possível abrir o navegador para entrar no MyAnimeList."))
         })
     })
-    .await
+    .await?;
+    // A pessoa estava no navegador: traz o Prancha de volta para mostrar a conta conectada.
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+    Ok(status)
 }
 
 #[tauri::command]

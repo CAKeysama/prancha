@@ -3,6 +3,19 @@
 Tudo o que mudou em cada versão do Prancha. O projeto segue o [versionamento semântico](https://semver.org/lang/pt-BR/),
 e as notas das releases e a [página de downloads](https://cakeysama.github.io/prancha/) são geradas a partir deste arquivo.
 
+## [0.11.1] - 2026-11-09
+
+A conexão com o MyAnimeList passa a funcionar: o Prancha espera a volta do login no endereço cadastrado no aplicativo do MAL.
+
+### Melhorias
+
+- Depois de autorizar no navegador, a janela do Prancha volta para a frente, já com a conta conectada.
+- A publicação confere o identificador do aplicativo no MyAnimeList antes de compilar e dentro do executável, e as verificações o testam contra a API real do MAL: nenhuma versão sai com a integração escondida.
+
+### Correções
+
+- O login do MyAnimeList voltava para um endereço diferente do cadastrado, e o MAL recusaria a autorização. Agora a volta é em `http://localhost:8080/callback`, só neste computador e só enquanto a conexão está em andamento.
+
 ## [0.11.0] - 2026-11-09
 
 Integração com o MyAnimeList: conecte a conta e o Prancha associa as obras das fontes ao catálogo do MAL e atualiza os capítulos lidos quando você termina um capítulo. O menu do botão direito do navegador saiu do app.

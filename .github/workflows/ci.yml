@@ -77,6 +77,47 @@ jobs:
         shell: bash
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib --test backend --test extensions --config 'profile.dev.package."*".opt-level=2'
 
+  # Confere o Client ID do MyAnimeList (variável do repositório MAL_CLIENT_ID) contra a API real: uma pesquisa pública só com
+  # ele, sem conta. Fica fora da proteção da main porque depende de um serviço de fora; o build da versão confere de novo.
+  # Em PRs de forks a variável não chega, e a verificação é pulada.
+  myanimelist:
+    name: Client ID do MyAnimeList
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Pesquisa na API do MyAnimeList com o Client ID
+        env:
+          MAL_CLIENT_ID: ${{ vars.MAL_CLIENT_ID }}
+        run: |
+          if [ -z "$MAL_CLIENT_ID" ]; then
+            echo "::warning::A variável MAL_CLIENT_ID não está disponível aqui: a integração com o MyAnimeList não foi conferida."
+            exit 0
+          fi
+          if ! printf '%s' "$MAL_CLIENT_ID" | grep -Eq '^[A-Za-z0-9]{16,64}$'; then
+            echo "::error::A variável MAL_CLIENT_ID não tem o formato de um Client ID do MyAnimeList (letras e números)."
+            exit 1
+          fi
+          # Por ser variável (pública), o GitHub mostra o valor no registro da etapa; ele não é segredo. Tenta de novo em falhas de rede e erros 5xx do MAL.
+          for attempt in 1 2 3; do
+            status="$(curl -sS -o body.json -w '%{http_code}' --max-time 20 -H "X-MAL-CLIENT-ID: $MAL_CLIENT_ID" \
+              'https://api.myanimelist.net/v2/manga?q=berserk&limit=1&fields=num_chapters' || echo 000)"
+            case "$status" in
+              200) break ;;
+              000|5*) sleep $((attempt * 10)) ;;
+              *) break ;;
+            esac
+          done
+          case "$status" in
+            200)
+              if ! grep -q '"data"' body.json; then
+                echo "::error::O MyAnimeList respondeu sem resultados."
+                exit 1
+              fi
+              echo "O MyAnimeList aceitou o Client ID." ;;
+            401|403) echo "::error::O MyAnimeList recusou o Client ID (erro $status). Confira a variável MAL_CLIENT_ID com o cadastro em myanimelist.net/apiconfig."; exit 1 ;;
+            *) echo "::error::O MyAnimeList não respondeu como esperado (erro $status)."; exit 1 ;;
+          esac
+
   # Um nome só para a proteção da main: passa apenas quando todas as verificações passam.
   checks:
     name: Tipos, lint, testes e backend
