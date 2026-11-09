@@ -14,6 +14,7 @@ import type { CollectionInfo } from "../../domain/types";
 import { api, errorMessage } from "../../services/api";
 import { useLibraryData, useLibraryVersion } from "../../app/library-events";
 import { useNav } from "../../app/navigation";
+import { useScrollMemory } from "../../app/scroll-memory";
 import { OnlineCover } from "../online/parts";
 import { LibraryScreen } from "./LibraryScreen";
 import { useLibrarySeries } from "./use-library-series";
@@ -137,10 +138,11 @@ function useCollectionDialogs() {
 
 export function CollectionsScreen() {
   const nav = useNav();
-  const { data, error } = useLibraryData(() => api.collections(), []);
+  const { data, error } = useLibraryData(() => api.collections(), [], "collections");
   const d = useCollectionDialogs();
+  const scrollRef = useScrollMemory<HTMLDivElement>("collections");
   return (
-    <div className="h-full overflow-y-auto">
+    <div ref={scrollRef} className="h-full overflow-y-auto">
       <PageHeader
         title="Coleções"
         subtitle={data ? `${data.length} ${data.length === 1 ? "coleção" : "coleções"}` : undefined}
@@ -211,8 +213,8 @@ function AddComicsToCollection({ collection, onClose }: { collection: Collection
   const [text, setText] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
-  const { data: all } = useLibraryData(() => api.listComics({ sort: "title" }), []);
-  const { data: inside } = useLibraryData(() => api.listComics({ collectionId: collection.id }), [collection.id]);
+  const { data: all } = useLibraryData(() => api.listComics({ sort: "title" }), [], "comics-by-title");
+  const { data: inside } = useLibraryData(() => api.listComics({ collectionId: collection.id }), [collection.id], "collection-comics");
   const series = useLibrarySeries();
   const insideIds = useMemo(() => new Set((inside ?? []).map((c) => c.id)), [inside]);
   const everything = useMemo<LibraryItem[]>(() => [...(all ?? []).filter((c) => !insideIds.has(c.id)), ...series.filter((s) => !s.collections.includes(collection.id))], [all, insideIds, series, collection.id]);
@@ -282,7 +284,7 @@ function AddComicsToCollection({ collection, onClose }: { collection: Collection
 
 export function CollectionDetailScreen({ id }: { id: number }) {
   const nav = useNav();
-  const { data } = useLibraryData(() => api.collections(), []);
+  const { data } = useLibraryData(() => api.collections(), [], "collections");
   const collection = data?.find((c) => c.id === id);
   const d = useCollectionDialogs();
   const [adding, setAdding] = useState(false);

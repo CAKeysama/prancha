@@ -12,6 +12,7 @@ import { PageHeader } from "../../components/PageHeader";
 import { useToast } from "../../components/Toast";
 import { useLibraryVersion } from "../../app/library-events";
 import { useNav } from "../../app/navigation";
+import { useScrollMemory } from "../../app/scroll-memory";
 import {
   CHAPTER_STATE_LABELS,
   DOWNLOAD_STATUS_LABELS,
@@ -34,6 +35,25 @@ import { searchAcrossSources } from "./ExploreScreen";
 import { Fact, OnlineCover, SourceTrouble, siteAnswered } from "./parts";
 
 let requestCounter = 0;
+
+/** Uma obra sincronizada com a fonte há menos disto abre só com o que está gravado, sem consultar a fonte. */
+export const SERIES_FRESH_MS = 5 * 60 * 1000;
+const syncedAt = new Map<number, number>();
+/** As últimas obras abertas, para a volta do leitor mostrar a tela na hora. */
+const lastViews = new Map<number, SeriesView>();
+const MAX_VIEWS = 30;
+
+function remember(view: SeriesView) {
+  lastViews.delete(view.id);
+  lastViews.set(view.id, view);
+  if (lastViews.size > MAX_VIEWS) lastViews.delete(lastViews.keys().next().value!);
+}
+
+/** Esquece o que foi guardado. Para os testes. */
+export function clearSeriesMemory() {
+  syncedAt.clear();
+  lastViews.clear();
+}
 
 const ACTIVE = new Set(["queued", "running", "paused"]);
 const isActive = (chapter: ChapterView) => !!chapter.download && ACTIVE.has(chapter.download.status);
@@ -164,9 +184,13 @@ export function SeriesScreen({ id }: { id: number }) {
   const toast = useToast();
   const actions = useComicActions();
   const { version } = useLibraryVersion();
-  const [view, setView] = useState<SeriesView | null>(null);
+  const [view, setView] = useState<SeriesView | null>(() => lastViews.get(id) ?? null);
   const [fatal, setFatal] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(true);
+  const scrollRef = useScrollMemory<HTMLDivElement>(`series:${id}`);
+  useEffect(() => {
+    if (view && view.id === id) remember(view);
+  }, [view, id]);
   const [attempt, setAttempt] = useState(0);
   const [selected, setSelected] = useState<Set<number>>(new Set());
 
@@ -180,17 +204,34 @@ export function SeriesScreen({ id }: { id: number }) {
   // O que já se sabe aparece na hora, com ou sem internet. A fonte atualiza em seguida.
   useEffect(() => {
     let alive = true;
+    let opened = false;
     const requestId = `series-${++requestCounter}`;
+    // Sincronizada há pouco: o que está gravado já é o que a fonte disse. Tentar de novo sempre consulta.
+    const recent = attempt === 0 && Date.now() - (syncedAt.get(id) ?? 0) < SERIES_FRESH_MS;
     api
       .seriesStored(id)
-      .then((stored) => alive && setView((current) => current ?? stored))
+      .then((stored) => {
+        if (!alive) return;
+        // O gravado vale mais que a cópia da última visita, e menos que a resposta da fonte.
+        if (!opened) setView(stored);
+        if (recent) setRefreshing(false);
+      })
       .catch((e: unknown) => alive && setFatal(errorMessage(e)));
+    if (recent) {
+      return () => {
+        alive = false;
+      };
+    }
     api
       .seriesOpen(requestId, id)
       .then((fresh) => {
         if (!alive) return;
+        opened = true;
         setView(fresh);
-        if (!fresh.sourceError) siteAnswered(fresh.sourceId);
+        if (!fresh.sourceError) {
+          siteAnswered(fresh.sourceId);
+          syncedAt.set(id, Date.now());
+        }
       })
       .catch((e: unknown) => {
         if (alive && !(e instanceof ApiError && e.code === "extension_cancelled")) setFatal(errorMessage(e));
@@ -202,7 +243,11 @@ export function SeriesScreen({ id }: { id: number }) {
     };
   }, [id, attempt]);
 
+  // A abertura já leu o que está gravado: aqui, só as mudanças na biblioteca depois dela.
+  const seenVersion = useRef(version);
   useEffect(() => {
+    if (seenVersion.current === version) return;
+    seenVersion.current = version;
     if (view) readStored();
     // Só quando a biblioteca muda: ler a cada mudança de `view` entraria em ciclo.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -358,7 +403,7 @@ export function SeriesScreen({ id }: { id: number }) {
     nav.navigate({ name: "explore" });
   };
   return (
-    <div className="h-full overflow-y-auto">
+    <div ref={scrollRef} className="h-full overflow-y-auto">
       <PageHeader
         title={view.title}
         onBack={nav.back}

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Bell, CheckCheck, Mail, Trash2, X } from "lucide-react";
 import { useNav } from "../../app/navigation";
 import { useSettings } from "../../app/settings-context";
+import { useScrollMemory } from "../../app/scroll-memory";
 import { Button } from "../../components/Button";
 import { ConfirmDialog } from "../../components/Dialog";
 import { EmptyState, ErrorState, Spinner } from "../../components/Feedback";
@@ -39,14 +40,27 @@ function emptyText(state: NotificationStateFilter, category: NotificationCategor
   return { title: `Nenhuma notificação${where}`, text: "Quando houver algo dessa categoria, aparece aqui." };
 }
 
+/** O máximo que o backend devolve numa página. */
+const MAX_RESTORED = 100;
+
+/** A tela como estava quando a pessoa saiu: filtros e o que já tinha sido carregado. */
+let kept: { state: NotificationStateFilter; category: NotificationCategory | null; items: AppNotification[] | null; cursor: NotificationCursor | null } | null = null;
+
+/** Esquece a lista guardada. Para os testes. */
+export function clearNotificationsScreen() {
+  kept = null;
+}
+
 export function NotificationsScreen() {
   const { settings } = useSettings();
   const nav = useNav();
   const { unread, createdVersion, setRead, markAllRead, remove, clearRead, run, subscribe } = useNotifications();
-  const [state, setState] = useState<NotificationStateFilter>("all");
-  const [category, setCategory] = useState<NotificationCategory | null>(null);
-  const [items, setItems] = useState<AppNotification[] | null>(null);
-  const [cursor, setCursor] = useState<NotificationCursor | null>(null);
+  const [state, setState] = useState<NotificationStateFilter>(kept?.state ?? "all");
+  const [category, setCategory] = useState<NotificationCategory | null>(kept?.category ?? null);
+  const [items, setItems] = useState<AppNotification[] | null>(kept?.items ?? null);
+  const [cursor, setCursor] = useState<NotificationCursor | null>(kept?.cursor ?? null);
+  // A lista guardada aparece na hora e é conferida de uma vez, com o mesmo tamanho, para não encolher na volta.
+  const restored = useRef(kept ? { key: `${kept.state}|${kept.category ?? ""}`, size: kept.items?.length ?? 0 } : null);
   const [error, setError] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -55,22 +69,29 @@ export function NotificationsScreen() {
   const filterKey = `${state}|${category ?? ""}`;
   const loadedKey = useRef<string | null>(null);
   const categories = visibleCategories(settings["plugins.online"]);
+  const scrollRef = useScrollMemory<HTMLDivElement>(`notifications:${filterKey}`);
 
   const query = useCallback(
-    (before?: NotificationCursor) =>
-      api.notificationsList({ state: state === "all" ? undefined : state, category: category ?? undefined, before, limit: PAGE_SIZE }),
+    (before?: NotificationCursor, limit = PAGE_SIZE) =>
+      api.notificationsList({ state: state === "all" ? undefined : state, category: category ?? undefined, before, limit }),
     [state, category],
   );
+
+  useEffect(() => {
+    kept = { state, category, items, cursor };
+  }, [state, category, items, cursor]);
 
   // Primeira página a cada filtro. Notificações novas entram no topo sem perder o que já foi carregado.
   useEffect(() => {
     let alive = true;
     const fresh = loadedKey.current !== filterKey;
-    if (fresh) {
+    const back = fresh && restored.current?.key === filterKey ? restored.current : null;
+    restored.current = null;
+    if (fresh && !back) {
       setItems(null);
       setSelected(new Set());
     }
-    query()
+    query(undefined, back ? Math.min(MAX_RESTORED, Math.max(PAGE_SIZE, back.size)) : PAGE_SIZE)
       .then((page) => {
         if (!alive) return;
         setNow(Date.now());
@@ -252,7 +273,7 @@ export function NotificationsScreen() {
   }
 
   return (
-    <div className="h-full overflow-y-auto">
+    <div ref={scrollRef} className="h-full overflow-y-auto">
       {header}
       {body}
       <ConfirmDialog

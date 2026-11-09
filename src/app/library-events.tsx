@@ -1,5 +1,6 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { onLibraryChanged } from "../services/events";
+import { fetchInto, peek, subscribe } from "../services/query-cache";
 
 interface LibraryVersion {
   version: number;
@@ -32,11 +33,19 @@ export function LibraryEventsProvider({ children }: { children: ReactNode }) {
 
 export const useLibraryVersion = () => useContext(Ctx);
 
+/** Leituras locais repetidas neste intervalo, na mesma versão da biblioteca, usam o valor guardado sem consultar. */
+const LOCAL_FRESH_MS = 2000;
+
 /**
- * Carrega dados do backend e recarrega quando o catálogo muda. Mantém o último valor
- * durante recargas (sem piscar a tela) e expõe erro com mensagem em português.
+ * Carrega dados do backend e recarrega quando o catálogo muda. `name` identifica a consulta no cache do app:
+ * a tela que volta mostra na hora o último valor e confere em segundo plano. Mantém o último valor durante
+ * recargas (sem piscar a tela) e expõe erro com mensagem em português.
  */
-export function useLibraryData<T>(load: () => Promise<T>, deps: unknown[]): {
+export function useLibraryData<T>(
+  load: () => Promise<T>,
+  deps: unknown[],
+  name: string,
+): {
   data: T | null;
   error: string | null;
   loading: boolean;
@@ -44,26 +53,27 @@ export function useLibraryData<T>(load: () => Promise<T>, deps: unknown[]): {
 } {
   const { version } = useLibraryVersion();
   const [nonce, setNonce] = useState(0);
-  const key = JSON.stringify([version, nonce, ...deps]);
-  const [state, setState] = useState<{ data: T | null; error: string | null; key: string | null }>({
-    data: null,
-    error: null,
-    key: null,
-  });
+  const key = `${name}:${JSON.stringify(deps)}`;
+  const snapshot = useSyncExternalStore(
+    useCallback((listener: () => void) => subscribe(key, listener), [key]),
+    () => peek<T>(key),
+  );
+  // Enquanto a chave nova não tem valor, segue mostrando o da anterior.
+  const [shownKey, setShownKey] = useState(key);
+  if (snapshot.data !== undefined && shownKey !== key) setShownKey(key);
   const loadRef = useRef(load);
   useEffect(() => {
     loadRef.current = load;
   });
+  const handledNonce = useRef(nonce);
   useEffect(() => {
-    let alive = true;
-    loadRef
-      .current()
-      .then((data) => alive && setState({ data, error: null, key }))
-      .catch((e: unknown) => alive && setState((s) => ({ data: s.data, error: e instanceof Error ? e.message : String(e), key })));
-    return () => {
-      alive = false;
-    };
-  }, [key]);
+    const current = peek<T>(key);
+    const forced = handledNonce.current !== nonce;
+    handledNonce.current = nonce;
+    if (!forced && current.version === version && Date.now() - current.updatedAt < LOCAL_FRESH_MS) return;
+    fetchInto(key, () => loadRef.current(), version).catch(() => undefined);
+  }, [key, version, nonce]);
   const reload = useCallback(() => setNonce((n) => n + 1), []);
-  return { data: state.data, error: state.error, loading: state.key !== key, reload };
+  const data = snapshot.data !== undefined ? snapshot.data : peek<T>(shownKey).data;
+  return { data: data ?? null, error: snapshot.error, loading: snapshot.loading || (snapshot.version !== version && snapshot.error === null), reload };
 }

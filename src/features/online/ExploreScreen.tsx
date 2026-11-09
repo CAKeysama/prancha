@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Bell, Compass, RefreshCw, Search, X } from "lucide-react";
 import { Button, IconButton } from "../../components/Button";
 import { EmptyState, ErrorState, Spinner } from "../../components/Feedback";
@@ -7,39 +7,16 @@ import { PageHeader } from "../../components/PageHeader";
 import { TOOLTIP_DELAY_MS } from "../../components/Tooltip";
 import { useLibraryData } from "../../app/library-events";
 import { useNav } from "../../app/navigation";
-import { KIND_LABELS, groupByTitle, languageName, nextHistory, runLimited, type BrowsePage, type SeriesCard, type SourceSummary, type TitleGroup } from "../../domain/online";
+import { useScrollMemory } from "../../app/scroll-memory";
+import { KIND_LABELS, groupByTitle, languageName, nextHistory, type SeriesCard, type SourceSummary, type TitleGroup } from "../../domain/online";
 import { ApiError, api, errorMessage } from "../../services/api";
-import { GridSkeleton, OnlineCover, SeriesGrid, SourceTrouble, siteAnswered } from "./parts";
-
-type Mode = "popular" | "latest" | "following";
-
-type Loaded = Pick<Section, "results" | "page" | "hasMore" | "unverified">;
-
-interface Section {
-  source: SourceSummary;
-  status: "loading" | "ready" | "failed";
-  results: SeriesCard[];
-  page: number;
-  hasMore: boolean;
-  unverified: number;
-  loadingMore: boolean;
-  /** Quantas obras da fonte estão na tela. Cresce de STEP em STEP. */
-  shown: number;
-  error: string | null;
-  /** O site pediu uma verificação anti-robô. */
-  protected: boolean;
-}
+import { setData } from "../../services/query-cache";
+import { STEP, ensure, exploreVersion, keyOf, moreTitles, refreshAll, retry, sectionOf, setTitlesShown, showMore, subscribeExplore, titlesShownFor, type Mode, type Search as ExploreSearch, type Section } from "./explore-store";
+import { GridSkeleton, OnlineCover, SeriesGrid, SourceTrouble } from "./parts";
 
 const HISTORY_KEY = "online.searchHistory";
-const CONCURRENT_SOURCES = 3;
-/** "Mostrar mais" põe na tela mais esta quantidade de obras por clique. */
-const STEP = 10;
-/** Teto de páginas pedidas à fonte num clique, para uma fonte que só repete obras não ficar pedindo para sempre. */
-const MAX_PAGES_PER_STEP = 5;
 
-const keyOf = (source: SourceSummary) => `${source.extensionId}/${source.sourceId}`;
-
-// Volta da página de uma obra para a mesma pesquisa.
+// Volta da página de uma obra, ou de outra guia, para a mesma pesquisa e os mesmos filtros.
 const memory = { mode: "popular" as Mode, query: "", source: "", language: "", kind: "" };
 
 /** Quando uma fonte não abre a obra: Explorar já chega com a pesquisa feita em todas. */
@@ -47,33 +24,21 @@ export function searchAcrossSources(title: string) {
   Object.assign(memory, { mode: "popular", query: title, source: "" });
 }
 
-let requestCounter = 0;
-
-function fetchPage(requestId: string, source: SourceSummary, mode: Mode, query: string, page: number, kind: string): Promise<BrowsePage> {
-  const chosenKind = kind || null;
-  if (query) return api.sourceSearch(requestId, source, query, page, chosenKind);
-  return mode === "latest" ? api.sourceLatest(requestId, source, page, chosenKind) : api.sourcePopular(requestId, source, page, chosenKind);
-}
-
-function isCancelled(error: unknown): boolean {
-  return error instanceof ApiError && error.code === "extension_cancelled";
-}
+const placeholder = (source: SourceSummary): Section => ({ source, status: "loading", results: [], page: 1, hasMore: false, unverified: 0, loadingMore: false, shown: STEP, error: null, protected: false, refreshing: false, refreshError: null, updatedAt: 0 });
 
 export function ExploreScreen() {
   const nav = useNav();
-  const { data: sources, error: sourcesError } = useLibraryData(() => api.sources(), []);
+  const { data: sources, error: sourcesError } = useLibraryData(() => api.sources(), [], "sources");
   const [mode, setMode] = useState<Mode>(memory.mode);
   const [draft, setDraft] = useState(memory.query);
   const [query, setQuery] = useState(memory.query);
   const [sourceFilter, setSourceFilter] = useState(memory.source);
   const [language, setLanguage] = useState(memory.language);
   const [kind, setKind] = useState(memory.kind);
-  const [sections, setSections] = useState<Section[]>([]);
-  const [titlesShown, setTitlesShown] = useState({ search: "", count: STEP });
-  // Quantas obras cada fonte precisa ter. Um clique durante uma busca aumenta a meta da busca que já está andando.
-  const wanted = useRef(new Map<string, number>());
-  const [following, setFollowing] = useState<SeriesCard[] | null>(null);
-  const [followingError, setFollowingError] = useState<string | null>(null);
+  const showingFollowing = mode === "following" && !query;
+  // Só com a lista na tela: as outras visitas da guia não precisam dela.
+  const { data: following, error: followingLoadError } = useLibraryData(() => (showingFollowing ? api.seriesFollowing() : Promise.resolve(null)), [showingFollowing], "following");
+  const [checkError, setCheckError] = useState<string | null>(null);
   const [checkingNew, setCheckingNew] = useState(false);
   const checkRequest = useRef<string | null>(null);
   // Só as obras acompanhadas são consultadas. Cada uma é aberta na fonte, uma de cada vez, e os contadores voltam com a lista.
@@ -83,9 +48,9 @@ export function ExploreScreen() {
     checkRequest.current = requestId;
     setCheckingNew(true);
     try {
-      setFollowing(await api.seriesRefreshFollowing(requestId));
+      setData("following:[true]", await api.seriesRefreshFollowing(requestId));
     } catch (e) {
-      if (!(e instanceof ApiError && e.code === "extension_cancelled")) setFollowingError(errorMessage(e));
+      if (!(e instanceof ApiError && e.code === "extension_cancelled")) setCheckError(errorMessage(e));
     } finally {
       checkRequest.current = null;
       setCheckingNew(false);
@@ -99,11 +64,11 @@ export function ExploreScreen() {
   );
   const [history, setHistory] = useState<string[]>([]);
   const [focused, setFocused] = useState(false);
-  const inFlight = useRef(new Set<string>());
-  const run = useRef<object | null>(null);
   const searchBox = useRef<HTMLInputElement>(null);
 
-  Object.assign(memory, { mode, query, source: sourceFilter, language, kind });
+  useEffect(() => {
+    Object.assign(memory, { mode, query, source: sourceFilter, language, kind });
+  }, [mode, query, sourceFilter, language, kind]);
 
   useEffect(() => {
     let alive = true;
@@ -128,130 +93,31 @@ export function ExploreScreen() {
     return (sources ?? []).filter((source) => (!sourceFilter || keyOf(source) === sourceFilter) && (!language || source.language === language) && (!kind || source.kinds.includes(kind)));
   }, [sources, sourceFilter, language, kind]);
   const selected = useMemo(() => filtered.filter((source) => (query ? source.supportsSearch : mode !== "latest" || source.supportsLatest)), [filtered, query, mode]);
+  const followingError = checkError ?? followingLoadError;
+  const search = useMemo<ExploreSearch>(() => ({ mode, query, kind }), [mode, query, kind]);
 
-  const nextRequest = useCallback(() => {
-    const id = `explore-${++requestCounter}`;
-    inFlight.current.add(id);
-    return id;
-  }, []);
-  const cancelAll = useCallback(() => {
-    for (const id of inFlight.current) void api.sourceCancel(id).catch(() => undefined);
-    inFlight.current.clear();
-  }, []);
+  // O que as fontes responderam vive fora da tela: sair e voltar não perde nada nem consulta de novo.
+  const storeVersion = useSyncExternalStore(subscribeExplore, exploreVersion);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- a versão do estado da guia é o que muda as seções
+  const sections = useMemo(() => selected.map((source) => sectionOf(search, source) ?? placeholder(source)), [selected, search, storeVersion]);
 
-  const showingFollowing = mode === "following" && !query;
-
-  const patchSection = useCallback((source: SourceSummary, thisRun: object, change: Partial<Section>) => {
-    if (run.current === thisRun) setSections((all) => all.map((section) => (keyOf(section.source) === keyOf(source) ? { ...section, ...change } : section)));
-  }, []);
-
-  // Pede as próximas páginas da fonte até ter `target` obras, sem repetir as que já vieram. Muitas fontes trazem menos de STEP por página.
-  const fetchUntil = useCallback(
-    async (source: SourceSummary, thisRun: object, from: Loaded, target: number) => {
-      let state = from;
-      let pages = 0;
-      const goal = () => Math.max(target, wanted.current.get(keyOf(source)) ?? 0);
-      if (state.results.length >= goal() || !state.hasMore) return;
-      patchSection(source, thisRun, { loadingMore: true });
-      try {
-        while (run.current === thisRun && state.results.length < goal() && state.hasMore && pages < MAX_PAGES_PER_STEP) {
-          const id = nextRequest();
-          try {
-            const page = await fetchPage(id, source, mode, query, state.page + 1, kind);
-            const known = new Set(state.results.map((item) => item.id));
-            state = { results: [...state.results, ...page.results.filter((item) => !known.has(item.id))], page: state.page + 1, hasMore: page.hasMore, unverified: state.unverified + page.unverified };
-            pages++;
-            patchSection(source, thisRun, state);
-          } finally {
-            inFlight.current.delete(id);
-          }
-        }
-      } catch (e) {
-        if (!isCancelled(e)) patchSection(source, thisRun, { error: errorMessage(e) });
-      } finally {
-        patchSection(source, thisRun, { loadingMore: false });
-      }
-    },
-    [mode, query, kind, nextRequest, patchSection],
-  );
-
-  const loadFirstPage = useCallback(
-    async (source: SourceSummary, thisRun: object) => {
-      if (run.current !== thisRun) return;
-      wanted.current.delete(keyOf(source));
-      const id = nextRequest();
-      let first: Loaded | null = null;
-      try {
-        const page = await fetchPage(id, source, mode, query, 1, kind);
-        siteAnswered(source.sourceId);
-        first = { results: page.results, page: 1, hasMore: page.hasMore, unverified: page.unverified };
-        patchSection(source, thisRun, { status: "ready", ...first, shown: STEP, error: null, protected: false });
-      } catch (e) {
-        if (!isCancelled(e)) patchSection(source, thisRun, { status: "failed", error: errorMessage(e), protected: e instanceof ApiError && e.code === "source_protected" });
-      } finally {
-        inFlight.current.delete(id);
-      }
-      // A primeira leva já chega com STEP obras, mesmo quando a fonte manda menos por página.
-      if (first) await fetchUntil(source, thisRun, first, STEP);
-    },
-    [mode, query, kind, nextRequest, patchSection, fetchUntil],
-  );
-
-  // Cada fonte responde no seu tempo: uma lenta ou com erro não segura as outras.
+  // Cada fonte responde no seu tempo: uma lenta ou com erro não segura as outras. Só as fontes sem lista válida são consultadas.
+  // A chave é texto para que a mesma lista de fontes, lida de novo, não recomece nada.
+  const selectedKey = selected.map(keyOf).join(",");
+  const selectedRef = useRef(selected);
+  useEffect(() => {
+    selectedRef.current = selected;
+  });
   useEffect(() => {
     if (showingFollowing) return;
-    const thisRun = {};
-    run.current = thisRun;
-    // Cada rodada recomeça as seções do zero antes de consultar as fontes.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setSections(selected.map((source) => ({ source, status: "loading", results: [], page: 1, hasMore: false, unverified: 0, loadingMore: false, shown: STEP, error: null, protected: false })));
-    wanted.current.clear();
-    void runLimited(
-      selected.map((source) => () => loadFirstPage(source, thisRun)),
-      CONCURRENT_SOURCES,
-    );
-    return () => {
-      run.current = null;
-      cancelAll();
-    };
-  }, [selected, loadFirstPage, showingFollowing, cancelAll]);
+    ensure(search, selectedRef.current);
+  }, [search, selectedKey, showingFollowing]);
 
-  // Só a fonte que falhou: as outras já responderam, e o que elas trouxeram continua na tela.
-  const retrySource = (source: SourceSummary) => {
-    if (!run.current) return;
-    setSections((all) => all.map((section) => (keyOf(section.source) === keyOf(source) ? { ...section, status: "loading", error: null, protected: false } : section)));
-    void loadFirstPage(source, run.current);
-  };
+  const retrySource = (source: SourceSummary) => retry(search, source);
 
   // Uma pesquisa nova, ou outras fontes, recomeça da primeira leva de títulos.
-  const titleSearch = `${query}\n${kind}\n${selected.map(keyOf).join(",")}`;
-  const shownGroups = titlesShown.search === titleSearch ? titlesShown.count : STEP;
+  const shownGroups = titlesShownFor(search);
   const groups = useMemo(() => groupByTitle(sections.flatMap(({ source, results }) => results.map((card) => ({ ...card, sourceName: source.name, language: card.language ?? source.language }))), query), [sections, query]);
-
-  useEffect(() => {
-    if (!showingFollowing) return;
-    let alive = true;
-    api
-      .seriesFollowing()
-      .then((items) => {
-        if (!alive) return;
-        setFollowingError(null);
-        setFollowing(items);
-      })
-      .catch((e: unknown) => alive && setFollowingError(errorMessage(e)));
-    return () => {
-      alive = false;
-    };
-  }, [showingFollowing]);
-
-  // Primeiro mostra o que já veio da fonte. Só pede outra página quando falta obra para completar a leva.
-  const showMore = (section: Section) => {
-    if (!run.current) return;
-    const target = section.shown + STEP;
-    patchSection(section.source, run.current, { shown: target });
-    wanted.current.set(keyOf(section.source), target);
-    if (!section.loadingMore) void fetchUntil(section.source, run.current, section, target);
-  };
 
   const submit = (text: string) => {
     const clean = text.trim();
@@ -263,18 +129,14 @@ export function ExploreScreen() {
     }
   };
 
-  // Na pesquisa em várias fontes, a leva é de títulos. Faltando título, cada fonte que tem mais manda a próxima página.
   const showMoreTitles = () => {
-    const thisRun = run.current;
-    if (!thisRun) return;
     const target = shownGroups + STEP;
-    setTitlesShown({ search: titleSearch, count: target });
+    setTitlesShown(search, target);
     if (groups.length >= target) return;
-    void runLimited(
-      sections.filter((section) => section.hasMore && !section.loadingMore).map((section) => () => fetchUntil(section.source, thisRun, section, section.results.length + 1)),
-      CONCURRENT_SOURCES,
-    );
+    moreTitles(search, selected);
   };
+
+  const scrollRef = useScrollMemory<HTMLDivElement>(showingFollowing ? "explore:following" : `explore:${sourceFilter}\n${language}\n${mode}\n${query}\n${kind}`);
 
   const openSeries = (series: SeriesCard) => nav.navigate({ name: "series", id: series.id });
 
@@ -309,26 +171,35 @@ export function ExploreScreen() {
   const byTitle = Boolean(query) && selected.length > 1;
   const withoutSearch = query ? filtered.filter((source) => !source.supportsSearch) : [];
   const uncheckedIn = sections.filter((section) => section.status === "ready" && section.unverified > 0);
+  const refreshing = sections.filter((section) => section.refreshing).length;
+  const staleIn = sections.filter((section) => section.status === "ready" && section.refreshError);
   const finished = byTitle ? (failed.length > 0 ? `${sections.length - failed.length} de ${sections.length} fontes responderam` : `${sections.length} fontes consultadas`) : undefined;
 
   return (
-    <div className="h-full overflow-y-auto">
+    <div ref={scrollRef} className="h-full overflow-y-auto">
       <PageHeader
         title="Explorar"
-        subtitle={searching > 0 ? `Consultando ${searching} de ${sections.length} ${sections.length === 1 ? "fonte" : "fontes"}…` : finished}
+        subtitle={searching > 0 ? `Consultando ${searching} de ${sections.length} ${sections.length === 1 ? "fonte" : "fontes"}…` : refreshing > 0 ? "Atualizando…" : finished}
         actions={
-          sources.length > 0 && !query ? (
-            <Segmented
-              label="Mostrar"
-              hideLabel
-              value={mode}
-              onChange={setMode}
-              options={[
-                { value: "popular", label: "Populares" },
-                { value: "latest", label: "Recentes" },
-                { value: "following", label: "Acompanhando" },
-              ]}
-            />
+          sources.length > 0 ? (
+            <>
+              {!showingFollowing && selected.length > 0 && (
+                <IconButton icon={RefreshCw} label="Atualizar" variant="secondary" size="sm" tooltipDelay={TOOLTIP_DELAY_MS} disabled={searching + refreshing > 0} onClick={() => refreshAll(search, selected)} />
+              )}
+              {!query && (
+                <Segmented
+                  label="Mostrar"
+                  hideLabel
+                  value={mode}
+                  onChange={setMode}
+                  options={[
+                    { value: "popular", label: "Populares" },
+                    { value: "latest", label: "Recentes" },
+                    { value: "following", label: "Acompanhando" },
+                  ]}
+                />
+              )}
+            </>
           ) : undefined
         }
       >
@@ -429,6 +300,7 @@ export function ExploreScreen() {
         {!showingFollowing && byTitle && (
           <>
             {failed.length > 0 && <UnansweredSources failed={failed} onRetry={retrySource} />}
+            {staleIn.length > 0 && <p className="mb-3 text-sm text-muted">Não deu para atualizar {LIST_FORMAT.format(staleIn.map((section) => section.source.name))} agora. Os resultados são os da consulta anterior.</p>}
             {groups.length === 0 && searching > 0 && <TitlesSkeleton />}
             {searching > 0 && <p className="p-enter-late mt-3 text-sm text-muted">{CHECKING_NOTE}</p>}
             {groups.length === 0 && searching === 0 && uncheckedIn.length === 0 && (
@@ -466,7 +338,8 @@ export function ExploreScreen() {
                 {section.status === "loading" && <Spinner size={14} />}
                 {section.status === "loading" && <span className="p-enter-late text-sm font-normal text-muted">{CHECKING_NOTE}</span>}
               </h2>
-              {section.status === "loading" && <GridSkeleton />}
+              {section.status === "ready" && section.refreshError && <p className="mb-2 text-sm text-muted">Não deu para atualizar agora. A lista é a da consulta anterior.</p>}
+              {section.status === "loading" && section.results.length === 0 && <GridSkeleton />}
               {section.status === "failed" && (
                 <div role="alert">
                   <SourceTrouble message={section.error ?? ""} site={section.protected ? { sourceId: section.source.sourceId } : undefined} sourceId={section.source.sourceId} onRetry={() => retrySource(section.source)} elsewhere={sources.length > 1 ? searchElsewhere : undefined} size="sm">
@@ -486,7 +359,7 @@ export function ExploreScreen() {
               )}
               {section.status === "ready" && (section.results.length > section.shown || section.hasMore) && (
                 <div className="mt-3">
-                  <Button onClick={() => showMore(section)} loading={section.loadingMore}>
+                  <Button onClick={() => showMore(search, section.source)} loading={section.loadingMore}>
                     Mostrar mais
                   </Button>
                 </div>

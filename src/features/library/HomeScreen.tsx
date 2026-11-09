@@ -10,6 +10,7 @@ import { api } from "../../services/api";
 import { useLibraryData } from "../../app/library-events";
 import { useNav, type Route } from "../../app/navigation";
 import { APP_NAME, SUPPORTED_FORMATS_TEXT } from "../../app/config";
+import { useScrollMemory } from "../../app/scroll-memory";
 import { AddComicsButtons } from "./AddComicsButtons";
 import { ComicShelf } from "./ComicCollectionView";
 import { useImport } from "./import-context";
@@ -92,11 +93,12 @@ function EmptyHome() {
 }
 
 export function HomeScreen() {
-  const { data: home, error, reload } = useLibraryData(() => api.home(), []);
+  const { data: home, error, reload } = useLibraryData(() => api.home(), [], "home");
   const series = useLibrarySeries();
   const data = useMemo(() => home && homeItems(home, series), [home, series]);
+  const scrollRef = useScrollMemory<HTMLDivElement>("home");
   return (
-    <div className="h-full overflow-y-auto">
+    <div ref={scrollRef} className="h-full overflow-y-auto">
       <PageHeader title="Início" subtitle={data && data.total > 0 ? `${data.total} ${data.total === 1 ? "quadrinho" : "quadrinhos"} na biblioteca` : undefined} actions={data && data.total > 0 ? <AddComicsButtons /> : undefined} />
       <div className="px-6 py-6">
         {error && (

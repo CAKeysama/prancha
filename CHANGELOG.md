@@ -3,6 +3,22 @@
 Tudo o que mudou em cada versão do Prancha. O projeto segue o [versionamento semântico](https://semver.org/lang/pt-BR/),
 e as notas das releases e a [página de downloads](https://cakeysama.github.io/prancha/) são geradas a partir deste arquivo.
 
+## [0.8.0] - 2026-11-09
+
+Navegar ficou mais rápido: as telas guardam o que já carregaram, e a guia Explorar só consulta as fontes quando a lista venceu ou quando você pede.
+
+### Melhorias
+
+- **Explorar:** sair e voltar mostra os resultados na hora, sem consultar as fontes de novo. Depois de 15 minutos, a lista é atualizada em segundo plano e a anterior fica na tela até a nova chegar. O botão **Atualizar** consulta tudo de novo quando você quiser.
+- **Explorar:** um download que termina, ou outra mudança na biblioteca, não recomeça mais a guia inteira.
+- **Explorar:** se uma atualização falhar, a lista anterior continua, com um aviso discreto. Uma fonte fora do ar não é consultada a cada volta, só depois de um minuto ou pelo **Tentar de novo**.
+- **Obra:** uma obra aberta há menos de 5 minutos volta direto, com o que está gravado, sem consultar a fonte outra vez.
+- **Em todo o app:** Início, biblioteca, coleções, extensões, repositórios e notificações mostram na hora o que já tinham e conferem em segundo plano. A posição da rolagem, a pesquisa e os filtros continuam ao sair e voltar.
+
+### Observações
+
+- O que fica guardado vale enquanto o Prancha está aberto. As obras continuam gravadas no banco do aplicativo, como antes; a primeira visita depois de abrir o Prancha consulta as fontes normalmente.
+
 ## [0.7.3] - 2026-11-09
 
 Outra versão de bastidores: a página de downloads não fica mais para trás quando duas publicações chegam juntas.

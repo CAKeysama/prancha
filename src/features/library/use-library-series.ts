@@ -9,6 +9,6 @@ const NONE: LibrarySeries[] = [];
 export function useLibrarySeries(): LibrarySeries[] {
   const { settings } = useSettings();
   const online = settings["plugins.online"];
-  const { data } = useLibraryData(() => (online ? api.seriesLibrary() : Promise.resolve(NONE)), [online]);
+  const { data } = useLibraryData(() => (online ? api.seriesLibrary() : Promise.resolve(NONE)), [online], "series-library");
   return online ? (data ?? NONE) : NONE;
 }
