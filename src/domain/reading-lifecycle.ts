@@ -90,6 +90,8 @@ export class ReadingLifecycle {
     const previous = this.last;
     const moved = !previous || previous.pages.join() !== view.pages.join() || view.how === "scroll";
     this.last = view;
+    // Uma rolagem que já cai no capítulo seguinte também passou pelo fim do anterior: conclui antes de sair dele.
+    this.checkCompletion();
 
     if (this.current !== chapter.id) {
       if (this.current !== null) this.leave(this.current);

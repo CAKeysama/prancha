@@ -207,6 +207,8 @@ describe("biblioteca com obras das fontes", () => {
     favorite: false,
     addedAt: id,
     lastOpenedAt: null,
+    following: false,
+    newCount: 0,
     readStatus: "unread",
     chapterCount: 10,
     chaptersRead: 0,
@@ -235,9 +237,11 @@ describe("biblioteca com obras das fontes", () => {
   });
 
   it("mostra onde parou e conta o progresso em capítulos", () => {
-    const resume = { chapterId: 1, title: "Capítulo 3", progress: { pageIndex: 4, pageCount: 20 } };
-    expect(seriesProgressLabel(series(1, "a", { readStatus: "reading", resume }))).toBe("Capítulo 3 · página 5 de 20");
-    expect(seriesProgressLabel(series(1, "a", { readStatus: "reading", resume: { ...resume, progress: null } }))).toBe("Capítulo 3");
+    const resume = { chapterId: 1, title: "Capítulo 3", progress: { pageIndex: 4, pageCount: 20 }, state: "in_progress" as const };
+    expect(seriesProgressLabel(series(1, "a", { readStatus: "reading", resume }))).toBe("Capítulo 3 · Em andamento");
+    expect(seriesProgressLabel(series(1, "a", { readStatus: "reading", resume: { ...resume, state: "reading" } }))).toBe("Capítulo 3 · Lendo");
+    // O próximo capítulo, ainda não começado: só o título.
+    expect(seriesProgressLabel(series(1, "a", { readStatus: "reading", resume: { ...resume, progress: null, state: "unread" } }))).toBe("Capítulo 3");
     expect(seriesProgressLabel(series(1, "a"))).toBe("Não iniciado");
     expect(seriesProgressLabel(series(1, "a", { readStatus: "completed" }))).toBe("Leitura concluída");
     expect(seriesRatio(series(1, "a", { readStatus: "reading", chaptersRead: 5 }))).toBe(0.5);

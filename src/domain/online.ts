@@ -201,7 +201,7 @@ export interface ChapterView {
 }
 
 /**
- * Os quatro estados de um capítulo (ver docs/adr/0010-progresso-de-leitura.md).
+ * Os quatro estados de um capítulo (ver docs/adr/0003-progresso-de-leitura.md).
  * `reading` só existe enquanto o capítulo está aberto no leitor com leitura efetiva; ao sair, vira `in_progress`.
  */
 export type ChapterReadState = "unread" | "reading" | "in_progress" | "read";

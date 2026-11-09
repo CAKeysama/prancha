@@ -290,6 +290,14 @@ export function Reader({ content, pdf, zoomState: [zoom, setZoom] }: { content: 
     navigation.current = "restore";
     lifecycle?.view({ pages: spreadKey.split(",").map(Number), how });
   }, [spreadKey, continuous, lifecycle]);
+  // No modo vertical, a rolagem avisa o resto. Ao abrir (ou ao trocar para ele), o capítulo na tela já conta como aberto.
+  const pageRef = useRef(page);
+  useEffect(() => {
+    pageRef.current = page;
+  });
+  useEffect(() => {
+    if (continuous) lifecycle?.view({ pages: [pageRef.current], how: "restore" });
+  }, [continuous, lifecycle]);
 
   // Pré-carrega as próximas duas visões e a anterior.
   const neighbors = useMemo(() => {

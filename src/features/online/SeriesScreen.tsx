@@ -143,10 +143,14 @@ const ChapterRow = memo(function ChapterRow({ chapter, selected, busy, hasPrevio
           disabled={busy || !hasPrevious}
           onClick={() => actions.onReadPrevious(chapter.id)}
         />
-        {active && download && <IconButton icon={X} label="Cancelar download" tooltipDelay={TOOLTIP_DELAY_MS} aria-describedby={statusId} onClick={() => actions.onCancel(download.id)} />}
-        {chapter.state !== "offline" && !active && (
-          <IconButton icon={failed ? RefreshCw : Download} label={failed ? "Tentar baixar de novo" : "Baixar capítulo"} tooltipDelay={TOOLTIP_DELAY_MS} aria-describedby={statusId} onClick={() => actions.onDownload(chapter.id)} />
-        )}
+        {/* O lugar do download existe mesmo sem botão: os ícones ficam alinhados em coluna na lista inteira. */}
+        <span className="inline-flex size-8 items-center justify-center">
+          {active && download ? (
+            <IconButton icon={X} label="Cancelar download" tooltipDelay={TOOLTIP_DELAY_MS} aria-describedby={statusId} onClick={() => actions.onCancel(download.id)} />
+          ) : chapter.state !== "offline" ? (
+            <IconButton icon={failed ? RefreshCw : Download} label={failed ? "Tentar baixar de novo" : "Baixar capítulo"} tooltipDelay={TOOLTIP_DELAY_MS} aria-describedby={statusId} onClick={() => actions.onDownload(chapter.id)} />
+          ) : null}
+        </span>
       </div>
       <Button icon={BookOpen} onClick={() => actions.onRead(chapter.id)}>
         Ler
