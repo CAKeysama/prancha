@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { BookOpen, History, Library, Star } from "lucide-react";
 import { ToastProvider } from "../components/Toast";
 import { ErrorState, Spinner } from "../components/Feedback";
@@ -32,6 +33,7 @@ import { NavigationProvider, sectionOf, useNav, type Route } from "./navigation"
 import { SettingsProvider, useSettings } from "./settings-context";
 import { Sidebar } from "./Sidebar";
 import { SUPPORTED_FORMATS_TEXT } from "./config";
+import { disableContextMenu } from "./context-menu";
 
 function Screen({ route }: { route: Route }) {
   switch (route.name) {
@@ -161,6 +163,8 @@ function Shell() {
 }
 
 export function App() {
+  // O menu do botão direito do navegador sai do app inteiro. Ver context-menu.ts.
+  useEffect(() => disableContextMenu(), []);
   return (
     <ToastProvider>
       <SettingsProvider>
