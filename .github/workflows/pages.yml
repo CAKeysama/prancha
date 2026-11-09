@@ -27,14 +27,14 @@ jobs:
   deploy:
     name: Página de downloads no GitHub Pages
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     permissions:
       contents: read
       pages: write
       id-token: write
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url || steps.retry1.outputs.page_url || steps.retry2.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7
 
@@ -59,7 +59,28 @@ jobs:
         with:
           path: _site
 
+      # O GitHub recusa uma publicação enquanto a anterior ainda termina do lado dele, mesmo com a execução anterior já
+      # encerrada: foi o que derrubou a página no merge da 0.7.2, logo depois da página da 0.7.1. Por isso tenta de novo,
+      # esperando um pouco mais a cada vez, antes de dar erro.
       - id: deployment
+        continue-on-error: true
+        uses: actions/deploy-pages@v5
+
+      - name: Espera a publicação anterior terminar
+        if: steps.deployment.outcome == 'failure'
+        run: sleep 60
+
+      - id: retry1
+        if: steps.deployment.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/deploy-pages@v5
+
+      - name: Espera mais um pouco
+        if: steps.retry1.outcome == 'failure'
+        run: sleep 180
+
+      - id: retry2
+        if: steps.retry1.outcome == 'failure'
         uses: actions/deploy-pages@v5
 
   site:
