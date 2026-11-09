@@ -60,7 +60,7 @@ jobs:
             extensions -> ../src-tauri/target/extensions-wasm
           # Muda junto com o opt-level das dependências abaixo, para não reaproveitar dependências compiladas de outro jeito.
           key: deps-opt2
-          save-if: ${{ github.ref == 'refs/heads/main' || github.head_ref == 'claude/project-thread-z2ytyz' }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - run: npm ci
 
