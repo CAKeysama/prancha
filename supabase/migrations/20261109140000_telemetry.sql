@@ -459,7 +459,9 @@ begin
     'topErrors', coalesce((
       select jsonb_agg(e order by e.errors desc) from (
         select category, component, code, http_status, sum(count) as errors, count(distinct install_id) as installs,
-               min(app_version) as first_version, max(app_version) as last_version, max(day) as last_day
+               (array_agg(app_version order by string_to_array(app_version, '.')::int[]))[1] as first_version,
+               (array_agg(app_version order by string_to_array(app_version, '.')::int[] desc))[1] as last_version,
+               max(day) as last_day
         from errs group by category, component, code, http_status order by sum(count) desc limit 20
       ) e), '[]'::jsonb),
     'performance', coalesce((

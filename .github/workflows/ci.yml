@@ -32,6 +32,9 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
+      # Migração da telemetria contra um Postgres de verdade (o Ubuntu do GitHub já traz o Postgres). Ver docs/TELEMETRY.md.
+      - name: Testes do banco da telemetria
+        run: bash supabase/tests/run.sh
 
   backend:
     name: Build e testes do backend
