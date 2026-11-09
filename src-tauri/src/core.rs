@@ -15,6 +15,7 @@ use crate::extensions::sources::{ChapterPages, Gate, Requests};
 use crate::extensions::suwayomi::Suwayomi;
 use crate::import::{EVENT_LIBRARY, Emit, Importer};
 use crate::library;
+use crate::notifications::{Event, Kind, NewNotification};
 use crate::pages::PageService;
 
 #[derive(Debug, Clone)]
@@ -57,6 +58,8 @@ pub struct Core {
     pub chapter_pages: ChapterPages,
     /// Também só no primeiro uso: sem repositório do Mihon, nada é baixado nem iniciado.
     pub suwayomi: Suwayomi,
+    /// Notificações do sistema operacional, ligadas pelo app Tauri. Sem ele (testes), só a central.
+    pub notifier: OnceLock<crate::notifications::Notifier>,
 }
 
 impl Core {
@@ -64,11 +67,14 @@ impl Core {
         let paths = AppPaths::new(data_dir)?;
         let conn = db::open(&paths.db)?;
         library::mark_interrupted_jobs(&conn)?;
+        if let Err(e) = crate::notifications::prune(&conn, db::now_ms()) {
+            log::warn!("limpeza das notificações falhou: {e}");
+        }
         let db_path = paths.db.clone();
         let importer = Importer::spawn(move || db::open(&db_path), paths.covers.clone(), emit.clone())?;
         // Capas pendentes ou geradas com parâmetros antigos são refeitas em segundo plano.
         importer.enqueue_covers();
-        Ok(Core { pages: PageService::new(paths.pages_cache.clone()), paths, db: Mutex::new(conn), importer, emit, guided_lock: Mutex::new(()), net: Arc::new(Net::from_env()), engine: OnceLock::new(), downloads: Downloads::default(), requests: Requests::default(), cover_gate: Gate::default(), page_gate: Gate::default(), chapter_pages: ChapterPages::default(), suwayomi: Suwayomi::default() })
+        Ok(Core { pages: PageService::new(paths.pages_cache.clone()), paths, db: Mutex::new(conn), importer, emit, guided_lock: Mutex::new(()), net: Arc::new(Net::from_env()), engine: OnceLock::new(), downloads: Downloads::default(), requests: Requests::default(), cover_gate: Gate::default(), page_gate: Gate::default(), chapter_pages: ChapterPages::default(), suwayomi: Suwayomi::default(), notifier: OnceLock::new() })
     }
 
     pub fn db(&self) -> MutexGuard<'_, Connection> {
@@ -86,11 +92,18 @@ impl Core {
         let conn = db::open(&self.paths.db)?;
         let infos = library::all_file_infos(&conn)?;
         let (mut missing, mut restored) = (0, 0);
+        let started = db::now_ms();
+        let mut gone = NewNotification::new(Kind::FilesMissing).grouped(crate::notifications::DOWNLOADS_WINDOW_MS);
         for info in infos {
             let exists = Path::new(&info.path).exists();
             if !exists && !info.missing {
                 library::set_missing(&conn, info.id, true)?;
                 missing += 1;
+                // A chave é a HQ e o momento em que o arquivo sumiu: se voltar e sumir de novo, é outro aviso.
+                gone = gone.event(Event::new(format!("library:missing:{}:{started}", info.id)).item(library::comic_title(&conn, info.id).unwrap_or_default()));
+                if missing == 1 {
+                    gone = gone.comic(info.id);
+                }
             } else if exists && info.missing {
                 library::set_missing(&conn, info.id, false)?;
                 restored += 1;
@@ -98,6 +111,9 @@ impl Core {
         }
         if missing + restored > 0 {
             (self.emit)(EVENT_LIBRARY, json!({}));
+        }
+        if missing > 0 {
+            crate::notifications::publish_with(self, &conn, &gone);
         }
         Ok((missing, restored))
     }

@@ -11,6 +11,7 @@ pub mod guided;
 pub mod import;
 pub mod library;
 pub mod natural;
+pub mod notifications;
 pub mod pages;
 pub mod protocol;
 pub mod text;
@@ -33,11 +34,54 @@ fn resolve_data_dir(app: &tauri::App) -> Result<PathBuf, String> {
     app.path().app_data_dir().map_err(|e| e.to_string())
 }
 
+/// Notificações do sistema: só com a janela fora de foco (com ela à vista, a central basta), e um
+/// clique traz o Prancha para a frente e executa a ação da notificação.
+fn connect_native_notifications(app: &tauri::AppHandle, core: &Core) {
+    use notifications::{NativeNotice, NativeOutcome};
+    use tauri_plugin_notification::{NotificationExt, PermissionState};
+    let handle = app.clone();
+    let notifier: notifications::Notifier = Arc::new(move |notice: &NativeNotice| {
+        let focused = handle.get_webview_window("main").and_then(|w| w.is_focused().ok()).unwrap_or(false);
+        if focused {
+            return NativeOutcome::Skipped;
+        }
+        match handle.notification().permission_state() {
+            Ok(PermissionState::Granted) => {}
+            Ok(_) => return NativeOutcome::Denied,
+            Err(_) => return NativeOutcome::Failed,
+        }
+        let Ok(id) = i32::try_from(notice.id) else { return NativeOutcome::Failed };
+        match handle.notification().builder().id(id).title(&notice.title).body(&notice.body).show() {
+            Ok(()) => NativeOutcome::Shown,
+            Err(e) => {
+                log::warn!("notificação do sistema: {e}");
+                NativeOutcome::Failed
+            }
+        }
+    });
+    let _ = core.notifier.set(notifier);
+    let handle = app.clone();
+    let _ = app.notification().on_action(move |performed| {
+        if performed.action_id() != "tap" {
+            return;
+        }
+        if let Some(window) = handle.get_webview_window("main") {
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+        if let Some(notification) = performed.notification() {
+            let _ = handle.emit(notifications::EVENT_ACTIVATE, serde_json::json!({ "id": notification.id() }));
+        }
+    });
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(updates::Session::default())
         .register_asynchronous_uri_scheme_protocol("prancha", |ctx, request, responder| {
@@ -64,6 +108,7 @@ pub fn run() {
                     if let Err(e) = updates::reconcile(&core.db(), &app.package_info().version) {
                         updates::log(&core.paths.data_dir, &format!("conciliação: {e}"));
                     }
+                    connect_native_notifications(app.handle(), &core);
                     app.manage(core.clone());
                     std::thread::spawn(move || {
                         // Antes dos downloads: nada da obra que não pode aparecer volta a baixar.
@@ -193,6 +238,15 @@ pub fn run() {
             commands::download_cancel,
             commands::download_retry,
             commands::downloads_clear_finished,
+            commands::notifications_list,
+            commands::notifications_unread,
+            commands::notifications_set_read,
+            commands::notifications_mark_all_read,
+            commands::notifications_remove,
+            commands::notifications_clear_read,
+            commands::notification_target,
+            commands::notifications_native_status,
+            commands::notifications_native_test,
         ])
         .run(tauri::generate_context!())
         .expect("erro ao executar o Prancha");

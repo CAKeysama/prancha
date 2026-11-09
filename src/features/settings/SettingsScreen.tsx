@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ChevronRight, ExternalLink, FolderOpen, GraduationCap, HardDrive, ImageMinus, MessageSquarePlus, RefreshCw, RotateCcw, ScanSearch, Scale, Search, SearchX, Trash2, X } from "lucide-react";
+import { BellRing, ChevronRight, ExternalLink, FolderOpen, GraduationCap, HardDrive, ImageMinus, MessageSquarePlus, RefreshCw, RotateCcw, ScanSearch, Scale, Search, SearchX, Trash2, X } from "lucide-react";
 import { Button } from "../../components/Button";
 import { ConfirmDialog, Dialog } from "../../components/Dialog";
 import { EmptyState, Kbd, Spinner } from "../../components/Feedback";
@@ -10,6 +10,7 @@ import { cn } from "../../components/cn";
 import { formatBytes, formatDate } from "../../domain/progress";
 import { parseNotes, type ReleaseInfo, type UpdatesHistory } from "../../domain/updates";
 import { FIT_LABELS, MODE_LABELS } from "../../domain/reader";
+import { muteUntil, type MuteChoice } from "../../domain/notifications";
 import type { Settings } from "../../domain/settings";
 import { PLACE_LABELS, SETTINGS_CATEGORIES, searchSettings, type SettingEntry, type SettingsCategory } from "../../domain/settings-search";
 import {
@@ -549,7 +550,101 @@ function SuggestionDialog({ draft, onChange, onClose, onSent }: { draft: Draft; 
   );
 }
 
-export function SettingsScreen() {
+function NotificationsSection() {
+  const { settings } = useSettings();
+  const save = useSave();
+  const toast = useToast();
+  const [testing, setTesting] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+  const native = settings["notifications.native"];
+  const mutedUntil = settings["notifications.nativeMutedUntil"];
+  const muted = mutedUntil !== null && mutedUntil > now;
+  useEffect(() => {
+    if (!muted) return;
+    // Quando o silêncio acaba, o texto volta sozinho.
+    const timer = window.setTimeout(() => setNow(Date.now()), Math.min(mutedUntil - now + 50, 2 ** 31 - 1));
+    return () => window.clearTimeout(timer);
+  }, [muted, mutedUntil, now]);
+  const test = async () => {
+    setTesting(true);
+    try {
+      const r = await api.notificationsNativeTest();
+      if (r.permission === "granted") toast.success("Notificação de teste enviada", "Se ela não apareceu, confira as notificações do Prancha nas configurações do sistema.");
+      else toast.error("O sistema não permite notificações do Prancha", "Libere nas configurações de notificação do sistema operacional. A central continua funcionando.");
+    } catch (e) {
+      toast.error("Não foi possível enviar a notificação de teste", errorMessage(e));
+    } finally {
+      setTesting(false);
+    }
+  };
+  const row = (id: string, key: keyof Settings, label: string, description: string) => (
+    <Anchor id={id}>
+      <Switch label={label} description={description} checked={Boolean(settings[key])} onChange={(v) => save(key, v as never)} />
+    </Anchor>
+  );
+  return (
+    <>
+      <Section id="notificacoes" title="Notificações" description="O que entra na central de notificações. Desligar um tipo não apaga as que já estão lá.">
+        {row("notif-capitulos", "notifications.chapters", "Capítulos novos", "Quando uma obra que você acompanha recebe capítulos. Capítulos que chegam juntos viram uma notificação só.")}
+        {row("notif-atualizacoes", "notifications.updates", "Atualizações do aplicativo", "Nova versão disponível, atualização concluída ou que não terminou.")}
+        {row("notif-downloads", "notifications.downloadsCompleted", "Downloads concluídos", "Capítulos baixados de uma mesma obra são agrupados.")}
+        {row("notif-falhas", "notifications.downloadsFailed", "Falhas de download", "Capítulos que não puderam ser baixados.")}
+        {row("notif-sincronizacao", "notifications.sync", "Problemas de sincronização", "Obras acompanhadas cujas fontes não responderam ao procurar capítulos novos.")}
+        {row("notif-biblioteca", "notifications.library", "Avisos da biblioteca", "Importações com arquivos recusados e HQs cujo arquivo foi movido ou excluído.")}
+      </Section>
+      <Section id="notificacoes-sistema" title="Notificações do sistema operacional" description="Avisos fora da janela, só para o que é importante e só com o Prancha em segundo plano. A central guarda tudo mesmo com elas desligadas.">
+        <Anchor id="notif-nativas">
+          <Switch
+            label="Mostrar notificações do sistema"
+            description="Capítulos novos, nova versão disponível e problemas de sincronização. Obras +18 aparecem sem o nome."
+            checked={native}
+            onChange={(v) => save("notifications.native", v)}
+          />
+        </Anchor>
+        <Anchor id="notif-nativas-downloads">
+          <Switch
+            label="Também para downloads concluídos"
+            description={native ? "Desligado por padrão: um lote de downloads já vira um aviso só na central." : "Ligue as notificações do sistema para usar esta opção."}
+            checked={native && settings["notifications.nativeDownloads"]}
+            onChange={(v) => native && save("notifications.nativeDownloads", v)}
+          />
+        </Anchor>
+        <SettingRow
+          id="notif-silenciar"
+          label="Silenciar temporariamente"
+          description={muted ? `Silenciadas até ${new Date(mutedUntil).toLocaleString("pt-BR", { weekday: "short", hour: "2-digit", minute: "2-digit" })}. A central continua recebendo tudo.` : "Pausa só as notificações do sistema."}
+        >
+          <Select
+            label="Silenciar temporariamente"
+            hideLabel
+            className="w-48"
+            disabled={!native}
+            value={muted ? "muted" : "off"}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === "muted") return;
+              save("notifications.nativeMutedUntil", v === "off" ? null : muteUntil(v as MuteChoice, Date.now()));
+              setNow(Date.now());
+            }}
+          >
+            <option value="off">Não silenciar</option>
+            {muted && <option value="muted">Silenciadas</option>}
+            <option value="1h">Por 1 hora</option>
+            <option value="8h">Por 8 horas</option>
+            <option value="tomorrow">Até amanhã às 8h</option>
+          </Select>
+        </SettingRow>
+        <SettingRow id="notif-teste" label="Testar" description="Mostra um aviso agora, para conferir se o sistema permite notificações do Prancha.">
+          <Button icon={BellRing} loading={testing} disabled={!native} onClick={() => void test()}>
+            Enviar notificação de teste
+          </Button>
+        </SettingRow>
+      </Section>
+    </>
+  );
+}
+
+export function SettingsScreen({ section }: { section?: string } = {}) {
   const { settings, effectiveTheme } = useSettings();
   const save = useSave();
   const toast = useToast();
@@ -560,7 +655,7 @@ export function SettingsScreen() {
   const [suggesting, setSuggesting] = useState(false);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [verifying, setVerifying] = useState(false);
-  const [category, setCategory] = useState<SettingsCategory>("aparencia");
+  const [category, setCategory] = useState<SettingsCategory>(() => SETTINGS_CATEGORIES.find((c) => c.id === section)?.id ?? "aparencia");
   const [query, setQuery] = useState("");
   const [target, setTarget] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
@@ -822,6 +917,8 @@ export function SettingsScreen() {
                   </SettingRow>
                 </Section>
               )}
+
+              {category === "notificacoes" && <NotificationsSection />}
 
               {category === "armazenamento" && <StorageSection />}
 

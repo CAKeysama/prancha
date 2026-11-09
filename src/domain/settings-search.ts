@@ -1,7 +1,7 @@
 // Índice da pesquisa das configurações: cada opção com as palavras que alguém usaria para procurá-la,
 // não só o título que aparece na tela. Os `id`s são as âncoras `setting-<id>` da tela.
 
-export type SettingsCategory = "aparencia" | "leitura" | "biblioteca" | "armazenamento" | "atualizacoes" | "geral";
+export type SettingsCategory = "aparencia" | "leitura" | "biblioteca" | "notificacoes" | "armazenamento" | "atualizacoes" | "geral";
 /** `plugins` aponta para a tela Plugins, onde moram as opções de leitura online. */
 export type SettingPlace = SettingsCategory | "plugins";
 
@@ -9,6 +9,7 @@ export const SETTINGS_CATEGORIES: ReadonlyArray<{ id: SettingsCategory; label: s
   { id: "aparencia", label: "Aparência" },
   { id: "leitura", label: "Leitura" },
   { id: "biblioteca", label: "Biblioteca" },
+  { id: "notificacoes", label: "Notificações" },
   { id: "armazenamento", label: "Armazenamento" },
   { id: "atualizacoes", label: "Atualizações" },
   { id: "geral", label: "Geral" },
@@ -46,6 +47,14 @@ export const SETTINGS_INDEX: readonly SettingEntry[] = [
   { id: "ordenacao", place: "biblioteca", title: "Ordenação padrão da biblioteca", description: "Título, data de adição, último acesso ou progresso.", keywords: ["ordem", "ordenar", "classificar", "crescente", "decrescente"] },
   { id: "verificar", place: "biblioteca", title: "Verificar arquivos", description: "Procura HQs cujos arquivos foram movidos ou excluídos.", keywords: ["ausente", "faltando", "movido", "excluído", "perdido"] },
   { id: "capas", place: "biblioteca", title: "Atualizar capas", description: "Recria todas as miniaturas a partir dos arquivos.", keywords: ["capas", "miniaturas", "recriar", "regenerar", "thumbnail"] },
+
+  { id: "notif-capitulos", place: "notificacoes", title: "Capítulos novos", description: "Avisa quando uma obra acompanhada recebe capítulos.", keywords: ["notificação", "aviso", "capítulo", "lançamento", "acompanhar", "novidade"] },
+  { id: "notif-atualizacoes", place: "notificacoes", title: "Avisos de nova versão", description: "Versão disponível, instalada ou que não terminou de instalar.", keywords: ["notificação", "aviso", "versão", "update"] },
+  { id: "notif-downloads", place: "notificacoes", title: "Downloads concluídos", description: "Capítulos baixados para a biblioteca.", keywords: ["notificação", "aviso", "baixar", "download"] },
+  { id: "notif-falhas", place: "notificacoes", title: "Falhas de download", description: "Capítulos que não puderam ser baixados.", keywords: ["notificação", "erro", "falha", "download"] },
+  { id: "notif-sincronizacao", place: "notificacoes", title: "Problemas de sincronização", description: "Obras acompanhadas que não puderam ser verificadas.", keywords: ["notificação", "sincronizar", "fonte", "erro", "sistema"] },
+  { id: "notif-biblioteca", place: "notificacoes", title: "Avisos da biblioteca", description: "Importações com problemas e arquivos que sumiram.", keywords: ["notificação", "importação", "arquivo ausente", "biblioteca"] },
+  { id: "notif-nativas", place: "notificacoes", title: "Notificações do sistema operacional", description: "Avisos fora da janela do Prancha.", keywords: ["notificação nativa", "windows", "desktop", "área de trabalho", "pop-up", "silenciar", "não perturbe"] },
 
   { id: "pasta", place: "armazenamento", title: "Pasta de dados do aplicativo", description: "Onde ficam o catálogo, as capas e o cache.", keywords: ["pasta", "diretório", "dados", "backup", "local"] },
   { id: "uso", place: "armazenamento", title: "Espaço usado", description: "Tamanho do catálogo, das miniaturas e do cache de páginas.", keywords: ["espaço", "disco", "tamanho", "uso"] },

@@ -21,6 +21,8 @@ import { SeriesScreen } from "../features/online/SeriesScreen";
 import { ChapterReaderScreen } from "../features/reader/ChapterReaderScreen";
 import { ReaderScreen } from "../features/reader/ReaderScreen";
 import { SettingsScreen } from "../features/settings/SettingsScreen";
+import { NotificationsProvider } from "../features/notifications/notifications-context";
+import { NotificationsScreen } from "../features/notifications/NotificationsScreen";
 import { UpdateDialogs } from "../features/updates/UpdateDialogs";
 import { UpdatesProvider } from "../features/updates/updates-context";
 import { LibraryEventsProvider } from "./library-events";
@@ -111,8 +113,10 @@ function Screen({ route }: { route: Route }) {
       return <RepositoriesScreen />;
     case "plugins":
       return <PluginsScreen />;
+    case "notifications":
+      return <NotificationsScreen />;
     case "settings":
-      return <SettingsScreen />;
+      return <SettingsScreen key={route.section ?? ""} section={route.section} />;
     case "reader":
       return <ReaderScreen key={route.id} id={route.id} />;
     case "chapter":
@@ -164,11 +168,13 @@ export function App() {
               <OnboardingProvider>
                 <ComicActionsProvider>
                   <UpdatesProvider>
-                    <Shell />
-                    <ImportPanel />
-                    <OnboardingWizard />
-                    <PdfCoverWorker />
-                    <UpdateDialogs />
+                    <NotificationsProvider>
+                      <Shell />
+                      <ImportPanel />
+                      <OnboardingWizard />
+                      <PdfCoverWorker />
+                      <UpdateDialogs />
+                    </NotificationsProvider>
                   </UpdatesProvider>
                 </ComicActionsProvider>
               </OnboardingProvider>

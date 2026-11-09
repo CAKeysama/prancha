@@ -44,7 +44,7 @@ A CSP restringe imagens/conexões a `self`, `ipc` e `prancha.localhost`.
 | Ordenação natural | `natural.rs`, também registrada como *collation* SQLite `NATSORT` | "Vol 2" antes de "Vol 10" na interface e nas consultas. |
 | Busca | Coluna `search_text` sem acentos e minúscula (título, arquivo, série, autores, editora, número, tags) com `LIKE` por termo | Rápida para dezenas de milhares de itens; "acao" encontra "Ação". |
 | Lista grande | `@tanstack/react-virtual` na grade e na lista | Só as linhas visíveis são montadas. |
-| Comunicação de progresso | Eventos `import:progress`, `library:changed`, `covers:progress` | A interface não faz polling. |
+| Comunicação de progresso | Eventos `import:progress`, `library:changed`, `covers:progress`, `notifications:changed` | A interface não faz polling. |
 
 ## Identificação de arquivos e duplicatas
 
@@ -134,6 +134,40 @@ extensions/downloads.rs         fila persistente → CBZ → import::process_one
 **Sem polling.** Os downloads avisam por evento (`downloads:changed`), e a fila usa `Condvar`. A sincronização só roda a pedido, com `ETag`. Pesquisas e obras abertas são canceladas quando a tela muda.
 
 **Limites conhecidos.** A compilação de um componente não pode ser interrompida. Um download que falha recomeça do zero. O comportamento de rede das extensões nativas foi provado contra servidores locais e, em HTTPS público, só com a demonstração. As fontes do plugin foram conferidas com sites de verdade uma vez, sem teste permanente.
+
+## Central de notificações
+
+Um histórico que fica no SQLite, separado dos avisos temporários (`Toast`), que continuam para respostas imediatas a uma ação. Uma notificação nunca é dona de nada: ler, deixar de ler ou remover mexe só nela, nunca no capítulo, na obra, no progresso ou na novidade do capítulo.
+
+```
+evento (capítulos novos, download, atualização, importação, arquivos ausentes, sincronização)
+   │ NewNotification: tipo, referências, chaves de evento
+   ▼
+notifications::record     transação: deduplica, agrupa, respeita preferências, decide a nativa
+   │ notifications:changed { unread, created }
+   ▼
+NotificationsProvider     contagem global, cache do popup, ações → useNav
+   ├─ NotificationBell    sino + badge no menu lateral, popup com as 8 mais recentes
+   └─ NotificationsScreen histórico paginado, filtros, seleção múltipla
+```
+
+**Banco (migração `0008`).** `notifications` guarda tipo (`kind`), categoria, título, texto, `series_id`/`chapter_id`/`comic_id` (chaves estrangeiras com `ON DELETE SET NULL`), a ação principal, um `payload` JSON com contagem e versão, `group_key`, `created_at`, `updated_at` e `read_at`. `notification_chapters` liga a notificação aos capítulos que ela anuncia, com `ON DELETE CASCADE` dos dois lados. `notification_events` guarda cada chave de evento já anunciada. Índices: recentes (`created_at DESC, id DESC`), por categoria, parcial de não lidas, por obra e parcial de grupo. `id` usa `AUTOINCREMENT`, para o clique numa notificação nativa antiga nunca cair em outra.
+
+**Deduplicação.** Cada evento tem uma chave estável pelo tipo e pelas referências: `chapter:new:<obra>:<id remoto>`, `download:completed:<capítulo>:<pedido>`, `download:failed:<capítulo>:<pedido>:<fim da tentativa>`, `update_available:<versão>`, `update_installed:<versão>`, `update_failed:<versão>`, `import:problems:<tarefa>`, `library:missing:<HQ>:<verificação>`. `record` insere a chave com `INSERT OR IGNORE` na mesma transação da notificação: um evento repetido não grava nada, e a chave fica mesmo depois de a notificação ser removida, marcada como não lida ou de a categoria ser desligada. Eventos diferentes têm chaves diferentes, então nada legítimo é descartado.
+
+**Agrupamento.** Capítulos novos e downloads da mesma obra, e falhas de sincronização, somam na notificação ainda não lida do mesmo grupo criada há pouco (30 minutos; 6 horas para sincronização). O título e o texto são refeitos com a contagem ("One Piece recebeu 5 capítulos novos"), e a ação principal muda de "Abrir capítulo" para "Abrir obra" quando passa de um. Uma notificação lida não recebe novidades escondidas: o próximo evento cria outra.
+
+**Badge.** A contagem é `count(*)` das não lidas visíveis, pelo índice parcial. A interface pede uma vez ao abrir; depois, cada gravação ou alteração devolve a contagem nova, e o evento `notifications:changed` a leva a todas as telas. Notificações de obras que o filtro +18 esconde também não aparecem nem contam.
+
+**Popup e tela.** O popup consulta o banco só quando chegou notificação nova desde a última abertura; leituras e remoções feitas pela interface ajustam as listas abertas sem nova consulta. A tela pagina por cursor (`created_at`, `id`), 30 por vez, e uma notificação nova entra no topo sem perder as páginas carregadas.
+
+**Ações.** O destino nunca é uma rota guardada. `notification_target` lê as referências da própria notificação, confere se a obra, o capítulo ou a HQ ainda existem e se o plugin de leitura online está ligado, e só então a interface navega pelas rotas de sempre. Se falhar, a notificação continua como estava e a pessoa vê o motivo. Nenhuma ação apaga ou altera dados.
+
+**Retenção.** A cada início, `prune` apaga lidas com mais de 90 dias, qualquer uma com mais de um ano e o que passar de 2000. Chaves de evento ficam 400 dias.
+
+**Notificações do sistema.** `tauri-plugin-notification` 2.8 (oficial), chamado só pelo backend: a interface não recebe permissões novas. Só capítulos novos, nova versão disponível e problemas de sincronização (downloads concluídos, para quem ligar), só na criação (somar num grupo não repete o aviso) e só com a janela fora de foco. Obras +18 aparecem sem o nome. Desligar ou silenciar não muda nada na central. Um clique traz a janela para a frente e executa a ação da notificação pelo mesmo caminho do popup.
+
+**Limites por plataforma.** No desktop, o plugin sempre responde que a permissão foi concedida: se o sistema bloquear o Prancha (Windows: Configurações › Notificações; macOS: Ajustes › Notificações), o aviso simplesmente não aparece, e o botão de teste nas configurações serve para conferir. No Windows, o clique só chega enquanto o aviso está na tela, não depois de ele ir para a Central de Ações. No Linux, depende de um servidor de notificações compatível com o D-Bus.
 
 ## Limites de segurança (`formats/mod.rs`)
 

@@ -18,6 +18,7 @@ use tauri_plugin_updater::{Error as UpdaterError, Update};
 use crate::db::now_ms;
 use crate::error::{AppError, AppResult};
 use crate::library;
+use crate::notifications::{self, Event, Kind, NewNotification};
 
 const STATE_KEY: &str = "updates.state";
 const RELEASES_KEY: &str = "updates.releases";
@@ -178,7 +179,21 @@ pub fn reconcile(conn: &Connection, current: &Version) -> AppResult<()> {
     if parse(&state.welcome_version).is_some_and(|v| v != *current) {
         state.welcome_version = None;
     }
-    save_state(conn, &state)
+    save_state(conn, &state)?;
+    // A central guarda o resultado. A chave é a versão: reabrir o app não repete o aviso.
+    let now = now_ms();
+    if updated {
+        notifications::record(conn, &update_notice(Kind::UpdateInstalled, &current.to_string()), now)?;
+    }
+    if let Some(failed) = &state.failed_version {
+        notifications::record(conn, &update_notice(Kind::UpdateFailed, failed), now)?;
+    }
+    Ok(())
+}
+
+/// Aviso de uma versão, com a chave de deduplicação pelo tipo e pelo número.
+pub fn update_notice(kind: Kind, version: &str) -> NewNotification {
+    NewNotification::new(kind).extra(json!({ "version": version })).event(Event::new(format!("{}:{version}", kind.as_str())))
 }
 
 pub fn snapshot(conn: &Connection, current: &Version, needs_admin: bool) -> AppResult<Snapshot> {
@@ -523,6 +538,26 @@ mod tests {
         let snap = snapshot(&conn, &v("1.0.0"), false).unwrap();
         assert_eq!(snap.failed_version, None);
         assert_eq!(snap.declined_version.as_deref(), Some("1.1.0"));
+    }
+
+    fn notices(conn: &Connection) -> Vec<(String, String)> {
+        let page = notifications::list(conn, &Default::default()).unwrap();
+        page.items.into_iter().map(|n| (n.kind, n.body)).collect()
+    }
+
+    #[test]
+    fn the_center_records_installed_and_failed_updates_once() {
+        let conn = db::open_in_memory().unwrap();
+        reconcile(&conn, &v("1.0.0")).unwrap();
+        assert!(notices(&conn).is_empty(), "a primeira execução não é atualização");
+        mark_ready_to_install(&conn, "1.1.0").unwrap();
+        reconcile(&conn, &v("1.0.0")).unwrap();
+        reconcile(&conn, &v("1.0.0")).unwrap();
+        assert_eq!(notices(&conn), vec![("update_failed".to_string(), "A instalação da v1.1.0 não terminou. A versão atual continua funcionando.".to_string())]);
+        reconcile(&conn, &v("1.1.0")).unwrap();
+        reconcile(&conn, &v("1.1.0")).unwrap();
+        let kinds: Vec<String> = notices(&conn).into_iter().map(|(k, _)| k).collect();
+        assert_eq!(kinds, vec!["update_installed", "update_failed"], "reabrir não repete");
     }
 
     #[test]

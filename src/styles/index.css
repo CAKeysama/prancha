@@ -207,6 +207,21 @@
   animation: p-fade-in 140ms ease-out 4s both;
 }
 
+/* Badge de notificações: troca de número com um pulso curto. */
+@keyframes p-badge-in {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+.p-badge {
+  animation: p-badge-in 160ms ease-out;
+}
+
 @keyframes p-spin {
   to {
     transform: rotate(360deg);

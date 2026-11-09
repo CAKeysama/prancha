@@ -17,6 +17,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0004_online_reading.sql"),
     include_str!("../migrations/0005_series_library.sql"),
     include_str!("../migrations/0006_series_classification.sql"),
+    include_str!("../migrations/0008_notifications.sql"),
 ];
 
 pub fn schema_version() -> i64 {

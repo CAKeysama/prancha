@@ -877,6 +877,11 @@
    "license": "MIT"
   },
   {
+   "name": "notify-rust",
+   "version": "4.19.0",
+   "license": "MIT OR Apache-2.0"
+  },
+  {
    "name": "num-conv",
    "version": "0.1.0",
    "license": "MIT OR Apache-2.0"
@@ -1342,6 +1347,11 @@
    "license": "Apache-2.0 OR MIT"
   },
   {
+   "name": "tauri-plugin-notification",
+   "version": "2.8.0",
+   "license": "Apache-2.0 OR MIT"
+  },
+  {
    "name": "tauri-plugin-opener",
    "version": "2.7.2",
    "license": "Apache-2.0 OR MIT"
@@ -1365,6 +1375,11 @@
    "name": "tauri-utils",
    "version": "2.10.2",
    "license": "Apache-2.0 OR MIT"
+  },
+  {
+   "name": "tauri-winrt-notification",
+   "version": "0.8.1",
+   "license": "MIT OR Apache-2.0"
   },
   {
    "name": "tempfile",
