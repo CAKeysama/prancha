@@ -3,6 +3,14 @@
 Tudo o que mudou em cada versão do Prancha. O projeto segue o [versionamento semântico](https://semver.org/lang/pt-BR/),
 e as notas das releases e a [página de downloads](https://cakeysama.github.io/prancha/) são geradas a partir deste arquivo.
 
+## [0.6.2] - 2026-11-09
+
+Uma versão de bastidores: as verificações e a publicação de cada versão ficaram bem mais rápidas, para as correções e novidades chegarem antes.
+
+### Observações
+
+- Nada muda no aplicativo. As verificações automáticas de cada mudança passaram de 7 a 19 minutos para cerca de 4 minutos, sem deixar nenhum teste de fora, e os instaladores passam a ser gerados ao mesmo tempo que as verificações.
+
 ## [0.6.1] - 2026-11-09
 
 Uma versão de organização: daqui em diante, toda mudança no Prancha sai como versão nova, com o número que ela pede.
