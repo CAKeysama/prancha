@@ -21,6 +21,7 @@ use crate::core::Core;
 use crate::covers;
 use crate::db::now_ms;
 use crate::error::{AppError, AppResult};
+use crate::notifications;
 use crate::library::{self, ComicFileInfo, Progress};
 
 const MAX_RESULTS: usize = 200;
@@ -839,7 +840,15 @@ pub fn open_series(core: &Core, id: i64, cancel: Option<&Cancel>) -> AppResult<S
         Ok((extension, source, details, chapters)) => {
             let mut conn = core.db();
             store_details(core, &conn, &SeriesPlace { extension: &extension, source_id: &series.source_id, source: &source, remote_id: &series.remote_id }, &series.title, &details)?;
-            store_chapters(&mut conn, id, &chapters)?;
+            let fresh = store_chapters(&mut conn, id, &chapters)?;
+            // Só os capítulos marcados como novos nesta sincronização; a notificação deduplica pelo id remoto.
+            match notifications::chapters_discovered(&conn, id, &fresh) {
+                Ok(Some(notice)) => {
+                    notifications::publish_with(core, &conn, &notice);
+                }
+                Ok(None) => {}
+                Err(e) => log::warn!("aviso de capítulos novos não gravado: {e}"),
+            }
             stored_series(&conn, id)
         }
         Err(error) if error.code() == "extension_cancelled" => Err(error),
@@ -1096,14 +1105,25 @@ pub fn list_following(conn: &Connection) -> AppResult<Vec<SeriesCard>> {
 /// e o que já estava registrado (estados, novidades) não muda por causa dela.
 pub fn refresh_following(core: &Core, cancel: Option<&Cancel>) -> AppResult<Vec<SeriesCard>> {
     let ids: Vec<i64> = list_following(&core.db())?.into_iter().map(|series| series.id).collect();
+    let mut failed = Vec::new();
     for id in ids {
         if cancel.is_some_and(|cancel| cancel.load(Ordering::Relaxed)) {
             break;
         }
         match open_series(core, id, cancel) {
             Err(error) if error.code() == "extension_cancelled" => break,
+            // A fonte não respondeu: o registro continua, e a central avisa uma vez por obra e por dia.
+            Ok(view) if view.source_error.is_some() => failed.push((id, view.series.title)),
             _ => {}
         }
+    }
+    if !failed.is_empty() {
+        let day = crate::db::now_ms() / (24 * 60 * 60 * 1000);
+        let mut notice = notifications::NewNotification::new(notifications::Kind::SyncFailed).grouped(notifications::SYNC_WINDOW_MS);
+        for (id, title) in failed {
+            notice = notice.event(notifications::Event::new(format!("sync:failed:{id}:{day}")).item(title));
+        }
+        notifications::publish(core, &notice);
     }
     list_following(&core.db())
 }

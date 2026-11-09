@@ -31,6 +31,7 @@ use crate::import::{self, EVENT_LIBRARY};
 use crate::library::{
     self, CollectionInfo, ComicDetails, ComicSummary, HomeData, LibraryQuery, MetadataPatch, Progress,
 };
+use crate::notifications::{self, NotificationPage};
 use crate::pages::dir_size;
 use crate::updates;
 
@@ -692,7 +693,16 @@ async fn find_update(app: &AppHandle, core: &Core) -> AppResult<Option<Update>> 
 
 async fn record_check(app: &AppHandle, core: &Arc<Core>, found: Option<updates::ReleaseInfo>) -> AppResult<()> {
     let current = app.package_info().version.clone();
-    blocking(core, move |c| updates::record_check(&c.db(), &current, found)).await
+    blocking(core, move |c| {
+        let version = found.as_ref().map(|r| r.version.clone());
+        updates::record_check(&c.db(), &current, found)?;
+        // Só uma versão encontrada de verdade vira aviso, e cada versão uma vez.
+        if let Some(version) = version {
+            notifications::publish(c, &updates::update_notice(notifications::Kind::UpdateAvailable, &version));
+        }
+        Ok(())
+    })
+    .await
 }
 
 #[tauri::command]
@@ -803,7 +813,14 @@ pub async fn updates_install(app: AppHandle, state: S<'_>, session: Updates<'_>,
     if !updates::ENABLED {
         return Err(AppError::user("unavailable", "Atualizações não estão disponíveis nesta compilação."));
     }
-    download_and_install(&app, &state, &session, &on_progress).await
+    let outcome = download_and_install(&app, &state, &session, &on_progress).await;
+    if let Err(error) = &outcome {
+        let version = session.update.lock().unwrap().as_ref().map(|u| u.version.clone());
+        if let Some(version) = version.filter(|_| !matches!(error.code(), "cancelled" | "up_to_date" | "busy")) {
+            blocking(&state, move |c| Ok(notifications::publish(c, &updates::update_notice(notifications::Kind::UpdateFailed, &version)))).await?;
+        }
+    }
+    outcome
 }
 
 #[tauri::command]
@@ -1304,4 +1321,94 @@ mod tests {
         assert!(improvement_url("Título", &"çã".repeat(IMPROVEMENT_TEXT_MAX / 2)).is_err());
         assert!(improvement_url("Título", &"a".repeat(IMPROVEMENT_TEXT_MAX)).is_ok());
     }
+}
+
+// ---------------------------------------------------------------------------
+// Notificações
+// ---------------------------------------------------------------------------
+
+/// Toda alteração avisa a interface com a contagem já gravada: a badge não precisa consultar de novo.
+async fn notifications_changing(core: &Arc<Core>, f: impl FnOnce(&Core) -> AppResult<i64> + Send + 'static) -> AppResult<i64> {
+    blocking(core, move |c| {
+        let unread = f(c)?;
+        notifications::changed(c, unread);
+        Ok(unread)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn notifications_list(state: S<'_>, query: notifications::ListQuery) -> AppResult<NotificationPage> {
+    blocking(&state, move |c| notifications::list(&c.db(), &query)).await
+}
+
+#[tauri::command]
+pub async fn notifications_unread(state: S<'_>) -> AppResult<i64> {
+    blocking(&state, |c| notifications::unread_count(&c.db())).await
+}
+
+#[tauri::command]
+pub async fn notifications_set_read(state: S<'_>, ids: Vec<i64>, read: bool) -> AppResult<i64> {
+    notifications_changing(&state, move |c| notifications::set_read(&c.db(), &ids, read, crate::db::now_ms())).await
+}
+
+#[tauri::command]
+pub async fn notifications_mark_all_read(state: S<'_>, category: Option<String>) -> AppResult<i64> {
+    notifications_changing(&state, move |c| notifications::mark_all_read(&c.db(), category.as_deref(), crate::db::now_ms())).await
+}
+
+#[tauri::command]
+pub async fn notifications_remove(state: S<'_>, ids: Vec<i64>) -> AppResult<i64> {
+    notifications_changing(&state, move |c| notifications::remove(&c.db(), &ids)).await
+}
+
+#[tauri::command]
+pub async fn notifications_clear_read(state: S<'_>) -> AppResult<i64> {
+    notifications_changing(&state, |c| {
+        let conn = c.db();
+        notifications::clear_read(&conn)?;
+        notifications::unread_count(&conn)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn notification_target(state: S<'_>, id: i64, action: Option<notifications::Action>) -> AppResult<notifications::Target> {
+    blocking(&state, move |c| notifications::resolve(&c.db(), id, action)).await
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeStatus {
+    /// granted | denied | prompt
+    permission: String,
+}
+
+#[tauri::command]
+pub async fn notifications_native_status(app: AppHandle) -> AppResult<NativeStatus> {
+    use tauri_plugin_notification::{NotificationExt, PermissionState};
+    let permission = match app.notification().permission_state() {
+        Ok(PermissionState::Granted) => "granted",
+        Ok(PermissionState::Denied) => "denied",
+        Ok(_) => "prompt",
+        Err(_) => "denied",
+    };
+    Ok(NativeStatus { permission: permission.into() })
+}
+
+/// Pede a permissão (no desktop ela já vem concedida) e mostra um aviso de teste, sem guardar nada.
+#[tauri::command]
+pub async fn notifications_native_test(app: AppHandle) -> AppResult<NativeStatus> {
+    use tauri_plugin_notification::{NotificationExt, PermissionState};
+    let state = app.notification().request_permission().map_err(|e| AppError::user("native_failed", format!("O sistema não permitiu notificações: {e}")))?;
+    if state != PermissionState::Granted {
+        return Ok(NativeStatus { permission: "denied".into() });
+    }
+    app.notification()
+        .builder()
+        .title("Notificações do Prancha")
+        .body("É assim que os avisos importantes aparecem fora da janela.")
+        .show()
+        .map_err(|e| AppError::user("native_failed", format!("O sistema não exibiu a notificação: {e}")))?;
+    Ok(NativeStatus { permission: "granted".into() })
 }

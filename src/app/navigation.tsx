@@ -17,6 +17,7 @@ export type Route =
   | { name: "extensions" }
   | { name: "repositories" }
   | { name: "plugins" }
+  | { name: "notifications" }
   | { name: "settings"; section?: string };
 
 interface Nav {
@@ -36,7 +37,7 @@ export function useNav(): Nav {
 }
 
 /** Rotas de primeiro nível (barra lateral) zeram o histórico. */
-const TOP_LEVEL = new Set(["home", "library", "continue", "recent", "favorites", "collections", "explore", "downloads", "extensions", "repositories", "plugins", "settings"]);
+const TOP_LEVEL = new Set(["home", "library", "continue", "recent", "favorites", "collections", "explore", "downloads", "extensions", "repositories", "plugins", "notifications", "settings"]);
 
 export function NavigationProvider({ children, initial = { name: "home" } }: { children: ReactNode; initial?: Route }) {
   const [stack, setStack] = useState<Route[]>([initial]);

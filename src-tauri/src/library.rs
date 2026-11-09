@@ -358,6 +358,10 @@ fn file_info_from_row(r: &Row<'_>) -> rusqlite::Result<ComicFileInfo> {
     })
 }
 
+pub fn comic_title(conn: &Connection, id: i64) -> AppResult<String> {
+    conn.query_row("SELECT title FROM comics WHERE id = ?1", [id], |r| r.get(0)).optional()?.ok_or(AppError::NotFound)
+}
+
 pub fn file_info(conn: &Connection, id: i64) -> AppResult<ComicFileInfo> {
     let sql = format!("{FILE_INFO_SELECT} WHERE id = ?");
     conn.query_row(&sql, [id], file_info_from_row).optional()?.ok_or(AppError::NotFound)

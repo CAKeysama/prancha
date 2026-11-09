@@ -21,6 +21,7 @@ use prancha_lib::error::AppError;
 use prancha_lib::extensions::reading::{self, ReadState};
 use prancha_lib::extensions::{downloads, install, sources, suwayomi};
 use prancha_lib::library;
+use prancha_lib::notifications;
 use prancha_lib::extensions::net::{Access, Limits, Net, NetError, Request};
 use prancha_lib::extensions::repository::{self, CatalogQuery, MIHON_MESSAGE};
 use prancha_lib::extensions::runtime::{ContentRating, EngineLimits, Grant, Installed, SourceEngine};
@@ -2283,6 +2284,61 @@ fn a_page_with_a_bad_status_or_blocked_host_fails_the_download() {
     let view = downloaded(&core, chapter(&core, "desvio", &format!("{}|0", redirected.base)));
     assert_eq!(view.status, "failed");
     assert!(view.error.as_deref().unwrap().contains("não permitido"), "{view:?}");
+}
+
+fn wait_for_notifications(core: &Core, at_least: usize) -> Vec<notifications::NotificationView> {
+    let give_up = Instant::now() + Duration::from_secs(30);
+    loop {
+        let items = notifications::list(&core.db(), &Default::default()).unwrap().items;
+        if items.len() >= at_least {
+            return items;
+        }
+        assert!(Instant::now() < give_up, "notificações: {items:?}");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[test]
+fn finished_downloads_of_a_series_become_one_notification_and_failures_another() {
+    let (_dir, core, _repo) = core_with_fixture(&["127.0.0.1"]);
+    library::set_setting(&core.db(), "notifications.nativeDownloads", &json!(true)).unwrap();
+    let shown = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let seen = shown.clone();
+    let _ = core.notifier.set(Arc::new(move |n: &notifications::NativeNotice| {
+        seen.lock().unwrap().push(n.title.clone());
+        notifications::NativeOutcome::Shown
+    }));
+    let server = pages_server();
+    let first_chapter = chapter(&core, "lote", &format!("{}|0", server.base));
+    // Obra já classificada, como toda obra que aparece com o filtro +18 ligado.
+    core.db().execute("UPDATE online_series SET classification = 'known' WHERE remote_id = 'lote'", []).unwrap();
+    let first = downloaded(&core, first_chapter);
+    assert_eq!(first.status, "completed");
+    wait_for_notifications(&core, 1);
+    let second = downloaded(&core, chapter(&core, "lote", &format!("{}|0,1", server.base)));
+    assert_eq!(second.status, "completed");
+    let give_up = Instant::now() + Duration::from_secs(30);
+    let grouped = loop {
+        let items = wait_for_notifications(&core, 1);
+        if items[0].count == 2 || Instant::now() > give_up {
+            break items;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    assert_eq!(grouped.len(), 1, "um lote da mesma obra é uma notificação: {grouped:?}");
+    assert_eq!(grouped[0].kind, "download_completed");
+    assert_eq!(grouped[0].title, "2 capítulos baixados");
+    assert_eq!(grouped[0].series_id, Some(first.series_id));
+    assert_eq!(*shown.lock().unwrap(), vec!["Download concluído".to_string()], "somar no grupo não repete a do sistema");
+
+    let broken = serve(|_| Reply::status(500));
+    let failed = downloaded(&core, chapter(&core, "lote", &format!("{}|0", broken.base)));
+    assert_eq!(failed.status, "failed");
+    let items = wait_for_notifications(&core, 2);
+    let failure = items.iter().find(|n| n.kind == "download_failed").expect("falha anunciada");
+    assert_eq!(failure.actions[0], notifications::Action::OpenDownloads);
+    assert!(!failure.body.contains("500"), "o detalhe técnico fica em Downloads: {}", failure.body);
+    assert_eq!(notifications::unread_count(&core.db()).unwrap(), 2);
 }
 
 #[test]

@@ -19,6 +19,7 @@ use crate::error::AppResult;
 use crate::formats::{self, ComicFormat, FormatError, Listing};
 use crate::library::{self, NewComic};
 use crate::natural::natural_path_cmp;
+use crate::notifications::{self, Event, Kind, NewNotification};
 use crate::text::title_from_file_name;
 
 pub type Emit = Arc<dyn Fn(&str, Value) + Send + Sync>;
@@ -412,6 +413,21 @@ pub fn regenerate_covers(conn: &Connection, covers_dir: &Path, emit: &Emit) -> A
     Ok(total)
 }
 
+/// Uma importação que terminou com arquivos recusados pede atenção; uma que deu certo não vira aviso.
+pub fn announce_problems(conn: &Connection, emit: &Emit, job_id: i64, counts: &JobCounts, cancelled: bool) {
+    if cancelled || counts.failed == 0 {
+        return;
+    }
+    let n = NewNotification::new(Kind::ImportProblems)
+        .extra(json!({ "failed": counts.failed, "total": counts.total }))
+        .event(Event::new(format!("import:problems:{job_id}")));
+    match notifications::record(conn, &n, crate::db::now_ms()) {
+        Ok(Some(r)) => emit(notifications::EVENT_CHANGED, json!({ "unread": r.unread, "created": r.id })),
+        Ok(None) => {}
+        Err(e) => log::warn!("aviso da importação não gravado: {e}"),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Thread de trabalho
 // ---------------------------------------------------------------------------
@@ -448,8 +464,9 @@ impl Importer {
                                     emit2(EVENT_LIBRARY, json!({}));
                                 }
                             };
-                            run_import(&conn, &covers_dir, job_id, &paths, &cancel, &mut on_event);
+                            let (counts, _, cancelled) = run_import(&conn, &covers_dir, job_id, &paths, &cancel, &mut on_event);
                             cancels_worker.lock().unwrap().remove(&job_id);
+                            announce_problems(&conn, &emit, job_id, &counts, cancelled);
                             emit(EVENT_LIBRARY, json!({}));
                         }
                         Task::Covers => {

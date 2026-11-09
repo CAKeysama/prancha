@@ -8,6 +8,8 @@ const EVENTS = {
   covers: "covers:progress",
   downloads: "downloads:changed",
   component: "component:progress",
+  notifications: "notifications:changed",
+  notificationActivate: "notifications:activate",
 } as const;
 
 /** Liga um ouvinte do Tauri; devolve a função que o desliga, mesmo antes de ele ficar pronto (segura em StrictMode). */
@@ -38,3 +40,8 @@ export const onDownloadChanged = (h: (e: DownloadView) => void) => subscribe<Dow
 export const onComponentProgress = (h: (e: ComponentProgress) => void) => subscribe<ComponentProgress>(EVENTS.component, h);
 export const onCoversProgress = (h: (e: { total: number; done: number }) => void) =>
   subscribe<{ total: number; done: number }>(EVENTS.covers, h);
+/** `created` traz o id de uma notificação nova; sem ele, a mudança veio da própria interface. */
+export const onNotificationsChanged = (h: (e: { unread: number; created?: number }) => void) =>
+  subscribe<{ unread: number; created?: number }>(EVENTS.notifications, h);
+/** Clique numa notificação do sistema operacional. */
+export const onNotificationActivated = (h: (e: { id: number }) => void) => subscribe<{ id: number }>(EVENTS.notificationActivate, h);

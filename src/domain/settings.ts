@@ -40,6 +40,18 @@ export interface Settings {
   "plugins.online": boolean;
   /** Ligado por quem confirma ter 18 anos: o filtro +18 vem ativo. */
   "content.adult": boolean;
+  /** O que entra na central de notificações. */
+  "notifications.chapters": boolean;
+  "notifications.updates": boolean;
+  "notifications.downloadsCompleted": boolean;
+  "notifications.downloadsFailed": boolean;
+  "notifications.sync": boolean;
+  "notifications.library": boolean;
+  /** Notificações do sistema operacional, separadas da central: desligar não apaga o histórico. */
+  "notifications.native": boolean;
+  "notifications.nativeDownloads": boolean;
+  /** Silêncio temporário das notificações do sistema (ms desde a época), ou nada. */
+  "notifications.nativeMutedUntil": number | null;
   onboarding: OnboardingState;
 }
 
@@ -63,6 +75,15 @@ export const DEFAULT_SETTINGS: Settings = {
   "reader.shortcuts": DEFAULT_SHORTCUTS,
   "plugins.online": false,
   "content.adult": false,
+  "notifications.chapters": true,
+  "notifications.updates": true,
+  "notifications.downloadsCompleted": true,
+  "notifications.downloadsFailed": true,
+  "notifications.sync": true,
+  "notifications.library": true,
+  "notifications.native": true,
+  "notifications.nativeDownloads": false,
+  "notifications.nativeMutedUntil": null,
   onboarding: { status: "active", step: 1, comicId: null },
 };
 
@@ -104,6 +125,8 @@ export function sanitizeSettings(raw: Record<string, unknown>): Settings {
       out[key] = sanitizeShortcuts(value);
     } else if (key === "onboarding") {
       out[key] = sanitizeOnboarding(value);
+    } else if (key === "notifications.nativeMutedUntil") {
+      out[key] = typeof value === "number" && Number.isFinite(value) ? value : null;
     } else if (typeof DEFAULT_SETTINGS[key] === "boolean") {
       if (typeof value === "boolean") (out as unknown as Record<string, unknown>)[key] = value;
     }

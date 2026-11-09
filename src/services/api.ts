@@ -34,6 +34,7 @@ import type {
 } from "../domain/online";
 import type { ReaderMode } from "../domain/settings";
 import type { UpdateProgress, UpdatesHistory, UpdatesSnapshot } from "../domain/updates";
+import type { NotificationAction, NotificationCategory, NotificationPage, NotificationQuery, NotificationTarget } from "../domain/notifications";
 
 export class ApiError extends Error {
   code: string;
@@ -202,4 +203,14 @@ export const api = {
   downloadCancel: (id: number) => call<void>("download_cancel", { id }),
   downloadRetry: (id: number) => call<void>("download_retry", { id }),
   downloadsClearFinished: () => call<number>("downloads_clear_finished"),
+
+  notificationsList: (query: NotificationQuery) => call<NotificationPage>("notifications_list", { query }),
+  notificationsUnread: () => call<number>("notifications_unread"),
+  notificationsSetRead: (ids: number[], read: boolean) => call<number>("notifications_set_read", { ids, read }),
+  notificationsMarkAllRead: (category?: NotificationCategory) => call<number>("notifications_mark_all_read", { category: category ?? null }),
+  notificationsRemove: (ids: number[]) => call<number>("notifications_remove", { ids }),
+  notificationsClearRead: () => call<number>("notifications_clear_read"),
+  notificationTarget: (id: number, action?: NotificationAction) => call<NotificationTarget>("notification_target", { id, action: action ?? null }),
+  notificationsNativeStatus: () => call<{ permission: "granted" | "denied" | "prompt" }>("notifications_native_status"),
+  notificationsNativeTest: () => call<{ permission: "granted" | "denied" | "prompt" }>("notifications_native_test"),
 };

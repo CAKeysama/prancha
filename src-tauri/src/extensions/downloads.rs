@@ -27,6 +27,7 @@ use crate::db::now_ms;
 use crate::error::{AppError, AppResult};
 use crate::formats::{self, ComicFormat};
 use crate::import::{self, DuplicatePolicy, EVENT_LIBRARY};
+use crate::notifications::{self, Event, Kind, NewNotification};
 
 pub const EVENT_DOWNLOADS: &str = "downloads:changed";
 
@@ -253,6 +254,26 @@ fn finish(core: &Core, job: &Job, outcome: AppResult<()>, intent: Intent) {
         }
     }
     notify(core, job.id);
+    announce(core, job.id);
+}
+
+/// Concluídos e falhas da mesma obra num intervalo curto somam numa notificação só: um lote de
+/// capítulos não vira dezenas de avisos. A chave usa o capítulo e o momento do pedido, que não se
+/// repetem, e a falha também o fim da tentativa: tentar de novo e falhar outra vez é outro evento.
+fn announce(core: &Core, id: i64) {
+    let conn = core.db();
+    let Ok(view) = get(&conn, id) else { return };
+    let (kind, key) = match view.status.as_str() {
+        "completed" => (Kind::DownloadCompleted, format!("download:completed:{}:{}", view.chapter_id, view.created_at)),
+        "failed" => (Kind::DownloadFailed, format!("download:failed:{}:{}:{}", view.chapter_id, view.created_at, view.finished_at.unwrap_or_default())),
+        _ => return,
+    };
+    let event = Event::new(key).item(view.chapter_title.clone()).chapter(view.chapter_id);
+    let mut n = NewNotification::new(kind).subject(view.series_title.clone()).series(view.series_id).event(event).grouped(notifications::DOWNLOADS_WINDOW_MS);
+    if let Some(comic) = view.comic_id.filter(|_| kind == Kind::DownloadCompleted) {
+        n = n.comic(comic);
+    }
+    notifications::publish_with(core, &conn, &n);
 }
 
 // ---------------------------------------------------------------------------

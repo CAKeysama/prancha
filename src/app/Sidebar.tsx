@@ -4,6 +4,7 @@ import type { LucideIcon } from "lucide-react";
 import { cn } from "../components/cn";
 import { Logo } from "../components/Logo";
 import { Tooltip } from "../components/Tooltip";
+import { NotificationBell } from "../features/notifications/NotificationBell";
 import { UpdateIndicator } from "../features/updates/UpdateIndicator";
 import { APP_NAME } from "./config";
 import { useNav, type Route } from "./navigation";
@@ -68,9 +69,10 @@ export function Sidebar({ current }: { current: Route["name"] }) {
   };
   return (
     <nav aria-label="Navegação principal" className={cn("flex h-full shrink-0 flex-col border-r border-border bg-surface px-3 py-3", narrow ? "w-16" : "w-60")}>
-      <div className={cn("mb-4 flex items-center gap-2.5 px-2", narrow && "justify-center px-0")}>
+      <div className={cn("mb-4 flex items-center gap-2.5 px-2", narrow && "flex-col gap-2 px-0")}>
         <Logo />
-        {!narrow && <span className="text-lg font-semibold tracking-tight">{APP_NAME}</span>}
+        {!narrow && <span className="min-w-0 flex-1 truncate text-lg font-semibold tracking-tight">{APP_NAME}</span>}
+        <NotificationBell narrow={narrow} current={current === "notifications"} />
       </div>
       {/* A lista rola em janelas baixas: os dois blocos continuam alcançáveis. */}
       <div className="-mx-3 min-h-0 flex-1 overflow-y-auto px-3">
