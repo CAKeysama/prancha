@@ -140,6 +140,8 @@ export const api = {
   updatesOpenRelease: (version: string) => call<void>("updates_open_release", { version }),
   /** Abre o formulário do GitHub já preenchido; quem envia é a pessoa, lá. */
   openImprovementForm: (title: string, text: string) => call<void>("open_improvement_form", { title, text }),
+  /** Abre no navegador a página pública com as métricas do projeto no GitHub. O app não consulta nada. */
+  openProjectOverview: () => call<void>("open_project_overview"),
 
   repositories: () => call<RepositoryInfo[]>("repositories_list"),
   repositoriesRecommended: (refresh: boolean) => call<RecommendedList>("repositories_recommended", { refresh }),

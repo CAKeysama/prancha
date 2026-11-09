@@ -212,6 +212,7 @@ pub fn run() {
             commands::updates_history,
             commands::updates_open_release,
             commands::open_improvement_form,
+            commands::open_project_overview,
             commands::repositories_list,
             commands::repositories_recommended,
             commands::repository_preview,

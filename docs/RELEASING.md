@@ -86,6 +86,12 @@ Ficam em **Settings → Secrets and variables → Actions** do repositório. Nad
 | `VERCEL_TOKEN` | Segredo | Publicar o site oficial. É um [token da Vercel](https://vercel.com/account/tokens) com acesso ao projeto `prancha`. |
 | `VERCEL_ORG_ID` e `VERCEL_PROJECT_ID` | Variável | Qual projeto da Vercel recebe o site: são o `orgId` e o `projectId` de `site/.vercel/project.json`. Sem elas, o job do site fica de fora. |
 
+Na Vercel, em **Settings → Environment Variables** do projeto `prancha`, fica uma variável opcional:
+
+| Nome | Para quê |
+|---|---|
+| `GITHUB_TOKEN` | Consultas da página [Visão geral](METRICAS_DO_PROJETO.md) à API do GitHub. É um token fine-grained só deste repositório, com **Actions: Read-only**. Sem ele, a página funciona com o limite público e sem separar a espera da execução do CI. Nunca vai para o navegador nem para o app. |
+
 Para cadastrar um segredo, rode `gh secret set NOME --repo CAKeysama/prancha` e cole o valor quando ele pedir.
 
 ## Chave de assinatura das atualizações
@@ -110,6 +116,8 @@ Uma versão só aparece na página depois de publicada como release, e uma relea
 ## Site oficial
 
 O site em <https://prancha-beta.vercel.app> sai da pasta `site/`. O `pages.yml` roda `scripts/build-site.mjs`, que põe no `site/index.html` a versão, os links, o tamanho e os SHA-256 da release mais recente, e publica a pasta na Vercel. O `site/index.html` do git não é alterado: os números certos só existem no site no ar.
+
+A pasta também leva a página `visao-geral.html` e a função `api/github-metrics.mjs`, que a Vercel publica junto, sem configuração extra. Elas buscam os números no GitHub enquanto o site está no ar, com cache de 15 minutos. Detalhes em [METRICAS_DO_PROJETO.md](METRICAS_DO_PROJETO.md).
 
 As imagens de vitrine mostram obras de terceiros, então ficam fora do git, em `site/assets/prints`. O workflow baixa do próprio site no ar as que o `site/index.html` usa. Uma imagem nova ainda não está lá, e o workflow falha avisando qual falta. Nesse caso, publique uma vez à mão, de dentro da pasta `site`, nunca da raiz, porque da raiz a Vercel publica o aplicativo e arquivos ignorados pelo git:
 

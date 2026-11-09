@@ -1,0 +1,884 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Visão geral do projeto — Prancha</title>
+    <meta name="description" content="Versões, downloads e verificações automáticas do Prancha, com dados públicos do GitHub." />
+    <meta name="color-scheme" content="dark light" />
+    <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+    <style>
+      @font-face {
+        font-family: "IBM Plex Sans";
+        font-weight: 400;
+        font-display: swap;
+        src: url("fonts/ibm-plex-sans-400.woff2") format("woff2");
+      }
+      @font-face {
+        font-family: "IBM Plex Sans";
+        font-weight: 600;
+        font-display: swap;
+        src: url("fonts/ibm-plex-sans-600.woff2") format("woff2");
+      }
+
+      /* Mesmos tokens do aplicativo (src/styles/index.css) e da página inicial. */
+      :root {
+        color-scheme: dark;
+        --bg: #0d1117;
+        --surface: #161b22;
+        --elevated: #21262d;
+        --border: #30363d;
+        --grid: #21262d;
+        --text: #f0f6fc;
+        --muted: #8b949e;
+        --accent: #2f81f7;
+        --accent-emphasis: #1f6feb;
+        --on-emphasis: #ffffff;
+        --success: #3fb950;
+        --danger: #f85149;
+        --warning: #d29922;
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          color-scheme: light;
+          --bg: #ffffff;
+          --surface: #f6f8fa;
+          --elevated: #ffffff;
+          --border: #d1d9e0;
+          --grid: #eaeef2;
+          --text: #1f2328;
+          --muted: #59636e;
+          --accent: #0969da;
+          --accent-emphasis: #0969da;
+          --success: #1a7f37;
+          --danger: #d1242f;
+          --warning: #9a6700;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 400 16px/1.55 "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      a {
+        color: inherit;
+      }
+      :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 3px;
+        border-radius: 6px;
+      }
+      .wrap {
+        max-width: 1120px;
+        margin: 0 auto;
+        padding: 0 24px;
+      }
+      @media (max-width: 560px) {
+        .wrap {
+          padding: 0 16px;
+        }
+      }
+      header {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        border-bottom: 1px solid var(--border);
+        background: color-mix(in srgb, var(--bg) 90%, transparent);
+        -webkit-backdrop-filter: blur(16px) saturate(160%);
+        backdrop-filter: blur(16px) saturate(160%);
+      }
+      header .wrap {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: 56px;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 600;
+        text-decoration: none;
+      }
+      .brand svg {
+        width: 22px;
+        height: 22px;
+      }
+      header nav {
+        display: flex;
+        gap: 20px;
+      }
+      header nav a {
+        color: var(--muted);
+        text-decoration: none;
+        font-size: 14px;
+      }
+      header nav a:hover,
+      header nav a[aria-current] {
+        color: var(--text);
+      }
+
+      main.wrap {
+        padding-top: 56px;
+        padding-bottom: 64px;
+      }
+      h1 {
+        margin: 0;
+        font-size: clamp(30px, 4.5vw, 44px);
+        line-height: 1.1;
+        letter-spacing: -0.03em;
+        font-weight: 600;
+      }
+      .lede {
+        margin: 12px 0 0;
+        max-width: 62ch;
+        color: var(--muted);
+        font-size: 17px;
+      }
+      h2 {
+        margin: 0;
+        font-size: 20px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+      section {
+        margin-top: 48px;
+      }
+      .section-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 8px 16px;
+        margin-bottom: 16px;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .small {
+        font-size: 13px;
+      }
+      .status {
+        margin-top: 20px;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px 16px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .notice {
+        margin-top: 16px;
+        padding: 12px 16px;
+        border: 1px solid var(--border);
+        border-left: 3px solid var(--warning);
+        border-radius: 8px;
+        background: var(--surface);
+        font-size: 14px;
+      }
+      .notice.error {
+        border-left-color: var(--danger);
+      }
+      button,
+      select {
+        font: inherit;
+        font-size: 14px;
+        color: var(--text);
+        background: var(--elevated);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 6px 12px;
+        min-height: 36px;
+      }
+      button {
+        cursor: pointer;
+      }
+      button:hover {
+        border-color: var(--muted);
+      }
+
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+        gap: 12px;
+        margin-top: 32px;
+      }
+      .card {
+        padding: 16px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--surface);
+        min-width: 0;
+      }
+      .card dt {
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .card dd {
+        margin: 6px 0 0;
+        font-size: 28px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+        line-height: 1.15;
+        font-variant-numeric: tabular-nums;
+      }
+      .card p {
+        margin: 6px 0 0;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .panel {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--surface);
+        padding: 16px;
+        min-width: 0;
+      }
+      .grid-2 {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+        gap: 12px;
+      }
+      .panel h3 {
+        margin: 0 0 4px;
+        font-size: 15px;
+        font-weight: 600;
+      }
+      .chart {
+        position: relative;
+        margin-top: 12px;
+      }
+      .chart svg {
+        display: block;
+        width: 100%;
+        height: auto;
+        overflow: visible;
+      }
+      .chart text {
+        fill: var(--muted);
+        font-size: 11px;
+        font-family: inherit;
+      }
+      .tooltip {
+        position: absolute;
+        pointer-events: none;
+        z-index: 2;
+        padding: 6px 10px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--elevated);
+        color: var(--text);
+        font-size: 13px;
+        white-space: nowrap;
+        box-shadow: 0 8px 24px rgb(1 4 9 / 0.3);
+        transform: translate(-50%, calc(-100% - 8px));
+      }
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 16px;
+        margin-top: 8px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .legend span::before {
+        content: "";
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        margin-right: 6px;
+        border-radius: 3px;
+        background: var(--c);
+        vertical-align: -1px;
+      }
+      .table-wrap {
+        overflow-x: auto;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--border);
+        white-space: nowrap;
+      }
+      th {
+        font-weight: 600;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      td.num,
+      th.num {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+      tr:last-child td {
+        border-bottom: 0;
+      }
+      td a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+      td a:hover {
+        text-decoration: underline;
+      }
+      .links a + a {
+        margin-left: 12px;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .badge svg {
+        width: 14px;
+        height: 14px;
+        flex: none;
+      }
+      .badge.success svg {
+        color: var(--success);
+      }
+      .badge.failure svg {
+        color: var(--danger);
+      }
+      .badge.other svg,
+      .badge.running svg {
+        color: var(--muted);
+      }
+      .split {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 12px;
+        margin-top: 12px;
+      }
+      .split div {
+        padding: 12px;
+        border-radius: 8px;
+        background: var(--bg);
+      }
+      .split strong {
+        display: block;
+        font-size: 20px;
+        font-variant-numeric: tabular-nums;
+      }
+      .empty {
+        padding: 24px 0;
+        text-align: center;
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .skeleton {
+        color: transparent !important;
+        background: var(--elevated);
+        border-radius: 6px;
+        animation: pulse 1.4s ease-in-out infinite;
+      }
+      @keyframes pulse {
+        50% {
+          opacity: 0.55;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .skeleton {
+          animation: none;
+        }
+      }
+      details.about {
+        margin-top: 48px;
+        font-size: 14px;
+        color: var(--muted);
+      }
+      details.about summary {
+        cursor: pointer;
+        color: var(--text);
+      }
+      details.about li {
+        margin-top: 6px;
+      }
+      footer {
+        border-top: 1px solid var(--border);
+        padding: 24px 0 32px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      footer a {
+        text-decoration: none;
+      }
+      footer a:hover {
+        color: var(--text);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="wrap">
+        <a class="brand" href="/" aria-label="Prancha, página inicial">
+          <svg viewBox="64 64 896 896" aria-hidden="true">
+            <rect x="64" y="64" width="896" height="896" rx="200" fill="var(--accent-emphasis)" />
+            <rect x="232" y="224" width="250" height="576" rx="36" fill="#fff" />
+            <rect x="542" y="224" width="250" height="258" rx="36" fill="#fff" />
+            <rect x="542" y="542" width="250" height="258" rx="36" fill="#fff" fill-opacity="0.72" />
+          </svg>
+          Prancha
+        </a>
+        <nav aria-label="Páginas">
+          <a href="/">Início</a>
+          <a href="downloads">Versões</a>
+          <a href="visao-geral" aria-current="page">Visão geral</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <h1>Visão geral do projeto</h1>
+      <p class="lede">
+        Como o Prancha evolui: versões publicadas, downloads dos instaladores e as verificações automáticas que rodam a cada mudança. Os números vêm do GitHub e são
+        públicos. Nada aqui vem de quem usa o aplicativo.
+      </p>
+      <div class="status" aria-live="polite">
+        <span id="updated">Carregando dados do GitHub…</span>
+        <button type="button" id="reload" hidden>Atualizar agora</button>
+      </div>
+      <div id="notice" role="status"></div>
+
+      <dl class="cards" id="cards">
+        <div class="card"><dt>Versão atual</dt><dd class="skeleton">0.0.0</dd><p class="skeleton">—</p></div>
+        <div class="card"><dt>Downloads dos instaladores</dt><dd class="skeleton">000</dd><p class="skeleton">—</p></div>
+        <div class="card"><dt>Tempo médio das verificações</dt><dd class="skeleton">0 min</dd><p class="skeleton">—</p></div>
+        <div class="card"><dt>Verificações aprovadas</dt><dd class="skeleton">00%</dd><p class="skeleton">—</p></div>
+      </dl>
+
+      <section aria-labelledby="h-downloads">
+        <div class="section-head">
+          <h2 id="h-downloads">Downloads por versão</h2>
+          <a class="muted small" href="https://github.com/CAKeysama/prancha/releases">Ver releases no GitHub</a>
+        </div>
+        <div class="panel">
+          <p class="muted small" style="margin: 0">
+            Quantas vezes o instalador (EXE ou MSI) de cada versão foi baixado do GitHub, contando as atualizações automáticas do app. Não é o número de pessoas que usam o Prancha.
+          </p>
+          <div class="chart" id="downloads-chart"><div class="empty">Carregando…</div></div>
+        </div>
+      </section>
+
+      <section aria-labelledby="h-releases">
+        <div class="section-head">
+          <h2 id="h-releases">Histórico de versões</h2>
+          <a class="muted small" href="downloads">Notas completas de cada versão</a>
+        </div>
+        <div class="panel table-wrap" id="releases"><div class="empty">Carregando…</div></div>
+      </section>
+
+      <section aria-labelledby="h-ci">
+        <div class="section-head">
+          <h2 id="h-ci">Verificações automáticas</h2>
+          <label class="muted small">
+            Mostrar
+            <select id="workflow"><option value="">Todas</option></select>
+          </label>
+        </div>
+        <p class="muted small" style="margin: -8px 0 16px">
+          A cada mudança, o GitHub Actions compila o Prancha e roda os testes antes de publicar. Últimos <span id="ci-days">30</span> dias.
+        </p>
+        <div class="grid-2">
+          <div class="panel">
+            <h3>Execuções por dia</h3>
+            <p class="muted small" style="margin: 0">Aprovadas e com falha. Canceladas ficam de fora.</p>
+            <div class="chart" id="runs-chart"><div class="empty">Carregando…</div></div>
+            <div class="legend"><span style="--c: var(--success)">Aprovadas</span><span style="--c: var(--danger)">Com falha</span></div>
+          </div>
+          <div class="panel">
+            <h3>Duração média por dia</h3>
+            <p class="muted small" style="margin: 0">Do início ao fim de cada execução, em minutos.</p>
+            <div class="chart" id="duration-chart"><div class="empty">Carregando…</div></div>
+          </div>
+        </div>
+        <div class="panel" style="margin-top: 12px">
+          <h3>Espera e execução</h3>
+          <p class="muted small" style="margin: 0" id="split-note">Nas execuções mais recentes, quanto tempo foi esperando uma máquina livre e quanto foi trabalhando.</p>
+          <div class="split" id="split"></div>
+        </div>
+        <div class="panel table-wrap" style="margin-top: 12px" id="recent"><div class="empty">Carregando…</div></div>
+      </section>
+
+      <details class="about">
+        <summary>De onde vêm estes números</summary>
+        <ul>
+          <li>Tudo vem da API pública do GitHub e é consultado de novo a cada 15 minutos, no máximo. Abrir esta página não faz uma consulta nova ao GitHub.</li>
+          <li>Downloads contam só os instaladores (EXE e MSI). O GitHub informa o total atual de cada arquivo, sem histórico por dia, e o mesmo computador pode baixar mais de uma vez.</li>
+          <li>A taxa de aprovação considera só as execuções que terminaram aprovadas ou com falha. Canceladas e puladas não entram na conta.</li>
+          <li>A duração vai do início ao fim da execução, como o GitHub mostra. A espera e a execução vêm do detalhe dos jobs das execuções mais recentes.</li>
+          <li>Esta página não usa a telemetria do aplicativo nem qualquer dado de quem usa o Prancha.</li>
+        </ul>
+      </details>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        <a href="https://github.com/CAKeysama/prancha">Código no GitHub</a> ·
+        <a href="https://github.com/CAKeysama/prancha/actions">GitHub Actions</a> ·
+        <a href="/">Página inicial</a>
+      </div>
+    </footer>
+
+    <script>
+      (() => {
+        const ENDPOINT = "/api/github-metrics";
+        const REFRESH_MS = 15 * 60 * 1000;
+        const nf = new Intl.NumberFormat("pt-BR");
+        const pct = new Intl.NumberFormat("pt-BR", { style: "percent", maximumFractionDigits: 0 });
+        const dateFmt = new Intl.DateTimeFormat("pt-BR", { day: "numeric", month: "short", year: "numeric" });
+        const shortDate = new Intl.DateTimeFormat("pt-BR", { day: "numeric", month: "short", timeZone: "UTC" });
+        const timeFmt = new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit" });
+        const $ = (id) => document.getElementById(id);
+        let data = null;
+
+        /** Cria elementos com textContent: nada vindo da API vira HTML. */
+        function el(tag, attrs = {}, ...children) {
+          const node = document.createElement(tag);
+          for (const [k, v] of Object.entries(attrs)) {
+            if (v == null || v === false) continue;
+            if (k === "text") node.textContent = v;
+            else if (k === "class") node.className = v;
+            else node.setAttribute(k, v);
+          }
+          for (const c of children) if (c != null) node.append(c);
+          return node;
+        }
+        const SVG = "http://www.w3.org/2000/svg";
+        function svgEl(tag, attrs = {}) {
+          const node = document.createElementNS(SVG, tag);
+          for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+          return node;
+        }
+        const safeUrl = (u) => (typeof u === "string" && u.startsWith("https://github.com/") ? u : null);
+
+        function duration(s) {
+          if (s == null) return "—";
+          if (s < 60) return `${s} s`;
+          const m = Math.floor(s / 60);
+          const r = s % 60;
+          return m < 60 ? (r ? `${m} min ${r} s` : `${m} min`) : `${Math.floor(m / 60)} h ${m % 60} min`;
+        }
+        const ago = (iso) => {
+          const days = Math.floor((Date.now() - Date.parse(iso)) / 86400000);
+          return days <= 0 ? "hoje" : days === 1 ? "ontem" : `há ${days} dias`;
+        };
+
+        const ICONS = {
+          success: '<path d="M20 6 9 17l-5-5"/>',
+          failure: '<path d="M18 6 6 18M6 6l12 12"/>',
+          other: '<circle cx="12" cy="12" r="9"/><path d="M8 12h8"/>',
+          running: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+        };
+        const LABELS = { success: "Aprovada", failure: "Com falha", other: "Cancelada", running: "Em andamento" };
+        function badge(outcome) {
+          const span = el("span", { class: `badge ${outcome}` });
+          span.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[outcome] ?? ICONS.other}</svg>`;
+          span.append(LABELS[outcome] ?? outcome);
+          return span;
+        }
+
+        /* ----- gráficos em SVG, sem biblioteca ----- */
+
+        function tooltipFor(container) {
+          const tip = el("div", { class: "tooltip", hidden: "" });
+          container.append(tip);
+          return {
+            show(evt, lines) {
+              tip.replaceChildren(...lines.map((l, i) => el(i ? "div" : "strong", { text: l })));
+              const box = container.getBoundingClientRect();
+              const x = Math.min(Math.max(evt.clientX - box.left, 80), box.width - 80);
+              tip.style.left = `${x}px`;
+              tip.style.top = `${evt.clientY - box.top}px`;
+              tip.hidden = false;
+            },
+            hide() {
+              tip.hidden = true;
+            },
+          };
+        }
+
+        /** Topo do eixo com quatro divisões inteiras e redondas (1, 2 ou 5 vezes uma potência de 10). */
+        function niceMax(v) {
+          const raw = Math.max(v, 1) / 4;
+          const p = 10 ** Math.floor(Math.log10(raw));
+          const step = Math.max(1, [1, 2, 5, 10].map((m) => m * p).find((m) => m >= raw));
+          return step * 4;
+        }
+        /** Rótulo do eixo X: a cada `every` itens e sempre o último, sem encostar no penúltimo mostrado. */
+        const showLabel = (i, n, every) => i === n - 1 || (i % every === 0 && n - 1 - i >= every / 2);
+        const widthOf = (container) => Math.max(280, Math.round(container.clientWidth || 640));
+
+        /** Barras verticais. series: [{ key, color }]; rows: [{ label, values: {key: n}, tip: [linhas] }]. */
+        function barChart(container, rows, series, { height = 200, labelEvery = 1 } = {}) {
+          container.replaceChildren();
+          const W = widthOf(container);
+          const pad = { l: 36, r: 4, t: 8, b: 24 };
+          const innerW = W - pad.l - pad.r;
+          const innerH = height - pad.t - pad.b;
+          const max = niceMax(Math.max(...rows.map((r) => series.reduce((s, x) => s + (r.values[x.key] || 0), 0))));
+          const svg = svgEl("svg", { viewBox: `0 0 ${W} ${height}`, role: "img" });
+          for (let i = 0; i <= 4; i++) {
+            const y = pad.t + innerH - (innerH * i) / 4;
+            svg.append(svgEl("line", { x1: pad.l, x2: W - pad.r, y1: y, y2: y, stroke: "var(--grid)" }));
+            const t = svgEl("text", { x: pad.l - 6, y: y + 4, "text-anchor": "end" });
+            t.textContent = nf.format(Math.round((max * i) / 4));
+            svg.append(t);
+          }
+          const slot = innerW / rows.length;
+          const bw = Math.max(2, Math.min(36, slot - 2));
+          const tip = tooltipFor(container);
+          rows.forEach((row, i) => {
+            const x = pad.l + i * slot + (slot - bw) / 2;
+            let base = pad.t + innerH;
+            series.forEach((s, si) => {
+              const v = row.values[s.key] || 0;
+              if (!v) return;
+              const h = (innerH * v) / max;
+              const top = series.slice(si + 1).every((n) => !row.values[n.key]);
+              // Cantos arredondados só na ponta de cima da pilha; 2 px de folga entre segmentos.
+              const gap = base < pad.t + innerH ? 2 : 0;
+              const r = top ? Math.min(4, bw / 2, h / 2) : 0;
+              const y = base - h + gap;
+              const hh = Math.max(0, h - gap);
+              const d = `M${x},${y + hh} V${y + r} q0,-${r} ${r},-${r} H${x + bw - r} q${r},0 ${r},${r} V${y + hh} Z`;
+              svg.append(svgEl("path", { d, fill: s.color }));
+              base -= h;
+            });
+            if (showLabel(i, rows.length, labelEvery)) {
+              const t = svgEl("text", { x: x + bw / 2, y: height - 6, "text-anchor": "middle" });
+              t.textContent = row.label;
+              svg.append(t);
+            }
+            const hit = svgEl("rect", { x: pad.l + i * slot, y: pad.t, width: slot, height: innerH, fill: "transparent" });
+            hit.addEventListener("pointermove", (e) => tip.show(e, row.tip));
+            hit.addEventListener("pointerleave", () => tip.hide());
+            svg.append(hit);
+          });
+          container.prepend(svg);
+        }
+
+        /** Linha única com marcadores; dias sem dado quebram a linha. */
+        function lineChart(container, rows, { height = 200, labelEvery = 5, color = "var(--accent)" } = {}) {
+          container.replaceChildren();
+          const W = widthOf(container);
+          const pad = { l: 36, r: 12, t: 8, b: 24 };
+          const innerW = W - pad.l - pad.r;
+          const innerH = height - pad.t - pad.b;
+          const vals = rows.map((r) => r.value).filter((v) => v != null);
+          const max = niceMax(Math.max(...vals, 1));
+          const svg = svgEl("svg", { viewBox: `0 0 ${W} ${height}`, role: "img" });
+          for (let i = 0; i <= 4; i++) {
+            const y = pad.t + innerH - (innerH * i) / 4;
+            svg.append(svgEl("line", { x1: pad.l, x2: W - pad.r, y1: y, y2: y, stroke: "var(--grid)" }));
+            const t = svgEl("text", { x: pad.l - 6, y: y + 4, "text-anchor": "end" });
+            t.textContent = nf.format(Math.round((max * i) / 4));
+            svg.append(t);
+          }
+          const step = rows.length > 1 ? innerW / (rows.length - 1) : 0;
+          const pt = (i, v) => [pad.l + i * step, pad.t + innerH - (innerH * v) / max];
+          let d = "";
+          let pen = false;
+          rows.forEach((r, i) => {
+            if (r.value == null) return void (pen = false);
+            const [x, y] = pt(i, r.value);
+            d += `${pen ? "L" : "M"}${x},${y} `;
+            pen = true;
+          });
+          if (d) svg.append(svgEl("path", { d, fill: "none", stroke: color, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+          const tip = tooltipFor(container);
+          rows.forEach((r, i) => {
+            const [x, y] = pt(i, r.value ?? 0);
+            if (r.value != null) svg.append(svgEl("circle", { cx: x, cy: y, r: 4, fill: color, stroke: "var(--surface)", "stroke-width": 2 }));
+            if (showLabel(i, rows.length, labelEvery)) {
+              const t = svgEl("text", { x, y: height - 6, "text-anchor": "middle" });
+              t.textContent = r.label;
+              svg.append(t);
+            }
+            const hit = svgEl("rect", { x: x - step / 2, y: pad.t, width: Math.max(step, 8), height: innerH, fill: "transparent" });
+            hit.addEventListener("pointermove", (e) => tip.show(e, r.tip));
+            hit.addEventListener("pointerleave", () => tip.hide());
+            svg.append(hit);
+          });
+          container.prepend(svg);
+        }
+
+        /* ----- seções ----- */
+
+        function renderCards() {
+          const { releases, ci } = data;
+          const main = ci.workflows.find((w) => w.path.endsWith("/ci.yml")) ?? ci.summary;
+          const latest = releases.latest;
+          const cards = [
+            ["Versão atual", latest ? latest.version : "—", latest ? `Publicada ${ago(latest.publishedAt)}, em ${dateFmt.format(new Date(latest.publishedAt))}` : "Nenhuma versão publicada ainda"],
+            ["Downloads dos instaladores", nf.format(releases.downloads.total), `Em ${nf.format(releases.count)} versões publicadas · não é número de usuários`],
+            ["Tempo médio das verificações", duration(main.avgDurationSeconds), main.medianDurationSeconds != null ? `Metade termina em até ${duration(main.medianDurationSeconds)}` : "Sem execuções no período"],
+            ["Verificações aprovadas", main.successRate == null ? "—" : pct.format(main.successRate), `${nf.format(main.success)} aprovadas e ${nf.format(main.failure)} com falha em ${ci.windowDays} dias`],
+          ];
+          $("cards").replaceChildren(...cards.map(([dt, dd, p]) => el("div", { class: "card" }, el("dt", { text: dt }), el("dd", { text: dd }), el("p", { text: p }))));
+        }
+
+        function renderDownloads() {
+          const box = $("downloads-chart");
+          const rows = [...data.releases.releases].reverse();
+          if (!rows.length) return box.replaceChildren(el("div", { class: "empty", text: "Ainda não há versões publicadas." }));
+          barChart(
+            box,
+            rows.map((r) => ({
+              label: r.version,
+              values: { d: r.downloads },
+              tip: [`Versão ${r.version}`, `${nf.format(r.downloads)} downloads (${pct.format(r.share)} do total)`, dateFmt.format(new Date(r.publishedAt))],
+            })),
+            [{ key: "d", color: "var(--accent)" }],
+            { labelEvery: Math.ceil(rows.length / 10) },
+          );
+        }
+
+        function renderReleases() {
+          const list = data.releases.releases;
+          if (!list.length) return $("releases").replaceChildren(el("div", { class: "empty", text: "Ainda não há versões publicadas." }));
+          const head = el("tr", {}, el("th", { text: "Versão" }), el("th", { text: "Publicada em" }), el("th", { class: "num", text: "Downloads" }), el("th", { text: "Links" }));
+          const rows = list.slice(0, 10).map((r) => {
+            const links = el("td", { class: "links" }, el("a", { href: safeUrl(r.url), text: "Notas" }));
+            for (const a of r.assets) links.append(el("a", { href: safeUrl(a.url), text: a.kind.toUpperCase() }));
+            return el("tr", {}, el("td", { text: r.version }), el("td", { text: dateFmt.format(new Date(r.publishedAt)) }), el("td", { class: "num", text: nf.format(r.downloads) }), links);
+          });
+          const table = el("table", {}, el("thead", {}, head), el("tbody", {}, ...rows));
+          const more = list.length > 10 ? el("p", { class: "muted small", style: "margin: 12px 12px 0" }, `Mostrando as 10 mais recentes de ${list.length}. `, el("a", { href: "downloads", text: "Ver todas" })) : null;
+          $("releases").replaceChildren(table, ...(more ? [more] : []));
+        }
+
+        function renderCi() {
+          const ci = data.ci;
+          const key = $("workflow").value;
+          const scope = key ? ci.workflows.find((w) => w.path === key) ?? ci.summary : ci.summary;
+          const daily = key ? scope.daily : ci.daily;
+          const recent = key ? scope.recent : ci.recent;
+          $("ci-days").textContent = ci.windowDays;
+          const label = (d) => shortDate.format(new Date(`${d}T00:00:00Z`));
+          if (!scope.runs) {
+            for (const id of ["runs-chart", "duration-chart"]) $(id).replaceChildren(el("div", { class: "empty", text: "Nenhuma execução no período." }));
+          } else {
+            barChart(
+              $("runs-chart"),
+              daily.map((d) => ({ label: label(d.date), values: { s: d.success, f: d.failure }, tip: [label(d.date), `${d.success} aprovadas`, `${d.failure} com falha`] })),
+              [
+                { key: "s", color: "var(--success)" },
+                { key: "f", color: "var(--danger)" },
+              ],
+              { labelEvery: 7 },
+            );
+            lineChart(
+              $("duration-chart"),
+              daily.map((d) => ({
+                label: label(d.date),
+                value: d.avgDurationSeconds == null ? null : Math.round((d.avgDurationSeconds / 60) * 10) / 10,
+                tip: [label(d.date), d.avgDurationSeconds == null ? "Sem execuções" : `Média: ${duration(d.avgDurationSeconds)}`],
+              })),
+              { labelEvery: 7 },
+            );
+          }
+          const split = [
+            ["Espera por máquina", duration(scope.avgQueueSeconds)],
+            ["Execução", duration(scope.avgExecutionSeconds)],
+            ["Duração total", duration(scope.avgDurationSeconds)],
+          ];
+          $("split").replaceChildren(...split.map(([t, v]) => el("div", {}, el("span", { class: "muted small", text: t }), el("strong", { text: v }))));
+          $("split-note").textContent = scope.sampled
+            ? `Média das ${scope.sampled} execuções mais recentes com detalhe dos jobs: quanto tempo esperaram uma máquina livre e quanto trabalharam. A duração total é a média dos ${ci.windowDays} dias.`
+            : "O detalhe de espera e execução ainda não está disponível. A duração total é a média do período.";
+
+          if (!recent.length) return $("recent").replaceChildren(el("div", { class: "empty", text: "Nenhuma execução recente." }));
+          const head = el("tr", {}, el("th", { text: "Execução" }), el("th", { text: "Resultado" }), el("th", { text: "Quando" }), el("th", { class: "num", text: "Espera" }), el("th", { class: "num", text: "Duração" }));
+          const rows = recent.slice(0, 10).map((r) =>
+            el(
+              "tr",
+              {},
+              el("td", {}, el("a", { href: safeUrl(r.url), text: r.workflow })),
+              el("td", {}, badge(r.outcome)),
+              el("td", { text: `${dateFmt.format(new Date(r.createdAt))}, ${timeFmt.format(new Date(r.createdAt))}` }),
+              el("td", { class: "num", text: duration(r.queueSeconds) }),
+              el("td", { class: "num", text: duration(r.durationSeconds) }),
+            ),
+          );
+          $("recent").replaceChildren(el("h3", { text: "Execuções recentes", style: "margin: 0 12px 8px" }), el("table", {}, el("thead", {}, head), el("tbody", {}, ...rows)));
+        }
+
+        function renderWorkflowOptions() {
+          const sel = $("workflow");
+          const current = sel.value;
+          sel.replaceChildren(el("option", { value: "", text: "Todas" }), ...data.ci.workflows.map((w) => el("option", { value: w.path, text: w.name })));
+          if (data.ci.workflows.some((w) => w.path === current)) sel.value = current;
+        }
+
+        function render() {
+          renderCards();
+          renderDownloads();
+          renderReleases();
+          renderWorkflowOptions();
+          renderCi();
+          const when = new Date(data.generatedAt);
+          $("updated").textContent = `Dados do GitHub de ${dateFmt.format(when)}, às ${timeFmt.format(when)}. Atualizam sozinhos a cada 15 minutos.`;
+          $("notice").replaceChildren(
+            ...(data.stale ? [el("div", { class: "notice", text: "O GitHub não respondeu na última consulta. Estes são os dados mais recentes que temos; tentamos de novo em alguns minutos." })] : []),
+          );
+        }
+
+        function renderError(message) {
+          $("reload").hidden = false;
+          if (data) {
+            $("notice").replaceChildren(el("div", { class: "notice", text: "Não foi possível atualizar agora. Os números abaixo são da última consulta." }));
+            return;
+          }
+          $("updated").textContent = "Os dados não carregaram.";
+          $("notice").replaceChildren(el("div", { class: "notice error", text: `${message} O restante do site funciona normalmente; tente de novo em alguns minutos.` }));
+          for (const card of $("cards").querySelectorAll(".skeleton")) {
+            card.classList.remove("skeleton");
+            card.textContent = "—";
+          }
+          for (const id of ["downloads-chart", "releases", "runs-chart", "duration-chart", "recent"]) $(id).replaceChildren(el("div", { class: "empty", text: "Indisponível no momento." }));
+        }
+
+        async function load() {
+          try {
+            const res = await fetch(ENDPOINT, { headers: { Accept: "application/json" } });
+            const body = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(body.error || `Erro ${res.status}.`);
+            data = body;
+            $("reload").hidden = true;
+            render();
+          } catch (e) {
+            renderError(e instanceof TypeError ? "Sem conexão com o servidor." : e.message);
+          }
+        }
+
+        $("workflow").addEventListener("change", () => data && renderCi());
+        // Os gráficos são desenhados na largura real do painel, para o texto não encolher nem esticar.
+        let lastWidth = window.innerWidth;
+        let resizeTimer = 0;
+        window.addEventListener("resize", () => {
+          if (!data || window.innerWidth === lastWidth) return;
+          lastWidth = window.innerWidth;
+          clearTimeout(resizeTimer);
+          resizeTimer = setTimeout(() => {
+            renderDownloads();
+            renderCi();
+          }, 150);
+        });
+        $("reload").addEventListener("click", load);
+        setInterval(() => document.visibilityState === "visible" && load(), REFRESH_MS);
+        load();
+      })();
+    </script>
+  </body>
+</html>

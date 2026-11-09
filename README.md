@@ -143,11 +143,11 @@ e `src-tauri/tauri.conf.json` (`productName` e `app.windows[0].title`, usados no
 | `src/` | Interface em React: `features/` (biblioteca, leitor, tutorial, configurações), `domain/` (regras sem interface), `services/` e `components/` |
 | `src-tauri/` | Backend em Rust: formatos, importação, capas, banco de dados, em `src/guided/` a detecção da Leitura Guiada e em `src/extensions/` repositórios, runtime, fontes e downloads |
 | `extensions/` | Contrato WIT, SDK, modelo, ferramenta `prancha-ext` e a extensão e o repositório de demonstração |
-| `site/` | Site oficial, publicado na Vercel, com as funções da telemetria (`api/`) e o painel administrativo (`admin/`) |
+| `site/` | Site oficial, publicado na Vercel, com as funções da telemetria e das métricas do GitHub (`api/`), o painel administrativo (`admin/`) e a página de [visão geral do projeto](docs/METRICAS_DO_PROJETO.md) (`visao-geral.html`) |
 | `supabase/` | Migrações e testes do banco da telemetria |
 | `scripts/` | Geração do site, da página de downloads, das notas de versão e das licenças de terceiros |
 | `tests/` | Testes de interface (`unit/`) e no executável real (`e2e/`) |
-| `docs/` | [Arquitetura](docs/ARCHITECTURE.md), [extensões](docs/extensions/README.md), [relatório de testes](docs/TEST_REPORT.md), [como publicar uma versão](docs/RELEASING.md), [telemetria](docs/TELEMETRY.md), [aviso de privacidade](docs/PRIVACIDADE.md) e [plano de implementação](docs/IMPLEMENTATION_PLAN.md) |
+| `docs/` | [Arquitetura](docs/ARCHITECTURE.md), [extensões](docs/extensions/README.md), [relatório de testes](docs/TEST_REPORT.md), [como publicar uma versão](docs/RELEASING.md), [telemetria](docs/TELEMETRY.md), [aviso de privacidade](docs/PRIVACIDADE.md), [visão geral do projeto](docs/METRICAS_DO_PROJETO.md) e [plano de implementação](docs/IMPLEMENTATION_PLAN.md) |
 
 ## Versões
 
