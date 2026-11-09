@@ -77,14 +77,12 @@ jobs:
       - name: Prepara o Rust
         run: rustup toolchain install stable --profile minimal
 
-      - uses: actions/cache@v6
+      # Guarda só as dependências compiladas em release, separadas das dos testes. O código do Prancha sempre é compilado do zero.
+      - uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            src-tauri/target
-          key: rust-release-${{ runner.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}
-          restore-keys: rust-release-${{ runner.os }}-
+          workspaces: src-tauri -> target
+          shared-key: release
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - run: npm ci
 
