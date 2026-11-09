@@ -90,8 +90,8 @@ export function DetailsScreen({ id }: { id: number }) {
   const { settings } = useSettings();
   const actions = useComicActions();
   const toast = useToast();
-  const { data: comic, error } = useLibraryData(() => api.comic(id), [id]);
-  const { data: origin } = useLibraryData(() => api.comicOrigin(id), [id]);
+  const { data: comic, error } = useLibraryData(() => api.comic(id), [id], "comic");
+  const { data: origin } = useLibraryData(() => api.comicOrigin(id), [id], "comic-origin");
   const [confirmReset, setConfirmReset] = useState(false);
 
   if (error && !comic) {

@@ -323,7 +323,7 @@ function KeyChangeDialog({ repository, onClose, onDone }: { repository: Reposito
 
 export function RepositoriesScreen() {
   const toast = useToast();
-  const { data: repositories, error, reload } = useLibraryData(() => api.repositories(), []);
+  const { data: repositories, error, reload } = useLibraryData(() => api.repositories(), [], "repositories");
   /** O endereço com que o diálogo abre: vazio pelo botão do topo, preenchido por um recomendado. */
   const [adding, setAdding] = useState<string | null>(null);
   const [details, setDetails] = useState<RepositoryInfo | null>(null);

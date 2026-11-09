@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { LayoutGrid, List, Search, SearchX, SlidersHorizontal, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "../../components/Button";
@@ -12,6 +12,7 @@ import { FORMAT_LABELS, type ComicFormat, type LibraryQuery, type ReadStatus, ty
 import { api } from "../../services/api";
 import { useLibraryData } from "../../app/library-events";
 import { useSettings } from "../../app/settings-context";
+import { useScrollMemory } from "../../app/scroll-memory";
 import { AddComicsButtons } from "./AddComicsButtons";
 import { ComicCollectionView } from "./ComicCollectionView";
 import { useLibrarySeries } from "./use-library-series";
@@ -161,15 +162,45 @@ function Chip({ pressed, onClick, children }: { pressed: boolean; onClick: () =>
   );
 }
 
+interface Filters {
+  text: string;
+  statuses: ReadStatus[];
+  format: ComicFormat | "";
+  favoritesOnly: boolean;
+  localSort?: SortKey;
+  localDesc?: boolean;
+}
+
+/** Os filtros de cada lista, enquanto o app está aberto: abrir um quadrinho e voltar não perde a pesquisa. */
+const filterMemory = new Map<string, Filters>();
+
+/** Esquece os filtros guardados. Para os testes. */
+export function clearLibraryFilters() {
+  filterMemory.clear();
+}
+
 export function LibraryScreen({ preset }: { preset: LibraryPreset }) {
   const { settings, update } = useSettings();
+  const memoryKey = `${preset.title}\n${preset.collectionId ?? ""}`;
+  const [remembered] = useState<Filters | undefined>(() => filterMemory.get(memoryKey));
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [text, setText] = useState("");
-  const [statuses, setStatuses] = useState<ReadStatus[]>([]);
-  const [format, setFormat] = useState<ComicFormat | "">("");
-  const [favoritesOnly, setFavoritesOnly] = useState(false);
-  const [localSort, setLocalSort] = useState<SortKey>(preset.defaultSort ?? "title");
-  const [localDesc, setLocalDesc] = useState(preset.defaultDesc ?? false);
+  const rememberScroll = useScrollMemory<HTMLDivElement>(`library:${memoryKey}`);
+  const [text, setText] = useState(remembered?.text ?? "");
+  const [statuses, setStatuses] = useState<ReadStatus[]>(remembered?.statuses ?? []);
+  const [format, setFormat] = useState<ComicFormat | "">(remembered?.format ?? "");
+  const [favoritesOnly, setFavoritesOnly] = useState(remembered?.favoritesOnly ?? false);
+  const [localSort, setLocalSort] = useState<SortKey>(remembered?.localSort ?? preset.defaultSort ?? "title");
+  const [localDesc, setLocalDesc] = useState(remembered?.localDesc ?? preset.defaultDesc ?? false);
+  const attachScroll = useCallback(
+    (element: HTMLDivElement | null) => {
+      scrollRef.current = element;
+      rememberScroll(element);
+    },
+    [rememberScroll],
+  );
+  useEffect(() => {
+    filterMemory.set(memoryKey, { text, statuses, format, favoritesOnly, localSort, localDesc });
+  }, [memoryKey, text, statuses, format, favoritesOnly, localSort, localDesc]);
   const sort = preset.persistSort ? settings["library.sort"] : localSort;
   const desc = preset.persistSort ? settings["library.sortDesc"] : localDesc;
   const view = settings["library.view"];
@@ -187,7 +218,7 @@ export function LibraryScreen({ preset }: { preset: LibraryPreset }) {
     }),
     [preset.base, search, statuses, format, favoritesOnly, sort, desc],
   );
-  const { data: comics, error, loading, reload } = useLibraryData(() => api.listComics(query), [JSON.stringify(query)]);
+  const { data: comics, error, loading, reload } = useLibraryData(() => api.listComics(query), [JSON.stringify(query)], "comics");
   const series = useLibrarySeries();
   const data = useMemo(() => comics && mergeItems(comics, series.filter((item) => seriesMatches(item, query)), sort, desc), [comics, series, query, sort, desc]);
   const filtering = Boolean(search.trim() || statuses.length || format || favoritesOnly);
@@ -220,7 +251,7 @@ export function LibraryScreen({ preset }: { preset: LibraryPreset }) {
     : undefined;
 
   return (
-    <div ref={scrollRef} className="h-full overflow-y-auto">
+    <div ref={attachScroll} className="h-full overflow-y-auto">
       <PageHeader
         title={preset.title}
         subtitle={preset.subtitle ?? countText}

@@ -51,7 +51,7 @@ function CatalogDialog({ item, onClose, onChanged }: { item: CatalogItem; onClos
   const [progress, setProgress] = useState<ComponentProgress | null>(null);
   useEffect(() => onComponentProgress(setProgress), []);
   const action = item.updateAvailable && item.installedHere ? "update" : item.installedVersion ? null : "install";
-  const { data: installed } = useLibraryData(() => api.extensions(), []);
+  const { data: installed } = useLibraryData(() => api.extensions(), [], "extensions");
   const current = action === "update" ? installed?.find((extension) => extension.id === item.id)?.capabilities : undefined;
   const newAccess = current
     ? [...item.capabilities.allowedHosts.filter((host) => !current.allowedHosts.includes(host)), ...(item.capabilities.storage && !current.storage ? ["Guardar dados próprios"] : [])]
@@ -142,9 +142,9 @@ function Catalog({ onChanged }: { onChanged: () => void }) {
   const [sort, setSort] = useState<"name" | "repository">("name");
   const [open, setOpen] = useState<CatalogItem | null>(null);
   const [limit, setLimit] = useState(CATALOG_PAGE);
-  const languages = useLibraryData(() => api.extensionCatalogLanguages(), []);
-  const repositories = useLibraryData(() => api.repositories(), []);
-  const { data: items, error, reload } = useLibraryData(() => api.extensionCatalog({ text: text.trim() || undefined, language: language || undefined, sort, limit }), [text, language, sort, limit]);
+  const languages = useLibraryData(() => api.extensionCatalogLanguages(), [], "catalog-languages");
+  const repositories = useLibraryData(() => api.repositories(), [], "repositories");
+  const { data: items, error, reload } = useLibraryData(() => api.extensionCatalog({ text: text.trim() || undefined, language: language || undefined, sort, limit }), [text, language, sort, limit], "catalog");
 
   if (repositories.data?.length === 0) {
     return (
@@ -246,7 +246,7 @@ function InstalledDialog({ extension, onClose }: { extension: InstalledExtension
 
 function Installed({ version, onChanged, onBrowse }: { version: number; onChanged: () => void; onBrowse: () => void }) {
   const toast = useToast();
-  const { data: extensions, error, reload } = useLibraryData(() => api.extensions(), [version]);
+  const { data: extensions, error, reload } = useLibraryData(() => api.extensions(), [version], "extensions-versioned");
   const [details, setDetails] = useState<InstalledExtension | null>(null);
   const [removing, setRemoving] = useState<InstalledExtension | null>(null);
   const [reviewing, setReviewing] = useState<CatalogItem | null>(null);

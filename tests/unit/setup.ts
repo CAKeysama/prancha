@@ -32,4 +32,19 @@ Element.prototype.scrollIntoView ??= () => undefined;
 
 import { afterEach } from "vitest";
 import { cleanup } from "@testing-library/react";
-afterEach(() => cleanup());
+import { clearQueryCache } from "../../src/services/query-cache";
+import { resetExplore } from "../../src/features/online/explore-store";
+import { clearScrollMemory } from "../../src/app/scroll-memory";
+import { clearSeriesMemory } from "../../src/features/online/SeriesScreen";
+import { clearLibraryFilters } from "../../src/features/library/LibraryScreen";
+import { clearNotificationsScreen } from "../../src/features/notifications/NotificationsScreen";
+// Os caches do app vivem enquanto ele está aberto. Cada caso começa do zero.
+afterEach(() => {
+  cleanup();
+  clearQueryCache();
+  resetExplore();
+  clearScrollMemory();
+  clearLibraryFilters();
+  clearSeriesMemory();
+  clearNotificationsScreen();
+});
