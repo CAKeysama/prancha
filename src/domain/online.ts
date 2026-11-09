@@ -1,5 +1,6 @@
 // Repositórios, extensões, fontes e downloads, como chegam do backend.
 
+import type { RatingOrigin, RatingState } from "./rating";
 import type { ReaderChapter } from "./reader";
 import type { ReaderMode } from "./settings";
 import type { ReadStatus } from "./types";
@@ -169,6 +170,8 @@ export interface SeriesCard {
   favorite: boolean;
   /** Capítulos novos: chegaram depois da primeira sincronização e ainda não foram abertos nem marcados como lidos. */
   newCount: number;
+  ratingState: RatingState;
+  ratingOrigin: RatingOrigin;
 }
 
 export interface BrowsePage {
@@ -286,6 +289,7 @@ export interface LibrarySeries extends SeriesReading {
   lastOpenedAt: number | null;
   following: boolean;
   newCount: number;
+  ratingState: RatingState;
 }
 
 export interface ComicOrigin {

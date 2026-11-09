@@ -577,20 +577,10 @@ struct PagesReply {
 }
 
 /// O Mihon não classifica obra por obra, e uma fonte marcada como segura ainda traz obras adultas.
-/// Para o filtro +18, sobra o que a própria fonte diz nos gêneros. Sem gêneros não há classificação, e quem decide é `sources`.
-/// shortcut: compara por palavra, então "Young Adult" também conta; trocar por uma lista exata se isso esconder obras demais.
-fn rating_from(genres: &[String]) -> Option<ContentRating> {
-    const ADULT: [&str; 11] = ["adult", "+18", "18+", "hentai", "smut", "nsfw", "ecchi", "erot", "erót", "porn", "mature"];
-    let adult = genres.iter().any(|genre| {
-        let genre = genre.to_lowercase();
-        ADULT.iter().any(|word| genre.contains(word))
-    });
-    adult.then_some(ContentRating::Adult)
-}
-
+/// A ponte não inventa uma classificação para a obra: quem lê os gêneros, a descrição e o título é `rating`.
 fn to_search_page(page: MangaPage) -> SearchPage {
     SearchPage {
-        results: page.mangas.into_iter().map(|m| SearchResult { rating: rating_from(&m.genre), id: m.id.to_string(), title: m.title, cover_url: m.thumbnail_url, summary: None, author: None, status: None }).collect(),
+        results: page.mangas.into_iter().map(|m| SearchResult { rating: None, id: m.id.to_string(), title: m.title, cover_url: m.thumbnail_url, summary: None, author: None, status: None }).collect(),
         has_more: page.has_next_page,
     }
 }
@@ -605,7 +595,7 @@ fn to_details(manga: MangaDetails) -> ComicDetails {
     };
     let mut authors: Vec<String> = manga.author.into_iter().chain(manga.artist).collect();
     authors.dedup();
-    ComicDetails { rating: rating_from(&manga.genre), id: manga.id.to_string(), title: manga.title, synopsis: manga.description, cover_url: manga.thumbnail_url, authors, genres: manga.genre, status, language: None }
+    ComicDetails { rating: None, id: manga.id.to_string(), title: manga.title, synopsis: manga.description, cover_url: manga.thumbnail_url, authors, genres: manga.genre, status, language: None }
 }
 
 fn to_chapter(chapter: ChapterRow) -> Chapter {
@@ -734,12 +724,11 @@ mod tests {
     }
 
     #[test]
-    fn a_genre_marks_a_series_as_adult() {
-        let rating = |list: &[&str]| rating_from(&list.iter().map(|genre| genre.to_string()).collect::<Vec<_>>());
-        assert!(matches!(rating(&["Ação", "Ecchi"]), Some(ContentRating::Adult)));
-        assert!(matches!(rating(&["Conteúdo +18"]), Some(ContentRating::Adult)));
-        assert!(rating(&["Ação", "Romance", "Yuri", "Herói"]).is_none());
-        assert!(rating(&[]).is_none());
+    fn the_bridge_does_not_rate_a_series_by_itself() {
+        let reply: MangaReply = read_reply(br#"{"data":{"fetchManga":{"manga":{"id":1,"title":"T","author":null,"artist":null,"description":null,"status":"ONGOING","genre":["Ecchi","Young Adult"],"thumbnailUrl":null}}}}"#, "fetchManga").unwrap();
+        let details = to_details(reply.manga);
+        assert!(details.rating.is_none());
+        assert_eq!(details.genres, ["Ecchi", "Young Adult"]);
     }
 
     #[test]

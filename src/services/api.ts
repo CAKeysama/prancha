@@ -32,6 +32,7 @@ import type {
   SeriesView,
   SourceSummary,
 } from "../domain/online";
+import type { RatingDetails, RatingState } from "../domain/rating";
 import type { ReaderMode } from "../domain/settings";
 import type { UpdateProgress, UpdatesHistory, UpdatesSnapshot } from "../domain/updates";
 import type { NotificationAction, NotificationCategory, NotificationPage, NotificationQuery, NotificationTarget } from "../domain/notifications";
@@ -186,6 +187,9 @@ export const api = {
   onlineStop: () => call<void>("online_stop"),
   seriesFollowing: () => call<SeriesCard[]>("series_following"),
   seriesLibrary: () => call<LibrarySeries[]>("series_library"),
+  seriesRating: (id: number) => call<RatingDetails>("series_rating", { id }),
+  /** `null` volta à classificação automática. */
+  seriesSetRating: (id: number, rating: Extract<RatingState, "confirmed" | "none"> | null, reason: string | null) => call<RatingDetails>("series_set_rating", { id, rating, reason }),
   seriesSetFavorite: (id: number, favorite: boolean) => call<void>("series_set_favorite", { id, favorite }),
   seriesSetCollections: (id: number, collectionIds: number[]) => call<void>("series_set_collections", { id, collectionIds }),
   addSeriesToCollection: (collectionId: number, ids: number[]) => call<void>("series_add_to_collection", { collectionId, ids }),

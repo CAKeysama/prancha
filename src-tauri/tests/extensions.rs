@@ -19,7 +19,7 @@ use http::{Reply, serve};
 use prancha_lib::core::Core;
 use prancha_lib::error::AppError;
 use prancha_lib::extensions::reading::{self, ReadState};
-use prancha_lib::extensions::{downloads, install, sources, suwayomi};
+use prancha_lib::extensions::{downloads, install, rating_store, sources, suwayomi};
 use prancha_lib::library;
 use prancha_lib::notifications;
 use prancha_lib::extensions::net::{Access, Limits, Net, NetError, Request};
@@ -1952,6 +1952,10 @@ fn what_was_stored_before_is_removed_at_startup_without_touching_the_rest() {
     std::fs::write(partial.join("0001.png"), b"pagina").unwrap();
 
     assert_eq!(sources::forget_blocked(&core, &conn).unwrap(), 2);
+    // Como na abertura do app: as obras guardadas sem análise são classificadas em seguida.
+    drop(conn);
+    while rating_store::analyze_outdated_batch(&mut core.db()).unwrap() > 0 {}
+    let conn = core.db();
     let left: Vec<String> = sources::library_series(&conn).unwrap().into_iter().map(|series| series.title).collect();
     assert_eq!(left, ["Comum"]);
     assert!(!cover.exists() && !partial.exists(), "nem capa nem páginas soltas ficam no disco");

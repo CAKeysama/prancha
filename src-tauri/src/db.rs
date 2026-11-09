@@ -19,6 +19,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0006_series_classification.sql"),
     include_str!("../migrations/0007_reading_state.sql"),
     include_str!("../migrations/0008_notifications.sql"),
+    include_str!("../migrations/0009_series_rating.sql"),
 ];
 
 pub fn schema_version() -> i64 {
@@ -259,6 +260,42 @@ mod tests {
         assert_eq!(count(&conn, "reading_sessions"), 0);
         let comic_status: String = conn.query_row("SELECT status FROM comics WHERE id = 7", [], |r| r.get(0)).unwrap();
         assert_eq!(comic_status, "completed");
+    }
+
+    /// A primeira versão com a classificação por evidências esconde exatamente o que o filtro antigo escondia,
+    /// até a primeira análise; e a obra nativa marcada como adulta numa fonte livre guarda a declaração.
+    #[test]
+    fn series_rated_by_the_old_filter_keep_their_visibility_until_analyzed() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        configure(&conn).unwrap();
+        for sql in &MIGRATIONS[..8] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.pragma_update(None, "user_version", 8).unwrap();
+        conn.execute_batch(
+            "INSERT INTO installed_extensions (id, repository_id, repository_name, public_key, key_fingerprint, name, version, entry, file_name, sha256, installed_at, updated_at)
+                VALUES ('nativa', 'r', 'R', 'k', 'f', 'E', '1.0.0', '{\"runtime\":\"wasm-component\"}', 'e', 'h', 1, 1);
+             INSERT INTO extension_sources (extension_id, source_id, name, language, rating, direction, supports_latest, supports_search) VALUES ('nativa', 's', 'S', 'pt-BR', 'general', 'ltr', 1, 1);
+             INSERT INTO online_series (extension_id, source_id, remote_id, title, adult, classification, created_at, updated_at) VALUES
+                ('nativa', 's', 'adulta', 'A', 1, 'known', 1, 7),
+                ('nativa', 's', 'livre', 'B', 0, 'known', 1, 1),
+                ('ponte', 's', 'pendente', 'C', 0, 'pending', 1, 1),
+                ('ponte', 's', 'sem-generos', 'D', 0, 'unknown', 1, 1);",
+        )
+        .unwrap();
+        migrate(&mut conn).unwrap();
+        let row = |remote: &str| {
+            conn.query_row("SELECT rating_state, rating_version, declared_rating, declared_adult_at FROM online_series WHERE remote_id = ?1", [remote], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, Option<String>>(2)?, r.get::<_, Option<i64>>(3)?))
+            })
+            .unwrap()
+        };
+        assert_eq!(row("adulta"), ("suspect".into(), 0, Some("adult".into()), Some(7)));
+        assert_eq!(row("livre"), ("none".into(), 0, None, None));
+        assert_eq!(row("pendente"), ("insufficient".into(), 0, None, None));
+        assert_eq!(row("sem-generos"), ("insufficient".into(), 0, None, None));
+        let shown: i64 = conn.query_row(&format!("SELECT count(*) FROM online_series o WHERE {} OR {}", crate::library::SERIES_SAFE_SQL, crate::library::ADULT_ALLOWED_SQL), [], |r| r.get(0)).unwrap();
+        assert_eq!(shown, 1, "com o filtro ligado, só a que já aparecia");
     }
 
     #[test]
