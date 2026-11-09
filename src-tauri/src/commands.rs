@@ -1026,7 +1026,7 @@ pub async fn series_open(state: S<'_>, request_id: String, id: i64) -> AppResult
 
 #[tauri::command]
 pub async fn series_set_following(state: S<'_>, id: i64, following: bool) -> AppResult<SeriesCard> {
-    blocking(&state, move |c| sources::set_following(&c.db(), id, following)).await
+    changing(&state, move |c| sources::set_following(&c.db(), id, following)).await
 }
 
 const VERIFICATION_WINDOW: &str = "verificacao";

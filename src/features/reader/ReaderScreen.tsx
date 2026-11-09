@@ -55,7 +55,8 @@ import { ReaderTip } from "../onboarding/ReaderTip";
 import { useLeaveFullscreenOnClose } from "./fullscreen";
 import { GuidedReader } from "./GuidedReader";
 import { PageIndexPanel, ReaderSettingsPanel, ShortcutsDialog } from "./ReaderPanels";
-import { PagedView, VerticalView, type VerticalHandle } from "./Views";
+import { PagedView, VerticalView, type ScrollInfo, type VerticalHandle } from "./Views";
+import type { Navigation, ReadingLifecycle } from "../../domain/reading-lifecycle";
 import { usePreload } from "./PageView";
 import { useProgressSaver } from "./useProgressSaver";
 
@@ -111,6 +112,8 @@ export interface ReaderContent {
   /** Abrem um capítulo que ainda não está na sequência. */
   previousChapter?: () => void;
   nextChapter?: () => void;
+  /** Capítulos de uma obra: início efetivo, saída e conclusão automática. As HQs da biblioteca não usam. */
+  lifecycle?: ReadingLifecycle;
 }
 
 export function ReaderScreen({ id }: { id: number }) {
@@ -215,7 +218,7 @@ export function Reader({ content, pdf, zoomState: [zoom, setZoom] }: { content: 
   const toast = useToast();
   const { settings, update } = useSettings();
   const onboarding = useOnboarding();
-  const { pageCount, chapters, saveMode, onPage, waitingForNext, nextChapter, previousChapter } = content;
+  const { pageCount, chapters, saveMode, onPage, waitingForNext, nextChapter, previousChapter, lifecycle } = content;
   const direction = settings["reader.direction"];
   const fit = settings["reader.fit"];
   const rtl = direction === "rtl";
@@ -253,6 +256,7 @@ export function Reader({ content, pdf, zoomState: [zoom, setZoom] }: { content: 
   const chapterIndex = chapters.indexOf(chapter);
 
   const onSize = useCallback((i: number, s: Size) => {
+    lifecycle?.pageRendered(i);
     setSizes((m) => {
       const prev = m.get(i);
       if (prev && prev.width === s.width && prev.height === s.height) return m;
@@ -260,7 +264,7 @@ export function Reader({ content, pdf, zoomState: [zoom, setZoom] }: { content: 
       n.set(i, s);
       return n;
     });
-  }, []);
+  }, [lifecycle]);
 
   // Uma obra em tiras continua assim nos próximos capítulos, sem precisar descobrir de novo.
   useEffect(() => {
@@ -276,6 +280,17 @@ export function Reader({ content, pdf, zoomState: [zoom, setZoom] }: { content: 
     if (!continuous) schedule(page, 0);
   }, [page, continuous, schedule]);
 
+  // Como a última mudança de página aconteceu. Lida uma vez pelo efeito abaixo e volta a "restore".
+  const navigation = useRef<Navigation>("restore");
+  const jumpedAt = useRef(0);
+  const spreadKey = spread.join(",");
+  useEffect(() => {
+    if (continuous) return;
+    const how = navigation.current;
+    navigation.current = "restore";
+    lifecycle?.view({ pages: spreadKey.split(",").map(Number), how });
+  }, [spreadKey, continuous, lifecycle]);
+
   // Pré-carrega as próximas duas visões e a anterior.
   const neighbors = useMemo(() => {
     if (continuous) return [];
@@ -284,8 +299,11 @@ export function Reader({ content, pdf, zoomState: [zoom, setZoom] }: { content: 
   usePreload(content.pageSrc, neighbors, !pdf, onSize);
 
   const goToPage = useCallback(
-    (p: number) => {
+    (p: number, how: Navigation = "jump") => {
       const target = clampPage(p, pageCount);
+      navigation.current = how;
+      // No modo vertical, o salto também rola a tela: essa rolagem não é leitura até o fim.
+      if (how === "jump") jumpedAt.current = Date.now();
       setEndReached(false);
       setPage(target);
       if (continuous) verticalRef.current?.scrollToPage(target, 0);
@@ -297,22 +315,23 @@ export function Reader({ content, pdf, zoomState: [zoom, setZoom] }: { content: 
 
   const next = useCallback(() => {
     if (!atLastPage) {
-      goToPage(continuous ? page + 1 : spreads[spreadIdx + 1]![0]!);
+      goToPage(continuous ? page + 1 : spreads[spreadIdx + 1]![0]!, "step");
       return;
     }
+    lifecycle?.pressedNextAtEnd();
     if (waitingForNext) return;
     setEndReached(true);
     if (!continuous && settings["reader.end"] === "library") {
       void flush().then(() => nav.back());
     }
-  }, [atLastPage, continuous, page, spreads, spreadIdx, goToPage, waitingForNext, settings, flush, nav]);
+  }, [atLastPage, continuous, page, spreads, spreadIdx, goToPage, waitingForNext, settings, flush, nav, lifecycle]);
 
   const prev = useCallback(() => {
     if (continuous) {
-      goToPage(page - 1);
+      goToPage(page - 1, "step");
       return;
     }
-    if (spreadIdx > 0) goToPage(spreads[spreadIdx - 1]![0]!);
+    if (spreadIdx > 0) goToPage(spreads[spreadIdx - 1]![0]!, "step");
   }, [continuous, page, spreadIdx, spreads, goToPage]);
 
   const back = useCallback(() => {
@@ -485,11 +504,13 @@ export function Reader({ content, pdf, zoomState: [zoom, setZoom] }: { content: 
   );
 
   const onPosition = useCallback(
-    (p: number, ratio: number) => {
+    (p: number, ratio: number, scroll: ScrollInfo) => {
       setPage(p);
       schedule(p, ratio, 1000);
+      const how: Navigation = Date.now() - jumpedAt.current < 400 ? "jump" : scroll.user ? "scroll" : "restore";
+      lifecycle?.view({ pages: [p], how, passed: scroll.passed });
     },
-    [schedule],
+    [schedule, lifecycle],
   );
 
   const resetProgress = () => {
@@ -719,7 +740,7 @@ export function Reader({ content, pdf, zoomState: [zoom, setZoom] }: { content: 
           shortcuts={shortcuts}
           natural={sizes.get(page)}
           onSize={(i, s) => onSize(chapter.first + i, s)}
-          onPage={(p) => goToPage(chapter.first + p)}
+          onPage={(p) => goToPage(chapter.first + p, "step")}
           onExit={() => setGuided(false)}
         />
       )}
