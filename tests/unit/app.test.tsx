@@ -177,6 +177,16 @@ describe("primeira execução", () => {
     expect(calls.filter((c) => c.cmd === "open_improvement_form").at(-1)?.args).toEqual({ title: "Marcar páginas", text: "Guardar a página favorita & voltar a ela." });
     expect(await screen.findByText("Formulário aberto no navegador")).toBeInTheDocument();
   });
+
+  it("abre a visão geral do projeto no navegador, sem consultar o GitHub pelo app", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Configurações" }));
+    await user.click(await screen.findByRole("button", { name: "Geral" }));
+    await user.click(await screen.findByRole("button", { name: "Ver visão geral" }));
+    await waitFor(() => expect(calls.some((c) => c.cmd === "open_project_overview")).toBe(true));
+    expect(calls.filter((c) => c.cmd === "open_project_overview").at(-1)?.args ?? {}).toEqual({});
+  });
 });
 
 describe("configurações", () => {

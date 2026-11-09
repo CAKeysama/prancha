@@ -73,6 +73,7 @@ export const SETTINGS_INDEX: readonly SettingEntry[] = [
   { id: "idioma", place: "geral", title: "Idioma", description: "Português do Brasil.", keywords: ["língua", "language", "português", "tradução"] },
   { id: "tutorial", place: "geral", title: "Tutorial de primeira execução", description: "Mostra de novo o passo a passo para adicionar e ler uma HQ.", keywords: ["ajuda", "passo a passo", "guia", "introdução", "começar"] },
   { id: "sugerir", place: "geral", title: "Sugerir uma melhoria", description: "Escreva sua ideia e envie pelo GitHub.", keywords: ["sugestão", "ideia", "feedback", "pedido", "issue", "bug", "problema"] },
+  { id: "visao-geral", place: "geral", title: "Visão geral do projeto", description: "Versões, downloads e verificações do Prancha no GitHub.", keywords: ["overview", "métricas", "estatísticas", "downloads", "releases", "ci", "github", "projeto"] },
   { id: "licencas", place: "geral", title: "Licenças de terceiros", description: "Componentes de código aberto usados pelo Prancha.", keywords: ["licença", "código aberto", "open source", "créditos"] },
   { id: "sobre", place: "geral", title: "Sobre o Prancha", description: "Versão, formatos aceitos e componentes.", keywords: ["sobre", "formatos", "versão", "informações"] },
 

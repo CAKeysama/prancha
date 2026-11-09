@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { BellRing, ChartNoAxesColumn, ChevronRight, ExternalLink, FolderOpen, GraduationCap, HardDrive, ImageMinus, MessageSquarePlus, RefreshCw, RotateCcw, ScanSearch, Scale, Search, SearchX, Trash2, X } from "lucide-react";
+import { BellRing, ChartColumn, ChartNoAxesColumn, ChevronRight, ExternalLink, FolderOpen, GraduationCap, HardDrive, ImageMinus, MessageSquarePlus, RefreshCw, RotateCcw, ScanSearch, Scale, Search, SearchX, Trash2, X } from "lucide-react";
 import { Button } from "../../components/Button";
 import { ConfirmDialog, Dialog } from "../../components/Dialog";
 import { EmptyState, Kbd, Spinner } from "../../components/Feedback";
@@ -1042,6 +1042,18 @@ export function SettingsScreen({ section }: { section?: string } = {}) {
                   <SettingRow id="sugerir" label="Sugerir uma melhoria" description="Escreva sua ideia aqui; ela abre no GitHub já preenchida para você enviar. É preciso ter uma conta, e a sugestão fica pública.">
                     <Button icon={MessageSquarePlus} onClick={() => setSuggesting(true)}>
                       Escrever sugestão
+                    </Button>
+                  </SettingRow>
+                  <SettingRow
+                    id="visao-geral"
+                    label="Visão geral do projeto"
+                    description="Versões publicadas, downloads dos instaladores e as verificações automáticas do Prancha, com dados públicos do GitHub. Abre no navegador; nada do seu uso é enviado."
+                  >
+                    <Button
+                      icon={ChartColumn}
+                      onClick={() => void api.openProjectOverview().catch((e) => toast.error("Não foi possível abrir o navegador", errorMessage(e)))}
+                    >
+                      Ver visão geral
                     </Button>
                   </SettingRow>
                   <SettingRow id="licencas" label="Licenças de terceiros">

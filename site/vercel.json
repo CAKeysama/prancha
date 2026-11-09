@@ -33,7 +33,7 @@
       ]
     },
     {
-      "source": "/api/(.*)",
+      "source": "/api/((?!github-metrics).*)",
       "headers": [
         {
           "key": "Cache-Control",

@@ -899,6 +899,14 @@ pub async fn open_improvement_form(app: AppHandle, title: String, text: String) 
     open_in_browser(&app, &improvement_url(&title, &text)?)
 }
 
+/// Página pública com as métricas do projeto (releases, downloads e CI). Endereço fixo: o app não consulta o GitHub para isso.
+const PROJECT_OVERVIEW: &str = "https://prancha-beta.vercel.app/visao-geral";
+
+#[tauri::command]
+pub async fn open_project_overview(app: AppHandle) -> AppResult<()> {
+    open_in_browser(&app, PROJECT_OVERVIEW)
+}
+
 fn open_in_browser(app: &AppHandle, url: &str) -> AppResult<()> {
     app.opener()
         .open_url(url, None::<&str>)
