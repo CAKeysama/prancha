@@ -182,11 +182,10 @@ test.describe.serial("extensões: da adição do repositório à leitura offline
     await nav(page, "Explorar");
     const section = page.getByRole("region", { name: EXTENSION });
     await expect(section.getByRole("button", { name: /Farol de Papel/ })).toBeVisible();
-    await expect(section.getByRole("listitem")).toHaveCount(4);
     await imageLoaded(page, 'img[alt="Capa de Farol de Papel"]');
-    await section.getByRole("button", { name: "Carregar mais" }).click();
+    // A fonte de demonstração manda 4 obras por página: a primeira leva de 10 já pede as páginas seguintes e mostra as 6.
     await expect(section.getByRole("listitem")).toHaveCount(6);
-    await expect(section.getByRole("button", { name: "Carregar mais" })).toBeHidden();
+    await expect(section.getByRole("button", { name: "Mostrar mais" })).toBeHidden();
 
     await page.getByRole("radio", { name: "Recentes" }).click();
     await expect(section.getByRole("listitem").first()).toContainText("Jardim de Engrenagens");

@@ -3,7 +3,7 @@
 Tudo o que mudou em cada versão do Prancha. O projeto segue o [versionamento semântico](https://semver.org/lang/pt-BR/),
 e as notas das releases e a [página de downloads](https://cakeysama.github.io/prancha/) são geradas a partir deste arquivo.
 
-## [0.6.3] - 2026-11-09
+## [0.7.1] - 2026-11-09
 
 O filtro +18 saiu do Prancha: ele decidia de forma ambígua o que aparecia, e agora todas as obras, fontes e extensões aparecem.
 
@@ -16,6 +16,14 @@ O filtro +18 saiu do Prancha: ele decidia de forma ambígua o que aparecia, e ag
 
 - Obras com título ou gênero que indique sexualização de menores continuam bloqueadas, como antes.
 - Ao atualizar, o Prancha apaga a classificação +18 guardada, as correções feitas à mão e as preferências do filtro. Nada da biblioteca é apagado.
+
+## [0.7.0] - 2026-11-09
+
+Agora dá para ir mais fundo no catálogo do Explorar: cada fonte mostra 10 obras por vez, e o botão "Mostrar mais" traz as próximas 10.
+
+### Novidades
+
+- **Mostrar mais no Explorar:** em Populares, Recentes e nas pesquisas, cada fonte começa com 10 obras e o botão "Mostrar mais" traz mais 10 por clique, sem repetir obra. Na pesquisa em várias fontes, a leva é de 10 títulos. O Prancha só pede outra página à fonte quando falta obra para completar a leva.
 
 ## [0.6.2] - 2026-11-09
 

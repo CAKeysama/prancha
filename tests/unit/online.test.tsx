@@ -569,16 +569,46 @@ describe("Explorar", () => {
     expect(document.activeElement).toBe(screen.getByRole("searchbox", { name: "Pesquisar nas fontes" }));
   });
 
-  it("carrega mais resultados sem repetir", async () => {
+  const obras = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => card(from + i, `Obra ${from + i}`));
+  const shownInSource = () => within(screen.getByRole("region", { name: "Fonte A" })).queryAllByRole("listitem").length;
+
+  it("mostra de 10 em 10 e só pede outra página quando falta obra", async () => {
     handlers.sources_list = () => [source("a", "Fonte A")];
-    handlers.source_popular = (args) => (args.page === 1 ? { results: [card(1, "Um"), card(2, "Dois")], hasMore: true } : { results: [card(2, "Dois"), card(3, "Três")], hasMore: false });
+    handlers.source_popular = (args) => (args.page === 1 ? { results: obras(1, 15), hasMore: true } : { results: obras(15, 24), hasMore: false });
     handlers.source_search = () => ({ results: [], hasMore: false });
     await open("Explorar");
-    await userEvent.click(await screen.findByRole("button", { name: "Limpar pesquisa" }).catch(() => screen.findByRole("radio", { name: /Populares/ })));
-    await userEvent.click(await screen.findByRole("button", { name: "Carregar mais" }));
-    expect(await screen.findByRole("button", { name: /Três/ })).toBeTruthy();
-    expect(screen.getAllByRole("button", { name: /Dois/ })).toHaveLength(1);
-    expect(screen.queryByRole("button", { name: "Carregar mais" })).toBeNull();
+    await userEvent.click(await screen.findByRole("radio", { name: /Populares/ }));
+    expect(await screen.findByRole("button", { name: /Obra 10$/ })).toBeTruthy();
+    expect(shownInSource()).toBe(10);
+    expect(calls.filter((c) => c.cmd === "source_popular")).toHaveLength(1);
+
+    await userEvent.click(screen.getByRole("button", { name: "Mostrar mais" }));
+    expect(await screen.findByRole("button", { name: /Obra 20$/ })).toBeTruthy();
+    expect(shownInSource()).toBe(20);
+    expect(screen.getAllByRole("button", { name: /Obra 15$/ })).toHaveLength(1);
+
+    await userEvent.click(screen.getByRole("button", { name: "Mostrar mais" }));
+    expect(await screen.findByRole("button", { name: /Obra 24$/ })).toBeTruthy();
+    expect(shownInSource()).toBe(24);
+    expect(screen.queryByRole("button", { name: "Mostrar mais" })).toBeNull();
+  });
+
+  it("completa a leva de 10 quando a fonte manda poucas obras por página", async () => {
+    handlers.sources_list = () => [source("a", "Fonte A")];
+    handlers.source_popular = (args) => {
+      const page = Number(args.page);
+      return { results: obras((page - 1) * 4 + 1, page * 4), hasMore: page < 3 };
+    };
+    handlers.source_search = () => ({ results: [], hasMore: false });
+    await open("Explorar");
+    await userEvent.click(await screen.findByRole("radio", { name: /Populares/ }));
+    await screen.findByRole("button", { name: "Mostrar mais" });
+    await waitFor(() => expect(shownInSource()).toBe(10));
+    expect(calls.filter((c) => c.cmd === "source_popular")).toHaveLength(3);
+
+    await userEvent.click(screen.getByRole("button", { name: "Mostrar mais" }));
+    await waitFor(() => expect(shownInSource()).toBe(12));
+    expect(screen.queryByRole("button", { name: "Mostrar mais" })).toBeNull();
   });
 });
 
