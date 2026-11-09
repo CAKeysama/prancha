@@ -92,6 +92,10 @@ pub async fn get_settings(state: S<'_>) -> AppResult<HashMap<String, Value>> {
 
 #[tauri::command]
 pub async fn set_setting(state: S<'_>, key: String, value: Value) -> AppResult<()> {
+    // O consentimento da telemetria só muda pelos comandos dela, que também param os envios.
+    if crate::telemetry::is_reserved(&key) {
+        return Err(AppError::user("invalid", "Esta configuração só muda pela tela de Privacidade."));
+    }
     blocking(&state, move |c| library::set_setting(&c.db(), &key, &value)).await
 }
 
@@ -1012,17 +1016,44 @@ pub async fn sources_list(state: S<'_>) -> AppResult<Vec<SourceSummary>> {
 
 #[tauri::command]
 pub async fn source_popular(state: S<'_>, request_id: String, extension_id: String, source_id: String, page: u32, kind: Option<String>) -> AppResult<BrowsePage> {
-    cancellable(&state, request_id, move |c, cancel| sources::popular(c, &extension_id, &source_id, page, kind.as_deref(), Some(cancel))).await
+    cancellable(&state, request_id, move |c, cancel| {
+        let started = std::time::Instant::now();
+        let out = sources::popular(c, &extension_id, &source_id, page, kind.as_deref(), Some(cancel));
+        c.telemetry.source_query(&extension_id, &source_id, out.as_ref().err());
+        if out.is_ok() {
+            c.telemetry.timing("explore_results", started.elapsed().as_millis() as u64);
+        }
+        out
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn source_latest(state: S<'_>, request_id: String, extension_id: String, source_id: String, page: u32, kind: Option<String>) -> AppResult<BrowsePage> {
-    cancellable(&state, request_id, move |c, cancel| sources::latest(c, &extension_id, &source_id, page, kind.as_deref(), Some(cancel))).await
+    cancellable(&state, request_id, move |c, cancel| {
+        let started = std::time::Instant::now();
+        let out = sources::latest(c, &extension_id, &source_id, page, kind.as_deref(), Some(cancel));
+        c.telemetry.source_query(&extension_id, &source_id, out.as_ref().err());
+        if out.is_ok() {
+            c.telemetry.timing("explore_results", started.elapsed().as_millis() as u64);
+        }
+        out
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn source_search(state: S<'_>, request_id: String, extension_id: String, source_id: String, query: String, page: u32, kind: Option<String>) -> AppResult<BrowsePage> {
-    cancellable(&state, request_id, move |c, cancel| sources::search(c, &extension_id, &source_id, &query, page, kind.as_deref(), Some(cancel))).await
+    cancellable(&state, request_id, move |c, cancel| {
+        let started = std::time::Instant::now();
+        let out = sources::search(c, &extension_id, &source_id, &query, page, kind.as_deref(), Some(cancel));
+        c.telemetry.source_query(&extension_id, &source_id, out.as_ref().err());
+        if out.is_ok() {
+            c.telemetry.timing("explore_results", started.elapsed().as_millis() as u64);
+        }
+        out
+    })
+    .await
 }
 
 #[tauri::command]
@@ -1038,7 +1069,20 @@ pub async fn series_stored(state: S<'_>, id: i64) -> AppResult<SeriesView> {
 
 #[tauri::command]
 pub async fn series_open(state: S<'_>, request_id: String, id: i64) -> AppResult<SeriesView> {
-    cancellable(&state, request_id, move |c, cancel| sources::open_series(c, id, Some(cancel))).await
+    cancellable(&state, request_id, move |c, cancel| {
+        let started = std::time::Instant::now();
+        let out = sources::open_series(c, id, Some(cancel));
+        if let Ok(view) = &out {
+            c.telemetry.source_open(&view.series.extension_id, &view.series.source_id, view.source_error.is_some());
+            c.telemetry.timing("series_open", started.elapsed().as_millis() as u64);
+        } else if let Err(e) = &out {
+            if !crate::telemetry::is_cancel(e) {
+                c.telemetry.error("source", "series_open", e.code(), 0);
+            }
+        }
+        out
+    })
+    .await
 }
 
 #[tauri::command]
@@ -1170,7 +1214,28 @@ pub async fn series_set_reader_mode(state: S<'_>, id: i64, mode: String) -> AppR
 
 #[tauri::command]
 pub async fn chapter_open(state: S<'_>, request_id: String, id: i64) -> AppResult<ChapterSession> {
-    cancellable(&state, request_id, move |c, cancel| sources::open_chapter(c, id, Some(cancel))).await
+    cancellable(&state, request_id, move |c, cancel| {
+        let started = std::time::Instant::now();
+        let out = sources::open_chapter(c, id, Some(cancel));
+        if c.telemetry.enabled() {
+            if out.is_ok() {
+                c.telemetry.timing("chapter_open", started.elapsed().as_millis() as u64);
+            }
+            let origin: Option<(String, String)> = c
+                .db()
+                .query_row(
+                    "SELECT s.extension_id, s.source_id FROM online_chapters ch JOIN online_series s ON s.id = ch.series_id WHERE ch.id = ?",
+                    [id],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .ok();
+            if let Some((extension_id, source_id)) = origin {
+                c.telemetry.source_chapter(&extension_id, &source_id, out.as_ref().err());
+            }
+        }
+        out
+    })
+    .await
 }
 
 #[tauri::command]
@@ -1411,4 +1476,56 @@ pub async fn notifications_native_test(app: AppHandle) -> AppResult<NativeStatus
         .show()
         .map_err(|e| AppError::user("native_failed", format!("O sistema não exibiu a notificação: {e}")))?;
     Ok(NativeStatus { permission: "granted".into() })
+}
+
+// ---------------------------------------------------------------------------
+// Telemetria (ver telemetry.rs). Nada aqui bloqueia a interface: a rede só entra em `telemetry_forget`,
+// pedido pela própria pessoa.
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn telemetry_status(state: S<'_>) -> AppResult<crate::telemetry::Status> {
+    blocking(&state, |c| c.telemetry.status(&c.db())).await
+}
+
+#[tauri::command]
+pub async fn telemetry_set_consent(state: S<'_>, granted: bool) -> AppResult<crate::telemetry::Status> {
+    blocking(&state, move |c| {
+        let status = c.telemetry.set_consent(&c.db(), granted)?;
+        if granted {
+            c.telemetry.request_flush();
+        }
+        Ok(status)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn telemetry_reset_id(state: S<'_>) -> AppResult<crate::telemetry::Status> {
+    blocking(&state, |c| c.telemetry.reset_id(&c.db())).await
+}
+
+/// Revoga e pede ao servidor que apague o que esta instalação enviou. Os envios param antes da rede.
+#[tauri::command]
+pub async fn telemetry_forget(state: S<'_>) -> AppResult<crate::telemetry::Status> {
+    blocking(&state, |c| {
+        let id = c.telemetry.begin_forget(&c.db())?;
+        if let Some(id) = id {
+            c.telemetry.send_forget(&id)?;
+            c.telemetry.finish_forget(&c.db())?;
+        }
+        c.telemetry.status(&c.db())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn telemetry_record(state: S<'_>, events: Vec<Value>) -> AppResult<usize> {
+    Ok(state.telemetry.record_from_ui(&events))
+}
+
+#[tauri::command]
+pub async fn telemetry_ready(state: S<'_>) -> AppResult<()> {
+    state.telemetry.ready();
+    Ok(())
 }

@@ -14,13 +14,14 @@ pub mod natural;
 pub mod notifications;
 pub mod pages;
 pub mod protocol;
+pub mod telemetry;
 pub mod text;
 pub mod updates;
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use tauri::{Emitter, Manager};
+use tauri::{Emitter, Manager, RunEvent};
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
 use crate::core::Core;
@@ -76,6 +77,25 @@ fn connect_native_notifications(app: &tauri::AppHandle, core: &Core) {
     });
 }
 
+/// Conta a abertura (só com consentimento) e inicia a thread de envio, que dorme até ter o que mandar.
+fn start_telemetry(app: &tauri::App, core: &Arc<Core>) {
+    use tauri::utils::config::BundleType;
+    let channel = if cfg!(debug_assertions) {
+        "dev"
+    } else {
+        match tauri::utils::platform::bundle_type() {
+            Some(BundleType::Nsis) => "nsis",
+            Some(BundleType::Msi) => "msi",
+            _ => "unknown",
+        }
+    };
+    let meta = telemetry::AppMeta::current(app.package_info().version.to_string(), channel);
+    if let Err(e) = core.telemetry.on_launch(&core.db(), meta) {
+        log::warn!("telemetria na abertura: {e}");
+    }
+    core.telemetry.spawn();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -109,6 +129,7 @@ pub fn run() {
                         updates::log(&core.paths.data_dir, &format!("conciliação: {e}"));
                     }
                     connect_native_notifications(app.handle(), &core);
+                    start_telemetry(app, &core);
                     app.manage(core.clone());
                     std::thread::spawn(move || {
                         // Antes dos downloads: nada da obra que não pode aparecer volta a baixar.
@@ -255,7 +276,23 @@ pub fn run() {
             commands::notification_target,
             commands::notifications_native_status,
             commands::notifications_native_test,
+            commands::telemetry_status,
+            commands::telemetry_set_consent,
+            commands::telemetry_reset_id,
+            commands::telemetry_forget,
+            commands::telemetry_record,
+            commands::telemetry_ready,
         ])
-        .run(tauri::generate_context!())
-        .expect("erro ao executar o Prancha");
+        .build(tauri::generate_context!())
+        .expect("erro ao executar o Prancha")
+        .run(|app, event| {
+            // Fechamento normal: guarda no disco o que a telemetria ainda não enviou e marca a saída limpa. Sem rede.
+            if let RunEvent::Exit = event {
+                if let Some(core) = app.try_state::<Arc<Core>>() {
+                    if let Err(e) = core.telemetry.on_exit(&core.db()) {
+                        log::warn!("telemetria no fechamento: {e}");
+                    }
+                }
+            }
+        });
 }

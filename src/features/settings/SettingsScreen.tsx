@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { BellRing, ChevronRight, ExternalLink, FolderOpen, GraduationCap, HardDrive, ImageMinus, MessageSquarePlus, RefreshCw, RotateCcw, ScanSearch, Scale, Search, SearchX, Trash2, X } from "lucide-react";
+import { BellRing, ChartNoAxesColumn, ChevronRight, ExternalLink, FolderOpen, GraduationCap, HardDrive, ImageMinus, MessageSquarePlus, RefreshCw, RotateCcw, ScanSearch, Scale, Search, SearchX, Trash2, X } from "lucide-react";
 import { Button } from "../../components/Button";
 import { ConfirmDialog, Dialog } from "../../components/Dialog";
 import { EmptyState, Kbd, Spinner } from "../../components/Feedback";
@@ -32,6 +32,8 @@ import { GithubReleaseButton, ReleaseNotes } from "../updates/UpdateDialogs";
 import { useUpdates } from "../updates/updates-context";
 import { APP_DESCRIPTION, APP_NAME } from "../../app/config";
 import licenses from "../../generated/licenses.json";
+import { useTelemetry } from "../telemetry/telemetry-context";
+import { TelemetryDetails } from "../telemetry/TelemetryDetails";
 
 /** A opção escolhida na pesquisa, destacada por um instante. */
 const Highlight = createContext<string | null>(null);
@@ -644,6 +646,101 @@ function NotificationsSection() {
   );
 }
 
+function PrivacySection() {
+  const { status, setConsent, resetId, forget } = useTelemetry();
+  const toast = useToast();
+  const [busy, setBusy] = useState<"consent" | "reset" | "forget" | null>(null);
+  const [confirmForget, setConfirmForget] = useState(false);
+  const on = status?.consent === "granted";
+
+  const run = async (kind: "consent" | "reset" | "forget", action: () => Promise<unknown>, done?: string) => {
+    setBusy(kind);
+    try {
+      await action();
+      if (done) toast.success(done);
+    } catch (e) {
+      toast.error("Não foi possível concluir", errorMessage(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const state = !status
+    ? "Carregando…"
+    : on
+      ? `Ligada desde ${status.decidedAt ? formatDate(status.decidedAt) : "agora"}.`
+      : status.consent === "denied"
+        ? `Desligada por você${status.decidedAt ? ` em ${formatDate(status.decidedAt)}` : ""}. Nada é enviado.`
+        : "Desligada. Nada é enviado até você aceitar.";
+
+  return (
+    <>
+      <Section id="privacidade" title="Privacidade" description="O Prancha funciona no seu computador, sem conta. A telemetria é opcional e começa desligada.">
+        <Anchor id="telemetria">
+          <div className="rounded-md border border-border bg-surface p-4">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="min-w-56 flex-1">
+                <p className="flex items-center gap-2 font-medium">
+                  <ChartNoAxesColumn size={16} aria-hidden /> Estatísticas de uso
+                  <span
+                    className={cn("rounded-full px-2 py-0.5 text-xs font-semibold", on ? "bg-success-subtle text-success" : "bg-hover text-muted")}
+                    data-testid="telemetry-state"
+                  >
+                    {on ? "Ligada" : "Desligada"}
+                  </span>
+                </p>
+                <p className="mt-0.5 text-sm text-muted">{state}</p>
+              </div>
+              <Switch label="Enviar estatísticas de uso" checked={on} onChange={(v) => void run("consent", () => setConsent(v), v ? "Telemetria ligada" : "Telemetria desligada")} />
+            </div>
+            <div className="mt-4 border-t border-border pt-4">
+              <TelemetryDetails />
+            </div>
+            {status && !status.endpoint && <p className="mt-3 text-sm text-attention">Esta é uma versão de desenvolvimento: ela não envia nada, mesmo ligada.</p>}
+            {on && status && (
+              <p className="mt-3 text-sm text-muted">
+                {status.lastSentAt ? `Último envio em ${formatDate(status.lastSentAt)}.` : "Nenhum envio ainda."} {status.pendingEvents > 0 ? `${status.pendingEvents} registro(s) esperando o próximo envio.` : ""}
+              </p>
+            )}
+          </div>
+        </Anchor>
+        <SettingRow
+          id="telemetria-identificador"
+          label="Identificador da instalação"
+          description={on && status?.installId ? <span className="font-mono text-xs">{status.installId}</span> : "Só existe com a telemetria ligada. É aleatório e não tem relação com você ou com este computador."}
+        >
+          <Button icon={RefreshCw} disabled={!on || busy !== null} loading={busy === "reset"} onClick={() => void run("reset", resetId, "Identificador trocado")}>
+            Gerar outro
+          </Button>
+        </SettingRow>
+        <SettingRow
+          id="telemetria-apagar"
+          label="Apagar os dados enviados"
+          description={status?.forgetPending ? "O último pedido não chegou ao servidor. Tente de novo." : "Desliga a telemetria e pede ao servidor que apague tudo que esta instalação enviou."}
+        >
+          <Button variant="danger" icon={Trash2} disabled={!(on || status?.forgetPending) || busy !== null} loading={busy === "forget"} onClick={() => setConfirmForget(true)}>
+            {status?.forgetPending ? "Tentar de novo" : "Apagar dados"}
+          </Button>
+        </SettingRow>
+      </Section>
+      <ConfirmDialog
+        open={confirmForget}
+        title="Apagar os dados enviados?"
+        confirmLabel="Apagar"
+        destructive
+        busy={busy === "forget"}
+        onCancel={() => setConfirmForget(false)}
+        onConfirm={() => {
+          setConfirmForget(false);
+          void run("forget", forget, "Dados apagados no servidor");
+        }}
+      >
+        A telemetria será desligada, o identificador deste computador será apagado e o servidor apagará tudo que esta instalação enviou. Se o servidor não responder, o pedido fica guardado para você tentar de novo.
+      </ConfirmDialog>
+    </>
+  );
+}
+
 export function SettingsScreen({ section }: { section?: string } = {}) {
   const { settings, effectiveTheme } = useSettings();
   const save = useSave();
@@ -924,6 +1021,8 @@ export function SettingsScreen({ section }: { section?: string } = {}) {
 
               {category === "atualizacoes" && <UpdatesSection />}
 
+              {category === "privacidade" && <PrivacySection />}
+
               {category === "geral" && (
                 <Section id="geral" title="Geral">
                   <SettingRow id="idioma" label="Idioma" description="No momento, a interface está disponível apenas em português do Brasil.">
@@ -956,7 +1055,7 @@ export function SettingsScreen({ section }: { section?: string } = {}) {
                         <HardDrive size={16} aria-hidden /> Sobre o {APP_NAME}
                       </p>
                       <p className="mt-1 text-sm text-muted">
-                        {APP_DESCRIPTION}. Funciona no seu computador, sem conta. A internet é usada para procurar atualizações e, com o plugin Fontes de leitura, para repositórios e fontes online.
+                        {APP_DESCRIPTION}. Funciona no seu computador, sem conta. A internet é usada para procurar atualizações, com o plugin Fontes de leitura para repositórios e fontes online e, só se você ligar, para a telemetria (Configurações › Privacidade).
                       </p>
                       <dl className="mt-3 grid grid-cols-[160px_1fr] gap-y-1 text-sm">
                         <dt className="text-muted">Versão</dt>

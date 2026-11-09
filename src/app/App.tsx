@@ -25,6 +25,8 @@ import { NotificationsProvider } from "../features/notifications/notifications-c
 import { NotificationsScreen } from "../features/notifications/NotificationsScreen";
 import { UpdateDialogs } from "../features/updates/UpdateDialogs";
 import { UpdatesProvider } from "../features/updates/updates-context";
+import { TelemetryProvider } from "../features/telemetry/telemetry-context";
+import { TelemetryInvite } from "../features/telemetry/TelemetryInvite";
 import { LibraryEventsProvider } from "./library-events";
 import { NavigationProvider, sectionOf, useNav, type Route } from "./navigation";
 import { SettingsProvider, useSettings } from "./settings-context";
@@ -169,11 +171,14 @@ export function App() {
                 <ComicActionsProvider>
                   <UpdatesProvider>
                     <NotificationsProvider>
-                      <Shell />
-                      <ImportPanel />
-                      <OnboardingWizard />
-                      <PdfCoverWorker />
-                      <UpdateDialogs />
+                      <TelemetryProvider>
+                        <Shell />
+                        <ImportPanel />
+                        <OnboardingWizard />
+                        <PdfCoverWorker />
+                        <UpdateDialogs />
+                        <TelemetryInvite />
+                      </TelemetryProvider>
                     </NotificationsProvider>
                   </UpdatesProvider>
                 </ComicActionsProvider>

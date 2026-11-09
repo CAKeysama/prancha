@@ -34,6 +34,7 @@ import type {
 } from "../domain/online";
 import type { ReaderMode } from "../domain/settings";
 import type { UpdateProgress, UpdatesHistory, UpdatesSnapshot } from "../domain/updates";
+import type { TelemetryStatus } from "../domain/telemetry";
 import type { NotificationAction, NotificationCategory, NotificationPage, NotificationQuery, NotificationTarget } from "../domain/notifications";
 
 export class ApiError extends Error {
@@ -213,4 +214,11 @@ export const api = {
   notificationTarget: (id: number, action?: NotificationAction) => call<NotificationTarget>("notification_target", { id, action: action ?? null }),
   notificationsNativeStatus: () => call<{ permission: "granted" | "denied" | "prompt" }>("notifications_native_status"),
   notificationsNativeTest: () => call<{ permission: "granted" | "denied" | "prompt" }>("notifications_native_test"),
+
+  telemetryStatus: () => call<TelemetryStatus>("telemetry_status"),
+  telemetrySetConsent: (granted: boolean) => call<TelemetryStatus>("telemetry_set_consent", { granted }),
+  telemetryResetId: () => call<TelemetryStatus>("telemetry_reset_id"),
+  telemetryForget: () => call<TelemetryStatus>("telemetry_forget"),
+  telemetryRecord: (events: unknown[]) => call<number>("telemetry_record", { events }),
+  telemetryReady: () => call<void>("telemetry_ready"),
 };

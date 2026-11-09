@@ -17,6 +17,7 @@ use crate::import::{EVENT_LIBRARY, Emit, Importer};
 use crate::library;
 use crate::notifications::{Event, Kind, NewNotification};
 use crate::pages::PageService;
+use crate::telemetry::Telemetry;
 
 #[derive(Debug, Clone)]
 pub struct AppPaths {
@@ -60,6 +61,8 @@ pub struct Core {
     pub suwayomi: Suwayomi,
     /// Notificações do sistema operacional, ligadas pelo app Tauri. Sem ele (testes), só a central.
     pub notifier: OnceLock<crate::notifications::Notifier>,
+    /// Desligada até a pessoa aceitar. Ver telemetry.rs.
+    pub telemetry: Arc<Telemetry>,
 }
 
 impl Core {
@@ -72,11 +75,16 @@ impl Core {
         if let Err(e) = crate::notifications::prune(&conn, db::now_ms()) {
             log::warn!("limpeza das notificações falhou: {e}");
         }
+        let telemetry = Arc::new(Telemetry::from_env());
+        // A telemetria nunca impede o app de abrir: se o estado dela não puder ser lido, fica desligada.
+        if let Err(e) = telemetry.load(&conn) {
+            log::warn!("estado da telemetria não lido: {e}");
+        }
         let db_path = paths.db.clone();
         let importer = Importer::spawn(move || db::open(&db_path), paths.covers.clone(), emit.clone())?;
         // Capas pendentes ou geradas com parâmetros antigos são refeitas em segundo plano.
         importer.enqueue_covers();
-        Ok(Core { pages: PageService::new(paths.pages_cache.clone()), paths, db: Mutex::new(conn), importer, emit, guided_lock: Mutex::new(()), net: Arc::new(Net::from_env()), engine: OnceLock::new(), downloads: Downloads::default(), requests: Requests::default(), cover_gate: Gate::default(), page_gate: Gate::default(), chapter_pages: ChapterPages::default(), suwayomi: Suwayomi::default(), notifier: OnceLock::new() })
+        Ok(Core { pages: PageService::new(paths.pages_cache.clone()), paths, db: Mutex::new(conn), importer, emit, guided_lock: Mutex::new(()), net: Arc::new(Net::from_env()), engine: OnceLock::new(), downloads: Downloads::default(), requests: Requests::default(), cover_gate: Gate::default(), page_gate: Gate::default(), chapter_pages: ChapterPages::default(), suwayomi: Suwayomi::default(), notifier: OnceLock::new(), telemetry })
     }
 
     pub fn db(&self) -> MutexGuard<'_, Connection> {
