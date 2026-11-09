@@ -5,11 +5,15 @@ e as notas das releases e a [página de downloads](https://cakeysama.github.io/p
 
 ## [0.7.2] - 2026-11-09
 
-Uma versão de bastidores: uma versão nova não deixa mais de ser publicada quando a anterior ainda está saindo.
+Uma versão de bastidores: mudanças que entram uma logo depois da outra agora saem cada uma como a sua versão, sem uma cancelar a outra.
+
+### Correções
+
+- Um aviso que ainda ia sumir da tela não tenta mais se atualizar depois que a janela foi fechada.
 
 ### Observações
 
-- Nada muda no aplicativo. A 0.7.1 tinha ficado sem publicar porque a fila de publicação descartou ela enquanto a 0.7.0 terminava. A publicação foi refeita, e a fila foi corrigida para isso não se repetir.
+- Nada muda no uso do aplicativo. A 0.7.1 tinha ficado sem publicar porque a fila de publicação descartou ela enquanto a 0.7.0 terminava. Agora cada versão tem a sua própria fila, as publicações podem correr ao mesmo tempo, e a atualização oferecida aos aplicativos instalados é sempre a maior versão publicada.
 
 ## [0.7.1] - 2026-11-09
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 // @ts-expect-error script em JS puro, sem tipos
-import { bumpLevel, nextVersion, parseCommit, review, versionsIn, withChangelogEntry, withVersion } from "../../scripts/version.mjs";
+import { bumpLevel, compareVersions, newestReleased, nextVersion, parseCommit, review, versionsIn, withChangelogEntry, withVersion } from "../../scripts/version.mjs";
 
 const files = {
   "package.json": '{\n  "name": "prancha",\n  "version": "1.2.3",\n  "devDependencies": { "x": "1.2.3" }\n}\n',
@@ -61,6 +61,16 @@ describe("arquivos da versão", () => {
   });
 });
 
+describe("ordem das versões", () => {
+  it("compara pelo número, não pelo texto", () => {
+    expect(compareVersions("0.10.0", "0.9.9")).toBeGreaterThan(0);
+    expect(compareVersions("0.7.1", "0.7.2")).toBeLessThan(0);
+    expect(compareVersions("1.0.0", "1.0.0")).toBe(0);
+    expect(newestReleased(["0.7.0", "0.10.1", "0.9.0", "1.0.0-beta.1"])).toBe("0.10.1");
+    expect(newestReleased([])).toBeNull();
+  });
+});
+
 describe("verificação do PR", () => {
   const base = { baseVersion: "1.2.3", headVersions: versionsIn(withVersion(files, "1.2.3", "1.3.0")), changelog: entry("1.3.0") };
 
@@ -83,6 +93,11 @@ describe("verificação do PR", () => {
     expect(text).toContain("já foi publicada");
     expect(text).toContain("src-tauri/Cargo.toml");
     expect(text).toContain("não tem a entrada");
+  });
+
+  it("recusa uma versão menor que a última publicada, de um branch que ficou para trás", () => {
+    const result = review({ ...base, released: ["1.2.3", "1.4.0", "0.9.0"], commits: [{ sha: "a".repeat(40), message: "feat: algo novo" }] });
+    expect(result.problems.join()).toContain("A 1.3.0 é menor que a 1.4.0, já publicada");
   });
 
   it("recusa a entrada do changelog ainda com o modelo", () => {
