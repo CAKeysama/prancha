@@ -17,6 +17,8 @@
     "test:e2e": "playwright test",
     "test:update": "node tests/update/run.mjs",
     "licenses": "node scripts/generate-licenses.mjs",
+    "version:bump": "node scripts/version.mjs bump",
+    "version:check": "node scripts/version.mjs check",
     "site:build": "node scripts/build-site.mjs",
     "site:preview": "vite site --port 4321 --strictPort",
     "tauri": "tauri"

@@ -2,20 +2,38 @@
 
 ## Numeração
 
-O Prancha segue o [versionamento semântico](https://semver.org/lang/pt-BR/), no formato `vMAJOR.MINOR.PATCH`:
+Toda mudança que entra na `main` sai como uma versão nova. O Prancha segue o [versionamento semântico](https://semver.org/lang/pt-BR/), no formato `vMAJOR.MINOR.PATCH`, e quem decide qual parte sobe são os rótulos dos commits:
 
-| Parte | Quando sobe | Exemplo |
-|---|---|---|
-| `PATCH` | Correções e pequenos ajustes, sem mudança incompatível | índice de páginas que perdia a rolagem |
-| `MINOR` | Funcionalidades novas e compatíveis | um novo modo de leitura |
-| `MAJOR` | Mudanças incompatíveis ou grandes alterações de comportamento | uma biblioteca que não abre mais na versão antiga |
+| Parte | Quando sobe | Rótulo do commit | Exemplo |
+|---|---|---|---|
+| `MAJOR` | Mudanças incompatíveis: o que já existia deixa de funcionar ou muda muito, e a pessoa precisa se adaptar | `!` depois do tipo (`feat!:`, `refactor!:`) ou uma linha `BREAKING CHANGE: ...` no corpo | uma biblioteca que não abre mais na versão antiga: 2.5.1 → 3.0.0 |
+| `MINOR` | Funcionalidades novas, com tudo o que já existia funcionando igual | `feat:` | um novo modo de leitura: 2.4.1 → 2.5.0 |
+| `PATCH` | Correções, ajustes internos e de segurança, sem recurso novo e sem quebrar nada | `fix:`, `perf:`, `refactor:`, `style:`, `test:`, `docs:`, `build:`, `ci:`, `chore:`, `revert:`, `site:` | índice de páginas que perdia a rolagem: 2.5.0 → 2.5.1 |
 
-Até a 1.0.0, mudanças maiores ainda podem sair em `PATCH` ou `MINOR`, como as versões 0.1.x já fizeram.
+Vale o maior rótulo entre os commits do PR: um PR com um `feat:` e três `fix:` é uma `MINOR`.
+
+### Como rotular um commit
+
+A primeira linha é `tipo: descrição` ou `tipo(área): descrição`, em minúsculas, com espaço depois dos dois-pontos:
+
+```text
+feat(leitura): marca capítulos novos na biblioteca
+fix: o filtro +18 escondia obras livres
+refactor!: guarda o progresso numa tabela nova
+
+BREAKING CHANGE: a biblioteca da 2.x precisa ser importada de novo.
+```
+
+Escolha pelo que muda para quem usa o Prancha: um recurso novo é `feat`, mesmo que também corrija algo; mexer só por dentro, sem mudar o que a pessoa vê, é `refactor` ou `chore`. O título do PR segue o mesmo formato. Commits de merge não contam.
+
+O workflow `versao.yml` confere tudo isso em cada PR e não deixa uma `MINOR` sair como `PATCH`.
 
 ## Passo a passo
 
-1. **Suba a versão** nestes arquivos, com o mesmo número: `package.json`, `package-lock.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` e `src-tauri/Cargo.lock`. Se as dependências mudaram, rode `npm run licenses`, porque a tela de licenças do app sai desse arquivo.
-2. **Escreva as notas** no topo do `CHANGELOG.md`, no formato `## [X.Y.Z] - AAAA-MM-DD`, com um resumo e as seções `Novidades`, `Melhorias`, `Correções` e `Observações` (só as que tiverem conteúdo). Cada item ocupa uma linha.
+Todo PR traz a própria versão. Com os commits já feitos e a `main` trazida para o branch:
+
+1. **Suba a versão** com `npm run version:bump`. O script lê os commits desde a `main`, calcula a versão e a troca nos cinco arquivos que a guardam (`package.json`, `package-lock.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` e `src-tauri/Cargo.lock`), e abre a entrada no `CHANGELOG.md`. Faça o commit como `chore(release): versão X.Y.Z`. Se as dependências mudaram, rode `npm run licenses`, porque a tela de licenças do app sai desse arquivo.
+2. **Escreva as notas** na entrada aberta no topo do `CHANGELOG.md`, no formato `## [X.Y.Z] - AAAA-MM-DD`, com um resumo e as seções `Novidades`, `Melhorias`, `Correções` e `Observações` (só as que tiverem conteúdo, apague as vazias). Cada item ocupa uma linha. `npm run version:check` confere tudo antes do push.
 3. **Rode localmente** o que precisa de páginas reais e da janela do app:
 
    ```bash
@@ -25,7 +43,8 @@ Até a 1.0.0, mudanças maiores ainda podem sair em `PATCH` ou `MINOR`, como as 
    npm run test:update -- --build
    ```
 
-4. **Abra um pull request com a versão e as notas.** O merge na `main` publica tudo sozinho: instaladores, release, atualizador, página de downloads e site oficial.
+4. **Abra o pull request com a mudança, a versão e as notas.** O merge na `main` publica tudo sozinho: instaladores, release, atualizador, página de downloads e site oficial.
+5. **Traga a `main` para o branch logo antes do merge.** Se outro PR entrou antes e já usou a versão, a verificação fica vermelha: rode `npm run version:bump` de novo, que passa as notas para a versão seguinte.
 
 Também dá para publicar enviando a tag à mão, como antes: `git tag -a vX.Y.Z -m "Prancha vX.Y.Z"` e `git push origin main vX.Y.Z`.
 
@@ -34,12 +53,13 @@ Também dá para publicar enviando a tag à mão, como antes: `git tag -a vX.Y.Z
 | Workflow | Quando roda | O que faz |
 |---|---|---|
 | `ci.yml` | Push na `main` e pull requests | Tipos, lint, testes de interface e do backend |
+| `versao.yml` | Pull requests e push na `main` | No PR, confere o título, o rótulo de cada commit, se a versão é a que os rótulos pedem nos cinco arquivos e se a entrada do changelog está preenchida. Na `main`, fica vermelho se algo entrou sem versão nova |
 | `release.yml` | Versão nova no `package.json` da `main`, ou tag `vX.Y.Z` | Confere se a versão ainda não saiu, repete as verificações, gera e assina os instaladores, calcula os SHA-256, gera o `latest.json`, cria a tag e publica a release com as notas do changelog |
 | `pages.yml` | Fim do `release.yml`, ou mudança no changelog, no site ou nos scripts das páginas | Regenera e publica a página de downloads no GitHub Pages e o site oficial na Vercel, com a versão, os links e os SHA-256 da release mais recente |
 
 Se qualquer verificação ou build falhar, nada é publicado e o site continua na versão anterior. Corrija e faça um novo push na `main`: como a tag só nasce junto com a release, a mesma versão é tentada de novo.
 
-Um merge que não muda a versão não publica nada. Mudanças só no site entram no ar no merge, sem versão nova.
+Um merge que não muda a versão não publica nada, e o `versao.yml` fica vermelho na `main` para isso não passar despercebido. Abra um PR só com a versão e as notas para publicar o que entrou.
 
 Depois de editar uma release à mão, atualize as páginas com `gh workflow run pages.yml --ref main`.
 
