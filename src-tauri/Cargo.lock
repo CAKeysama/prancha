@@ -3377,7 +3377,7 @@ checksum = "494b4379484fc92217cc7d9e3a532375b1d01a61889ec8333025dc3b0377af56"
 
 [[package]]
 name = "prancha"
-version = "0.11.1"
+version = "0.11.2"
 dependencies = [
  "base64 0.23.1",
  "blake3",

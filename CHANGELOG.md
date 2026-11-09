@@ -3,6 +3,14 @@
 Tudo o que mudou em cada versão do Prancha. O projeto segue o [versionamento semântico](https://semver.org/lang/pt-BR/),
 e as notas das releases e a [página de downloads](https://cakeysama.github.io/prancha/) são geradas a partir deste arquivo.
 
+## [0.11.2] - 2026-11-09
+
+O login do MyAnimeList passa a usar uma porta que raramente está ocupada.
+
+### Correções
+
+- A volta do login do MyAnimeList usava a porta 8080, comum em outros programas: com ela ocupada, não dava para conectar. Agora a volta é em `http://localhost:3641/callback`.
+
 ## [0.11.1] - 2026-11-09
 
 A conexão com o MyAnimeList passa a funcionar: o Prancha espera a volta do login no endereço cadastrado no aplicativo do MAL.

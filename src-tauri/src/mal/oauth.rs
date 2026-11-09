@@ -13,8 +13,8 @@ use crate::error::{AppError, AppResult};
 use crate::extensions::net::Cancel;
 
 /// Porta e caminho fixos: o endereço de retorno precisa ser idêntico ao cadastrado no aplicativo do MAL
-/// (`http://localhost:8080/callback`). Mudar aqui exige mudar o cadastro, e vice-versa.
-pub const REDIRECT_PORT: u16 = 8080;
+/// (`http://localhost:3641/callback`). Mudar aqui exige mudar o cadastro, e vice-versa.
+pub const REDIRECT_PORT: u16 = 3641;
 pub const REDIRECT_PATH: &str = "/callback";
 /// Tempo para a pessoa entrar e autorizar no navegador.
 pub const AUTHORIZE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
@@ -186,7 +186,7 @@ mod tests {
 
     #[test]
     fn o_retorno_e_o_cadastrado_no_mal() {
-        assert_eq!(redirect_uri(REDIRECT_PORT), "http://localhost:8080/callback");
+        assert_eq!(redirect_uri(REDIRECT_PORT), "http://localhost:3641/callback");
     }
 
     #[test]

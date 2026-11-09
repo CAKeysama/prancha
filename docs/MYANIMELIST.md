@@ -9,7 +9,7 @@ O MAL só aceita aplicativos cadastrados. O do Prancha já está cadastrado em <
 | Campo | Valor |
 |---|---|
 | App Type | **other** (aplicativo nativo, público: não recebe segredo e usa PKCE) |
-| App Redirect URL | `http://localhost:8080/callback` |
+| App Redirect URL | `http://localhost:3641/callback` |
 | Homepage URL | `https://github.com/CAKeysama/prancha` |
 | Commercial / Non-Commercial | Non-Commercial |
 
@@ -32,7 +32,7 @@ Sem o Client ID (num build local, por exemplo), a categoria **Integrações** di
 ## Conexão e tokens
 
 - **OAuth 2.0 com código e PKCE** ([guia oficial](https://myanimelist.net/apiconfig/references/authorization)). O MAL só aceita o método `plain`, então o desafio é o próprio verificador: 96 caracteres aleatórios, novos a cada conexão, junto com um `state` aleatório que a resposta precisa trazer de volta.
-- O Prancha abre `https://myanimelist.net/v1/oauth2/authorize` no navegador da pessoa e espera a volta num endereço local `http://localhost:8080/callback` (só em `127.0.0.1` e `::1`, nunca na rede), que só existe durante a conexão (até 5 minutos, ou até **Cancelar**). Respostas com outro `state` (proteção contra CSRF), em outro caminho, sem código ou com outro método são recusadas e não encerram a espera; um `error` com o `state` certo encerra como recusa. A página de volta não repete o código e pede ao navegador para não guardá-la nem enviar o endereço adiante. A senha nunca passa pelo Prancha.
+- O Prancha abre `https://myanimelist.net/v1/oauth2/authorize` no navegador da pessoa e espera a volta num endereço local `http://localhost:3641/callback` (só em `127.0.0.1` e `::1`, nunca na rede), que só existe durante a conexão (até 5 minutos, ou até **Cancelar**). Respostas com outro `state` (proteção contra CSRF), em outro caminho, sem código ou com outro método são recusadas e não encerram a espera; um `error` com o `state` certo encerra como recusa. A página de volta não repete o código e pede ao navegador para não guardá-la nem enviar o endereço adiante. A senha nunca passa pelo Prancha.
 - O código é trocado em `https://myanimelist.net/v1/oauth2/token` (`grant_type=authorization_code`, com o verificador e sem segredo do cliente). O nome da conta vem de `GET /v2/users/@me`.
 - **Armazenamento:** os tokens de acesso e de renovação ficam só cifrados, na tabela `mal_account`, pela DPAPI do Windows (`CryptProtectData`, presa à conta do Windows, com entropia própria do Prancha). Outro usuário do computador ou uma cópia do banco em outra máquina não abre. A tabela não passa pelas configurações e nenhum comando devolve tokens à interface. Fora do Windows, sem um cofre do sistema, a conexão não é guardada.
 - **Logs e erros:** o cabeçalho `Authorization` e os corpos com código ou token só existem no envio; o `Debug` das requisições os esconde, e as mensagens de erro dizem o que aconteceu sem repetir a requisição.
@@ -85,5 +85,5 @@ A documentação descreve a atualização da lista como `PATCH`, e o exemplo del
 
 - Só obras das fontes de leitura. HQs importadas de arquivos não têm capítulos numerados e não são associadas.
 - Marcar capítulos como lidos à mão (inclusive "marcar anteriores") não sincroniza: só a leitura concluída no leitor.
-- A porta 8080 precisa estar livre durante a conexão (só nesses segundos). Se outro programa estiver nela, o Prancha avisa e pede para fechá-lo; usar outra porta exigiria mudar o cadastro no MAL.
+- A porta 3641 (escolhida por não ser padrão de nenhum programa comum) precisa estar livre durante a conexão (só nesses segundos). Se outro programa estiver nela, o Prancha avisa e pede para fechá-lo; usar outra porta exigiria mudar o cadastro no MAL.
 - O login de verdade (navegador, conta e autorização) não roda no CI: os testes fazem a volta por uma requisição real ao endereço local, mas com o MAL simulado. A conferência final é conectar uma conta no app instalado.
