@@ -32,13 +32,14 @@ function card(id: number, title: string, ratingState: RatingState): SeriesCard {
     lastCheckedAt: null,
     lastUpdateAt: null,
     favorite: false,
+    newCount: 0,
     ratingState,
     ratingOrigin: "inferred",
   };
 }
 
 function librarySeries(id: number, title: string, ratingState: RatingState): LibrarySeries {
-  return { id, title, hasCover: false, sourceName: "Fonte A", favorite: true, addedAt: id, lastOpenedAt: null, ratingState, readStatus: "unread", chapterCount: 1, chaptersRead: 0, resume: null, collections: [] };
+  return { id, title, hasCover: false, sourceName: "Fonte A", favorite: true, addedAt: id, lastOpenedAt: null, following: true, newCount: 0, ratingState, readStatus: "unread", chapterCount: 1, chaptersRead: 0, resume: null, collections: [] };
 }
 
 const source: SourceSummary = {
