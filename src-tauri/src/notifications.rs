@@ -175,7 +175,7 @@ impl Kind {
             Kind::UpdateAvailable | Kind::UpdateFailed | Kind::UpdateInstalled => &[Action::OpenUpdates],
             Kind::DownloadCompleted => &[Action::OpenSeries, Action::OpenDownloads],
             Kind::DownloadFailed => &[Action::OpenDownloads, Action::OpenSeries],
-            Kind::SyncFailed => &[Action::RetrySync, Action::OpenSeries],
+            Kind::SyncFailed => &[Action::RetrySync],
             Kind::ImportProblems => &[Action::OpenLibrary],
             Kind::FilesMissing if count == 1 => &[Action::OpenComic],
             Kind::FilesMissing => &[Action::OpenLibrary],
@@ -1059,6 +1059,28 @@ mod tests {
         set_read(&conn, &[a.id], true, 3).unwrap();
         assert_eq!(clear_read(&conn).unwrap(), 1);
         assert_eq!(page(&conn, ListQuery::default()).items.len(), 1);
+    }
+
+    /// Do registro de capítulos (`sources::store_chapters`) até a notificação, como em `open_series`.
+    #[test]
+    fn synced_chapters_notify_only_what_is_new_and_once() {
+        use crate::extensions::{runtime::Chapter, sources};
+        let mut conn = conn();
+        let ch = |id: &str, order: u32| Chapter { id: id.into(), title: format!("Capítulo {id}"), number: Some(id.into()), published_at: None, order };
+        let sync = |conn: &mut Connection, list: &[Chapter], now: i64| {
+            let fresh = sources::store_chapters(conn, 1, list).unwrap();
+            chapters_discovered(conn, 1, &fresh).unwrap().and_then(|n| record(conn, &n, now).unwrap())
+        };
+        assert_eq!(sync(&mut conn, &[ch("1", 1), ch("2", 2)], 10), None, "a primeira sincronização é a referência");
+        let r = sync(&mut conn, &[ch("1", 1), ch("2", 2), ch("3", 3), ch("4", 4)], 20).unwrap();
+        assert_eq!(page(&conn, ListQuery::default()).items[0].title, "One Piece recebeu 2 capítulos novos");
+        assert_eq!(sync(&mut conn, &[ch("1", 1), ch("2", 2), ch("3", 3), ch("4", 4)], 30), None, "sincronizar de novo não repete");
+        set_read(&conn, &[r.id], true, 40).unwrap();
+        let acknowledged: i64 = conn.query_row("SELECT count(*) FROM online_chapters WHERE series_id = 1 AND acknowledged_at IS NULL", [], |r| r.get(0)).unwrap();
+        assert_eq!(acknowledged, 2, "ler a notificação não reconhece a novidade dos capítulos");
+        let next = sync(&mut conn, &[ch("1", 1), ch("2", 2), ch("3", 3), ch("4", 4), ch("5", 5)], 50).unwrap();
+        assert!(!next.merged);
+        assert_eq!(unread_count(&conn).unwrap(), 1);
     }
 
     #[test]

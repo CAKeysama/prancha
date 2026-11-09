@@ -188,11 +188,13 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
           nav.navigate({ name: "library" });
           return;
         case "retrySync":
-          nav.navigate({ name: "home" });
+          // Repete a mesma verificação de Explorar. O resultado chega pelas notificações de sempre.
+          toast.info("Verificando as obras acompanhadas", "Capítulos novos e falhas aparecem aqui quando terminar.");
+          void api.seriesRefreshFollowing(`following-${Date.now()}`).catch((e) => toast.error("Não foi possível verificar", errorMessage(e)));
           return;
       }
     },
-    [nav],
+    [nav, toast],
   );
 
   const run = useCallback(
