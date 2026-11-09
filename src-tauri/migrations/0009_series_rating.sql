@@ -17,6 +17,12 @@ ALTER TABLE online_series ADD COLUMN rated_at INTEGER;
 ALTER TABLE online_series ADD COLUMN declared_rating TEXT CHECK (declared_rating IN ('general','teen','adult','unknown'));
 -- Quando a fonte declarou a obra como +18 pela última vez. Se ela deixar de declarar, isso continua contando como histórico.
 ALTER TABLE online_series ADD COLUMN declared_adult_at INTEGER;
+-- A classificação da fonte e o tipo de extensão da última análise: valem depois de a extensão ser removida.
+ALTER TABLE online_series ADD COLUMN known_source_rating TEXT CHECK (known_source_rating IN ('general','teen','adult','unknown'));
+ALTER TABLE online_series ADD COLUMN known_runtime TEXT CHECK (known_runtime IN ('native','bridged'));
+UPDATE online_series SET
+    known_source_rating = (SELECT s.rating FROM extension_sources s WHERE s.extension_id = online_series.extension_id AND s.source_id = online_series.source_id),
+    known_runtime = (SELECT CASE WHEN json_valid(e.entry) AND json_extract(e.entry, '$.runtime') = 'suwayomi' THEN 'bridged' ELSE 'native' END FROM installed_extensions e WHERE e.id = online_series.extension_id);
 
 -- Até a primeira análise, o mesmo que o filtro antigo decidia: nada que estava escondido aparece.
 UPDATE online_series SET rating_state = CASE WHEN adult = 1 THEN 'suspect' WHEN classification = 'known' THEN 'none' ELSE 'insufficient' END;
@@ -26,6 +32,11 @@ UPDATE online_series SET declared_rating = 'adult', declared_adult_at = updated_
  WHERE adult = 1
    AND EXISTS (SELECT 1 FROM extension_sources s WHERE s.extension_id = online_series.extension_id AND s.source_id = online_series.source_id AND s.rating IN ('general','teen'))
    AND extension_id IN (SELECT id FROM installed_extensions WHERE CASE WHEN json_valid(entry) THEN coalesce(json_extract(entry, '$.runtime'), '') <> 'suwayomi' ELSE 0 END);
+-- A marca antiga vira histórico em todo o resto, menos nas extensões do Mihon, onde ela vinha de palavras nos gêneros
+-- (e "Young Adult" contava). Assim uma obra de extensão já removida não fica livre só por ter categorias.
+UPDATE online_series SET declared_adult_at = updated_at
+ WHERE adult = 1 AND declared_adult_at IS NULL
+   AND extension_id NOT IN (SELECT id FROM installed_extensions WHERE json_valid(entry) AND json_extract(entry, '$.runtime') = 'suwayomi');
 
 CREATE INDEX idx_online_series_rating ON online_series(rating_state);
 CREATE INDEX idx_online_series_rating_version ON online_series(rating_version);

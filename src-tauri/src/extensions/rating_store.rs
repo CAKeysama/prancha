@@ -28,8 +28,8 @@ fn load(conn: &Connection, id: i64) -> AppResult<Option<Loaded>> {
     Ok(conn
         .query_row(
             "SELECT o.extension_id, o.source_id, o.remote_id, o.title, o.summary, o.genres, o.declared_rating, o.declared_adult_at, o.rating_state, o.rating_version, o.rating_fingerprint, o.updated_at,
-                    s.rating, s.name, e.name,
-                    CASE WHEN e.id IS NULL THEN NULL WHEN json_valid(e.entry) AND json_extract(e.entry, '$.runtime') = 'suwayomi' THEN 'bridged' ELSE 'native' END,
+                    coalesce(s.rating, o.known_source_rating), s.name, e.name,
+                    CASE WHEN e.id IS NULL THEN o.known_runtime WHEN json_valid(e.entry) AND json_extract(e.entry, '$.runtime') = 'suwayomi' THEN 'bridged' ELSE 'native' END,
                     m.state, c.analyzer, c.likelihood, c.confidence, c.analyzed_at
              FROM online_series o
              LEFT JOIN extension_sources s ON s.extension_id = o.extension_id AND s.source_id = o.source_id
@@ -94,6 +94,11 @@ fn log_change(conn: &Connection, loaded: &Loaded, previous: Option<&str>, new: &
 
 /// Analisa a obra se algo que importa mudou desde a última vez. Devolve o estado com que ela ficou.
 pub fn analyze(conn: &Connection, id: i64) -> AppResult<Option<State>> {
+    analyze_logging(conn, id, true)
+}
+
+/// Como `analyze`; `log_automatic` falso quando quem chama registra a mudança (uma correção da pessoa).
+fn analyze_logging(conn: &Connection, id: i64, log_automatic: bool) -> AppResult<Option<State>> {
     let Some(loaded) = load(conn, id)? else { return Ok(None) };
     let fingerprint = rating::fingerprint(&loaded.meta, loaded.manual);
     if loaded.version == CLASSIFIER_VERSION && loaded.fingerprint.as_deref() == Some(fingerprint.as_str()) {
@@ -102,9 +107,11 @@ pub fn analyze(conn: &Connection, id: i64) -> AppResult<Option<State>> {
     let outcome = rating::classify(&loaded.meta, &Params::DEFAULT);
     let state = loaded.manual.unwrap_or(outcome.state);
     let origin = if loaded.manual.is_some() { Origin::Manual } else { outcome.origin };
+    let runtime = loaded.meta.runtime.map(|runtime| if runtime == Runtime::Bridged { "bridged" } else { "native" });
     conn.execute(
-        "UPDATE online_series SET rating_state = ?2, rating_auto = ?3, rating_score = ?4, rating_origin = ?5, rating_version = ?6, rating_fingerprint = ?7, rated_at = ?8 WHERE id = ?1",
-        params![id, state.as_str(), outcome.state.as_str(), outcome.score, origin.as_str(), CLASSIFIER_VERSION, fingerprint, now_ms()],
+        "UPDATE online_series SET rating_state = ?2, rating_auto = ?3, rating_score = ?4, rating_origin = ?5, rating_version = ?6, rating_fingerprint = ?7, rated_at = ?8,
+                known_source_rating = ?9, known_runtime = ?10 WHERE id = ?1",
+        params![id, state.as_str(), outcome.state.as_str(), outcome.score, origin.as_str(), CLASSIFIER_VERSION, fingerprint, now_ms(), loaded.meta.source_rating.map(Declared::as_str), runtime],
     )?;
     conn.execute("DELETE FROM series_rating_evidence WHERE series_id = ?1", [id])?;
     let mut insert = conn.prepare_cached(
@@ -114,7 +121,7 @@ pub fn analyze(conn: &Connection, id: i64) -> AppResult<Option<State>> {
         insert.execute(params![id, position as i64, evidence.kind.as_str(), evidence.origin, evidence.value, evidence.reliability, evidence.points.round() as i64, evidence.verdict.as_str(), evidence.observed_at])?;
     }
     // A primeira análise só substitui o palpite da migração: não é uma mudança que a pessoa precise ver.
-    if loaded.version > 0 && loaded.manual.is_none() && loaded.state != state.as_str() {
+    if log_automatic && loaded.version > 0 && loaded.manual.is_none() && loaded.state != state.as_str() {
         log_change(conn, &loaded, Some(&loaded.state), state.as_str(), "automatic", Some("Os metadados da obra mudaram"))?;
     }
     Ok(Some(state))
@@ -136,6 +143,20 @@ pub fn analyze_outdated_batch(conn: &mut Connection) -> AppResult<usize> {
     Ok(ids.len())
 }
 
+/// Confere de novo as obras de uma extensão, depois de instalar, atualizar ou remover: a classificação das fontes
+/// pode ter mudado. Só as obras cujos dados mudaram são analisadas de fato.
+pub fn analyze_extension(conn: &Connection, extension_id: &str) -> AppResult<usize> {
+    let ids: Vec<i64> = {
+        let mut statement = conn.prepare("SELECT id FROM online_series WHERE extension_id = ?1")?;
+        let rows = statement.query_map([extension_id], |r| r.get(0))?;
+        rows.collect::<Result<_, _>>()?
+    };
+    for id in &ids {
+        analyze(conn, *id)?;
+    }
+    Ok(ids.len())
+}
+
 /// A pessoa corrige a classificação de uma obra: `Some` fixa o estado, `None` volta ao automático.
 /// A correção vale só para esta obra, pelo endereço dela, e continua valendo quando os metadados mudam.
 pub fn set_manual(conn: &mut Connection, id: i64, state: Option<State>, reason: Option<&str>) -> AppResult<RatingDetails> {
@@ -153,7 +174,7 @@ pub fn set_manual(conn: &mut Connection, id: i64, state: Option<State>, reason: 
         )?,
         None => tx.execute("DELETE FROM series_rating_overrides WHERE extension_id = ?1 AND source_id = ?2 AND remote_id = ?3", [&loaded.extension_id, &loaded.source_id, &loaded.remote_id])?,
     };
-    let after = analyze(&tx, id)?.map_or("insufficient", State::as_str);
+    let after = analyze_logging(&tx, id, false)?.map_or("insufficient", State::as_str);
     if state.is_some() || loaded.manual.is_some() {
         log_change(&tx, &loaded, Some(&loaded.state), after, "manual", reason.as_deref().or(if state.is_none() { Some("Voltou à classificação automática") } else { None }))?;
     }
@@ -336,6 +357,7 @@ mod tests {
         assert_eq!(back.state, "none");
         assert!(back.manual.is_none());
         assert_eq!(back.history[0].reason.as_deref(), Some("Voltou à classificação automática"));
+        assert!(back.history.iter().all(|change| change.origin == "manual"), "a correção desfeita não vira mudança automática: {:?}", back.history);
         assert!(set_manual(&mut conn, again, Some(State::Suspect), None).is_err(), "só +18 ou sem indicação");
     }
 
@@ -355,6 +377,25 @@ mod tests {
         conn.execute("UPDATE online_series SET declared_adult_at = 5, declared_rating = NULL WHERE id = ?1", [native]).unwrap();
         analyze(&conn, native).unwrap();
         assert_eq!(state(&conn, native), "suspect");
+    }
+
+    #[test]
+    fn removing_or_rerating_an_extension_updates_its_series() {
+        let conn = database();
+        let free = series(&conn, "nativa", "livre", &[], None, None);
+        assert_eq!(state(&conn, free), "none");
+        // A atualização da extensão muda a fonte para adulta: as obras guardadas acompanham.
+        conn.execute("UPDATE extension_sources SET rating = 'adult' WHERE extension_id = 'nativa'", []).unwrap();
+        analyze_extension(&conn, "nativa").unwrap();
+        assert_eq!(state(&conn, free), "confirmed");
+        // Removida a extensão, vale a última classificação conhecida da fonte, e não "livre por ter categorias".
+        conn.execute("DELETE FROM installed_extensions WHERE id = 'nativa'", []).unwrap();
+        analyze_extension(&conn, "nativa").unwrap();
+        assert_eq!(state(&conn, free), "confirmed");
+        let kept = series(&conn, "ponte", "mantida", &["Ação"], None, None);
+        conn.execute("DELETE FROM installed_extensions WHERE id = 'ponte'", []).unwrap();
+        analyze_extension(&conn, "ponte").unwrap();
+        assert_eq!(state(&conn, kept), "none", "obra livre continua livre sem a extensão");
     }
 
     #[test]

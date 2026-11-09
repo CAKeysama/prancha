@@ -609,10 +609,19 @@ pub fn collect(meta: &Metadata, p: &Params) -> Vec<Evidence> {
 
 /// Há o bastante para dizer "sem indicação": uma classificação declarada que vale para a obra, ou categorias.
 /// Uma descrição sozinha serve para achar indícios, mas não para liberar a obra.
+/// Sem saber de onde a obra veio (extensão removida), ou de uma fonte que não informa a própria classificação,
+/// só a declaração da própria obra libera: categorias sozinhas não bastam.
 fn sufficient(meta: &Metadata) -> bool {
-    matches!(meta.series_rating, Some(Declared::General | Declared::Teen | Declared::Adult))
-        || (meta.runtime == Some(Runtime::Native) && matches!(meta.source_rating, Some(Declared::General | Declared::Teen | Declared::Adult)))
-        || !meta.genres.is_empty()
+    if matches!(meta.series_rating, Some(Declared::General | Declared::Teen)) {
+        return true;
+    }
+    let source_known = match meta.runtime {
+        Some(Runtime::Native) => matches!(meta.source_rating, Some(Declared::General | Declared::Teen)),
+        // Fonte do Mihon: a marca não vale para a obra, mas a fonte precisa estar instalada.
+        Some(Runtime::Bridged) => meta.source_rating.is_some(),
+        None => false,
+    };
+    source_known && (meta.runtime == Some(Runtime::Native) || !meta.genres.is_empty())
 }
 
 pub fn classify(meta: &Metadata, p: &Params) -> Outcome {
@@ -716,7 +725,7 @@ mod tests {
     use super::*;
 
     fn meta(title: &str) -> Metadata {
-        Metadata { origin: "Fonte Teste".into(), runtime: Some(Runtime::Bridged), title: title.into(), observed_at: 1, ..Default::default() }
+        Metadata { origin: "Fonte Teste".into(), runtime: Some(Runtime::Bridged), source_rating: Some(Declared::General), title: title.into(), observed_at: 1, ..Default::default() }
     }
 
     fn with_genres(mut m: Metadata, genres: &[&str]) -> Metadata {
@@ -862,6 +871,24 @@ mod tests {
         m.source_rating = Some(Declared::Unknown);
         m.series_rating = Some(Declared::Unknown);
         assert_eq!(run(&m).state, State::Insufficient);
+    }
+
+    #[test]
+    fn an_unknown_origin_never_frees_a_series_on_categories_alone() {
+        // Fonte nativa que não informa a própria classificação.
+        let mut m = with_genres(meta("Obra"), &["Romance"]);
+        m.runtime = Some(Runtime::Native);
+        m.source_rating = Some(Declared::Unknown);
+        assert_eq!(run(&m).state, State::Insufficient);
+        m.series_rating = Some(Declared::General);
+        assert_eq!(run(&m).state, State::None, "a obra declarou");
+        // Extensão removida: não se sabe mais de onde veio.
+        let mut gone = with_genres(meta("Obra"), &["Romance"]);
+        gone.runtime = None;
+        gone.source_rating = None;
+        assert_eq!(run(&gone).state, State::Insufficient);
+        gone.declared_adult_at = Some(1);
+        assert_eq!(run(&gone).state, State::Suspect, "o histórico continua valendo");
     }
 
     #[test]

@@ -1035,7 +1035,7 @@ pub async fn source_cancel(state: S<'_>, request_id: String) -> AppResult<()> {
 
 #[tauri::command]
 pub async fn series_stored(state: S<'_>, id: i64) -> AppResult<SeriesView> {
-    blocking(&state, move |c| sources::stored_series(&c.db(), id)).await
+    blocking(&state, move |c| sources::visible_series(&c.db(), id)).await
 }
 
 #[tauri::command]

@@ -881,6 +881,14 @@ pub fn stored_series(conn: &Connection, id: i64) -> AppResult<SeriesView> {
     Ok(SeriesView { series: card(conn, id)?, reading: reading_of(conn, id, &chapters)?, chapters, source_error: None, source_protected: false })
 }
 
+/// Como `stored_series`, para a interface: a obra fora do filtro +18 não abre, por nenhum caminho.
+pub fn visible_series(conn: &Connection, id: i64) -> AppResult<SeriesView> {
+    if let Some(error) = filtered(conn, id)? {
+        return Err(error);
+    }
+    stored_series(conn, id)
+}
+
 fn remove_if_unused(core: &Core, conn: &Connection, id: i64) -> AppResult<()> {
     let removed = conn.execute(
         "DELETE FROM online_series WHERE id = ?1 AND following = 0 AND favorite = 0 AND NOT EXISTS (SELECT 1 FROM series_collections x WHERE x.series_id = ?1) AND NOT EXISTS (SELECT 1 FROM online_chapters c WHERE c.series_id = ?1 AND (c.comic_id IS NOT NULL OR c.file_path IS NOT NULL OR c.reading_started_at IS NOT NULL OR c.completed_at IS NOT NULL OR EXISTS (SELECT 1 FROM chapter_progress q WHERE q.chapter_id = c.id)))",
@@ -895,6 +903,10 @@ fn remove_if_unused(core: &Core, conn: &Connection, id: i64) -> AppResult<()> {
 /// Atualiza detalhes e capítulos. Se a fonte falhar, mostra o último conhecido e diz o motivo.
 pub fn open_series(core: &Core, id: i64, cancel: Option<&Cancel>) -> AppResult<SeriesView> {
     let series = card(&core.db(), id)?;
+    // Escondida pelo filtro: nem a fonte é consultada, e o que está guardado também não aparece.
+    if let Some(error) = filtered(&core.db(), id)? {
+        return Err(error);
+    }
     let remote = (|| -> AppResult<_> {
         let (extension, source) = usable(core, &series.extension_id, &series.source_id)?;
         let details = if extension.bridged { suwayomi::details(core, &series.remote_id, cancel)? } else { core.engine()?.details(&extension, cancel, &series.source_id, &series.remote_id)? };
@@ -1048,6 +1060,9 @@ pub fn open_chapter(core: &Core, id: i64, cancel: Option<&Cancel>) -> AppResult<
             (count, library::mark_opened(&conn, info.id, count.max(1))?, Some(info.id))
         }
         None => {
+            if let Some(error) = filtered(&core.db(), chapter.series_id)? {
+                return Err(error);
+            }
             let (extension, _) = usable(core, &chapter.extension_id, &chapter.source_id)?;
             let count = fetch_pages(core, id, &chapter, &extension, cancel)?.len() as i64;
             let stored: Option<(i64, f64, i64)> = core.db().query_row("SELECT page_index, scroll_ratio, updated_at FROM chapter_progress WHERE chapter_id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).optional()?;

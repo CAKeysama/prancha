@@ -1941,6 +1941,8 @@ fn what_was_stored_before_is_removed_at_startup_without_touching_the_rest() {
             (1, 'e', 's', 'titulo', 'Obra Lolicon', '[]', 1, 'known', 1, 1),
             (2, 'e', 's', 'genero', 'Obra', '[\"Shota\"]', 1, 'known', 1, 1),
             (3, 'e', 's', 'comum', 'Comum', '[\"Ação\"]', 1, 'known', 1, 1);
+         -- A extensão já foi removida; a última análise sabia que a fonte era livre.
+         UPDATE online_series SET known_source_rating = 'general', known_runtime = 'native';
          INSERT INTO online_chapters (id, series_id, remote_id, title, sort_order, file_path) VALUES (1, 1, 'cap', 'Cap', 0, 'capitulo.cbz');
          INSERT INTO chapter_downloads (id, chapter_id, status, created_at, updated_at) VALUES (1, 1, 'paused', 1, 1);",
     )
@@ -2024,6 +2026,8 @@ fn chapter(core: &Core, series: &str, remote: &str) -> i64 {
     )
     .unwrap();
     let series_id: i64 = conn.query_row("SELECT id FROM online_series WHERE remote_id = ?1", [series], |r| r.get(0)).unwrap();
+    // Como toda obra gravada pelo app: já classificada.
+    rating_store::analyze(&conn, series_id).unwrap();
     conn.execute("INSERT INTO online_chapters (series_id, remote_id, title, number, sort_order) VALUES (?1, ?2, 'Capítulo 1', '1', 0)", rusqlite::params![series_id, remote]).unwrap();
     conn.last_insert_rowid()
 }
