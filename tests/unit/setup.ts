@@ -38,6 +38,7 @@ import { clearScrollMemory } from "../../src/app/scroll-memory";
 import { clearSeriesMemory } from "../../src/features/online/SeriesScreen";
 import { clearLibraryFilters } from "../../src/features/library/LibraryScreen";
 import { clearNotificationsScreen } from "../../src/features/notifications/NotificationsScreen";
+import { resetTelemetryClient } from "../../src/services/telemetry";
 // Os caches do app vivem enquanto ele está aberto. Cada caso começa do zero.
 afterEach(() => {
   cleanup();
@@ -47,4 +48,5 @@ afterEach(() => {
   clearLibraryFilters();
   clearSeriesMemory();
   clearNotificationsScreen();
+  resetTelemetryClient();
 });

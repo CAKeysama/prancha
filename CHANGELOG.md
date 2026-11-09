@@ -3,6 +3,21 @@
 Tudo o que mudou em cada versão do Prancha. O projeto segue o [versionamento semântico](https://semver.org/lang/pt-BR/),
 e as notas das releases e a [página de downloads](https://cakeysama.github.io/prancha/) são geradas a partir deste arquivo.
 
+## [0.9.0] - 2026-11-09
+
+Estatísticas de uso opcionais: com a sua permissão, o Prancha passa a contar quais versões e fontes estão em uso e onde ele falha, sem nada do que você lê. Começam desligadas.
+
+### Novidades
+
+- **Configurações › Privacidade:** liga e desliga as estatísticas de uso, mostra o que é enviado e o que nunca é, a data da sua escolha, o identificador da instalação, **Gerar outro** e **Apagar dados**, que pede ao servidor que apague o que já foi enviado.
+- **Convite:** depois do tutorial, uma única vez e nunca sobre o leitor, o Prancha pergunta se você quer ajudar. **Agora não** vale como resposta e não pergunta de novo.
+- **Aviso de privacidade** novo, em [docs/PRIVACIDADE.md](https://github.com/CAKeysama/prancha/blob/main/docs/PRIVACIDADE.md).
+
+### Observações
+
+- Só sai algo depois que você aceita. Vão somas por dia: versão, sistema, aberturas do app, uso de cada fonte pelo identificador técnico, códigos de falha e tempos de carregamento. Títulos, buscas, páginas, caminhos, mensagens de erro e dados pessoais nunca saem.
+- Desligar para os envios na hora e descarta o que ainda não tinha saído. Sem internet ou com o servidor fora do ar, nada muda no uso do app.
+
 ## [0.8.0] - 2026-11-09
 
 Navegar ficou mais rápido: as telas guardam o que já carregaram, e a guia Explorar só consulta as fontes quando a lista venceu ou quando você pede.

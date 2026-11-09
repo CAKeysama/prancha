@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="color-scheme" content="dark light" />
+    <title>Telemetria do Prancha</title>
+    <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg" />
+    <link rel="stylesheet" href="/admin/admin.css" />
+    <script type="module" src="/admin/admin.js"></script>
+  </head>
+  <body>
+    <header class="top">
+      <div class="brand">
+        <img src="/assets/favicon.svg" alt="" width="24" height="24" />
+        <span>Prancha · Telemetria</span>
+      </div>
+      <div class="who" id="who" hidden>
+        <span id="who-email"></span>
+        <button type="button" class="btn ghost" id="logout">Sair</button>
+      </div>
+    </header>
+
+    <main id="app">
+      <section class="center" id="booting">
+        <p class="muted">Carregando…</p>
+      </section>
+
+      <section class="center" id="login" hidden>
+        <form class="card login" id="login-form">
+          <h1>Entrar no painel</h1>
+          <p class="muted">Só para administradores do Prancha. Você recebe um link de acesso por e-mail; não há senha.</p>
+          <label for="email">E-mail</label>
+          <input id="email" name="email" type="email" autocomplete="email" required />
+          <button type="submit" class="btn primary" id="login-submit">Enviar link de acesso</button>
+          <p class="note" id="login-note" role="status" aria-live="polite"></p>
+        </form>
+      </section>
+
+      <section class="center" id="fatal" hidden>
+        <div class="card">
+          <h1 id="fatal-title"></h1>
+          <p class="muted" id="fatal-text"></p>
+          <button type="button" class="btn" id="fatal-retry">Tentar de novo</button>
+        </div>
+      </section>
+
+      <section id="dash" hidden>
+        <div class="filters" role="toolbar" aria-label="Filtros">
+          <label>Período
+            <select id="f-period">
+              <option value="7">7 dias</option>
+              <option value="30" selected>30 dias</option>
+              <option value="90">90 dias</option>
+              <option value="180">180 dias</option>
+            </select>
+          </label>
+          <label>Versão
+            <select id="f-version"><option value="">Todas</option></select>
+          </label>
+          <label>Categoria de falha
+            <select id="f-category">
+              <option value="">Todas</option>
+              <option value="network">Rede</option>
+              <option value="source">Fonte</option>
+              <option value="extension">Extensão</option>
+              <option value="reader">Leitor</option>
+              <option value="library">Biblioteca</option>
+              <option value="import">Importação</option>
+              <option value="database">Banco</option>
+              <option value="update">Atualização</option>
+              <option value="interface">Interface</option>
+              <option value="crash">Saída inesperada</option>
+              <option value="other">Outra</option>
+            </select>
+          </label>
+          <span class="spacer"></span>
+          <span class="muted small" id="updated" aria-live="polite"></span>
+          <button type="button" class="btn" id="refresh">Atualizar</button>
+        </div>
+
+        <nav class="tabs" role="tablist" aria-label="Seções">
+          <button role="tab" id="tab-overview" aria-selected="true" aria-controls="panel">Visão geral</button>
+          <button role="tab" id="tab-versions" aria-selected="false" aria-controls="panel">Versões</button>
+          <button role="tab" id="tab-sources" aria-selected="false" aria-controls="panel">Fontes</button>
+          <button role="tab" id="tab-failures" aria-selected="false" aria-controls="panel">Falhas</button>
+        </nav>
+
+        <div id="panel" role="tabpanel" aria-live="polite"></div>
+      </section>
+    </main>
+    <div class="tooltip" id="tooltip" role="tooltip" hidden></div>
+  </body>
+</html>

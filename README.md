@@ -35,6 +35,7 @@
 - **Leitura Guiada:** a página fica inteira e cada balão salta para fora, maior, na ordem de leitura. A detecção roda no próprio computador, e o que estiver errado pode ser corrigido à mão.
 - **Fontes de leitura, um plugin opcional:** instale pela aba Plugins. Repositórios próprios com assinatura e confiança explícita, extensões em WebAssembly isolado, pesquisa em Explorar e leitura capítulo por capítulo, sem baixar. As obras entram em favoritos e coleções, aparecem no Início e guardam onde você parou. O que você decidir baixar vira CBZ na biblioteca e abre sem internet. O Prancha não vem com fontes instaladas, e o único repositório publicado pelo projeto é uma [demonstração com obras originais](docs/extensions/README.md#repositório-de-demonstração). Extensões são código de terceiros: leia o [guia](docs/extensions/README.md). Repositórios do Mihon no formato do Keiyoushi [funcionam pelo Suwayomi](docs/extensions/COMPATIBILITY.md), baixado na primeira instalação e sem o isolamento do Prancha.
 - **Tutorial** de primeira execução com importação real.
+- **Privacidade:** sem conta e sem coleta por padrão. Estatísticas de uso são opcionais, desligadas até você aceitar e nunca incluem o que você lê. Veja o [aviso de privacidade](docs/PRIVACIDADE.md).
 
 | Leitor | Configurações |
 |---|---|
@@ -100,6 +101,7 @@ npm run test:rust      # cargo test: formatos, importação, capas, catálogo, p
 npm run e2e:build      # compila o app de depuração e gera os arquivos de teste
 npm run test:e2e       # Playwright no executável real (WebView2 via CDP) + capturas de tela
 npm run test:update    # atualização real entre duas versões instaladas, com servidor local
+bash supabase/tests/run.sh  # banco da telemetria (RLS, validação, painel) num Postgres local
 ```
 
 Gerar os instaladores pede a chave de assinatura das atualizações ([`docs/RELEASING.md`](docs/RELEASING.md)). Para compilar sem ela:
@@ -141,10 +143,11 @@ e `src-tauri/tauri.conf.json` (`productName` e `app.windows[0].title`, usados no
 | `src/` | Interface em React: `features/` (biblioteca, leitor, tutorial, configurações), `domain/` (regras sem interface), `services/` e `components/` |
 | `src-tauri/` | Backend em Rust: formatos, importação, capas, banco de dados, em `src/guided/` a detecção da Leitura Guiada e em `src/extensions/` repositórios, runtime, fontes e downloads |
 | `extensions/` | Contrato WIT, SDK, modelo, ferramenta `prancha-ext` e a extensão e o repositório de demonstração |
-| `site/` | Site oficial, publicado na Vercel |
+| `site/` | Site oficial, publicado na Vercel, com as funções da telemetria (`api/`) e o painel administrativo (`admin/`) |
+| `supabase/` | Migrações e testes do banco da telemetria |
 | `scripts/` | Geração do site, da página de downloads, das notas de versão e das licenças de terceiros |
 | `tests/` | Testes de interface (`unit/`) e no executável real (`e2e/`) |
-| `docs/` | [Arquitetura](docs/ARCHITECTURE.md), [extensões](docs/extensions/README.md), [relatório de testes](docs/TEST_REPORT.md), [como publicar uma versão](docs/RELEASING.md) e [plano de implementação](docs/IMPLEMENTATION_PLAN.md) |
+| `docs/` | [Arquitetura](docs/ARCHITECTURE.md), [extensões](docs/extensions/README.md), [relatório de testes](docs/TEST_REPORT.md), [como publicar uma versão](docs/RELEASING.md), [telemetria](docs/TELEMETRY.md), [aviso de privacidade](docs/PRIVACIDADE.md) e [plano de implementação](docs/IMPLEMENTATION_PLAN.md) |
 
 ## Versões
 

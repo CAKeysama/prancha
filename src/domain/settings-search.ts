@@ -1,7 +1,7 @@
 // Índice da pesquisa das configurações: cada opção com as palavras que alguém usaria para procurá-la,
 // não só o título que aparece na tela. Os `id`s são as âncoras `setting-<id>` da tela.
 
-export type SettingsCategory = "aparencia" | "leitura" | "biblioteca" | "notificacoes" | "armazenamento" | "atualizacoes" | "geral";
+export type SettingsCategory = "aparencia" | "leitura" | "biblioteca" | "notificacoes" | "armazenamento" | "atualizacoes" | "privacidade" | "geral";
 /** `plugins` aponta para a tela Plugins, onde moram as opções de leitura online. */
 export type SettingPlace = SettingsCategory | "plugins";
 
@@ -12,6 +12,7 @@ export const SETTINGS_CATEGORIES: ReadonlyArray<{ id: SettingsCategory; label: s
   { id: "notificacoes", label: "Notificações" },
   { id: "armazenamento", label: "Armazenamento" },
   { id: "atualizacoes", label: "Atualizações" },
+  { id: "privacidade", label: "Privacidade" },
   { id: "geral", label: "Geral" },
 ];
 
@@ -64,6 +65,10 @@ export const SETTINGS_INDEX: readonly SettingEntry[] = [
   { id: "versao", place: "atualizacoes", title: "Versão instalada", description: "A versão do Prancha neste computador.", keywords: ["versão", "número"] },
   { id: "procurar", place: "atualizacoes", title: "Procurar nova versão", description: "Verifica se há atualização e instala.", keywords: ["atualizar", "atualização", "update", "nova versão", "instalar"] },
   { id: "historico", place: "atualizacoes", title: "Versões publicadas", description: "As notas de cada versão.", keywords: ["histórico", "novidades", "changelog", "notas", "o que mudou"] },
+
+  { id: "telemetria", place: "privacidade", title: "Estatísticas de uso", description: "Telemetria voluntária: versão, fontes usadas, falhas e tempos, sem conteúdo nem dados pessoais.", keywords: ["telemetria", "privacidade", "dados", "coleta", "estatísticas", "métricas", "analytics", "consentimento", "rastreamento", "anônimo"] },
+  { id: "telemetria-identificador", place: "privacidade", title: "Identificador da instalação", description: "Troca o identificador aleatório usado pela telemetria.", keywords: ["identificador", "id", "renovar", "trocar", "anônimo", "telemetria"] },
+  { id: "telemetria-apagar", place: "privacidade", title: "Apagar os dados enviados", description: "Desliga a telemetria e pede ao servidor que apague o que esta instalação enviou.", keywords: ["apagar", "excluir", "remover", "dados", "lgpd", "privacidade", "telemetria"] },
 
   { id: "idioma", place: "geral", title: "Idioma", description: "Português do Brasil.", keywords: ["língua", "language", "português", "tradução"] },
   { id: "tutorial", place: "geral", title: "Tutorial de primeira execução", description: "Mostra de novo o passo a passo para adicionar e ler uma HQ.", keywords: ["ajuda", "passo a passo", "guia", "introdução", "começar"] },

@@ -173,6 +173,10 @@ NotificationsProvider     contagem global, cache do popup, ações → useNav
 
 **Limites por plataforma.** No desktop, o plugin sempre responde que a permissão foi concedida: se o sistema bloquear o Prancha (Windows: Configurações › Notificações; macOS: Ajustes › Notificações), o aviso simplesmente não aparece, e o botão de teste nas configurações serve para conferir. No Windows, o clique só chega enquanto o aviso está na tela, não depois de ele ir para a Central de Ações. No Linux, depende de um servidor de notificações compatível com o D-Bus.
 
+## Telemetria
+
+Opcional e desligada até a pessoa aceitar (Configurações › Privacidade, ou o convite único depois do tutorial). `telemetry.rs` soma contadores por dia em memória, só com consentimento, e uma thread própria envia lotes a cada 10 minutos para as funções da Vercel em `site/api/telemetry/`, que gravam num schema fechado do Supabase. A rede sai pelo backend, como nas atualizações: a CSP da interface não muda. Revogar para os envios na hora, descarta a fila e apaga o identificador. Nada disso bloqueia a abertura, a biblioteca ou o leitor. O painel dos administradores fica em `site/admin/`. Detalhes, tabelas, RLS e limites em [TELEMETRY.md](TELEMETRY.md).
+
 ## Limites de segurança (`formats/mod.rs`)
 
 Até 20 000 entradas por arquivo, 150 MB por página, 2 MB para `ComicInfo.xml`, imagens de até 30 000 px e 1 GB de alocação na decodificação. Leituras usam `take(limite + 1)` para não confiar no tamanho declarado.
