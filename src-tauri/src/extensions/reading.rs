@@ -5,7 +5,7 @@
 //! enquanto há uma sessão aberta com atividade recente. Quem decide o que é início efetivo e o que é chegar ao fim é o
 //! leitor (`src/domain/reading-lifecycle.ts`); aqui as transições são gravadas de forma idempotente e transacional.
 //! A posição continua em `chapter_progress` (ou `reading_progress`, quando o capítulo está na biblioteca) e nunca é
-//! apagada por uma mudança de estado. Ver docs/adr/0010-progresso-de-leitura.md.
+//! apagada por uma mudança de estado. Ver docs/adr/0003-progresso-de-leitura.md.
 
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
@@ -99,6 +99,14 @@ fn exists(conn: &Connection, id: i64) -> AppResult<()> {
     if found { Ok(()) } else { Err(AppError::user("chapter_not_found", "Este capítulo não está mais registrado.")) }
 }
 
+/// Uma sessão que parou de dar sinal já terminou: fecha na última atividade, e uma leitura nova abre outra.
+fn end_stale(conn: &Connection, chapter_id: i64, now: i64) -> AppResult<usize> {
+    Ok(conn.execute(
+        "UPDATE reading_sessions SET ended_at = last_activity_at, end_reason = 'recovered' WHERE chapter_id = ?1 AND ended_at IS NULL AND last_activity_at <= ?2",
+        params![chapter_id, now - SESSION_STALE_MS],
+    )?)
+}
+
 fn end_sessions_of(conn: &Connection, chapter_id: i64, now: i64, reason: &str) -> AppResult<usize> {
     Ok(conn.execute("UPDATE reading_sessions SET ended_at = ?2, end_reason = ?3 WHERE chapter_id = ?1 AND ended_at IS NULL", params![chapter_id, now, reason])?)
 }
@@ -116,6 +124,7 @@ pub fn start(conn: &mut Connection, id: i64) -> AppResult<ChapterReadInfo> {
     exists(conn, id)?;
     let now = now_ms();
     let tx = conn.transaction()?;
+    end_stale(&tx, id, now)?;
     tx.execute("UPDATE reading_sessions SET ended_at = ?2, end_reason = 'replaced' WHERE chapter_id <> ?1 AND ended_at IS NULL", params![id, now])?;
     let touched = tx.execute("UPDATE reading_sessions SET last_activity_at = ?2 WHERE chapter_id = ?1 AND ended_at IS NULL", params![id, now])?;
     if touched == 0 {
@@ -138,6 +147,7 @@ pub fn start(conn: &mut Connection, id: i64) -> AppResult<ChapterReadInfo> {
 /// O leitor continua aberto neste capítulo. Não abre sessão: sem início efetivo, não há o que manter.
 pub fn touch(conn: &Connection, id: i64) -> AppResult<bool> {
     let now = now_ms();
+    end_stale(conn, id, now)?;
     let touched = conn.execute("UPDATE reading_sessions SET last_activity_at = ?2 WHERE chapter_id = ?1 AND ended_at IS NULL", params![id, now])?;
     if touched > 0 {
         conn.execute("UPDATE online_chapters SET last_read_at = ?2 WHERE id = ?1", params![id, now])?;
