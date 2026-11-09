@@ -167,6 +167,8 @@ export interface SeriesCard {
   lastCheckedAt: number | null;
   lastUpdateAt: number | null;
   favorite: boolean;
+  /** Capítulos novos: chegaram depois da primeira sincronização e ainda não foram abertos nem marcados como lidos. */
+  newCount: number;
 }
 
 export interface BrowsePage {
@@ -191,6 +193,50 @@ export interface ChapterView {
   comicId: number | null;
   progress: { pageIndex: number; pageCount: number } | null;
   download: { id: number; status: DownloadStatus; pagesDone: number; pagesTotal: number; error: string | null } | null;
+  readState: ChapterReadState;
+  /** Independe do estado de leitura: um capítulo novo pode estar em andamento, e um antigo, não lido. */
+  isNew: boolean;
+  firstSeenAt: number | null;
+  completedAt: number | null;
+}
+
+/**
+ * Os quatro estados de um capítulo (ver docs/adr/0003-progresso-de-leitura.md).
+ * `reading` só existe enquanto o capítulo está aberto no leitor com leitura efetiva; ao sair, vira `in_progress`.
+ */
+export type ChapterReadState = "unread" | "reading" | "in_progress" | "read";
+
+export const READ_STATE_LABELS: Record<ChapterReadState, string> = {
+  unread: "Não lido",
+  reading: "Lendo",
+  in_progress: "Em andamento",
+  read: "Lido",
+};
+
+/** O que o backend devolve depois de uma mudança de estado. */
+export interface ChapterReadInfo {
+  id: number;
+  seriesId: number;
+  readState: ChapterReadState;
+  isNew: boolean;
+  completedAt: number | null;
+}
+
+/** Aplica as mudanças à lista na hora, sem esperar a recarga. */
+export function applyReadInfo(chapters: ChapterView[], infos: ChapterReadInfo[]): ChapterView[] {
+  if (infos.length === 0) return chapters;
+  const byId = new Map(infos.map((info) => [info.id, info]));
+  return chapters.map((chapter) => {
+    const info = byId.get(chapter.id);
+    return info ? { ...chapter, readState: info.readState, isNew: info.isNew, completedAt: info.completedAt } : chapter;
+  });
+}
+
+/** Os anteriores na ordem de leitura informada pela fonte. Posições iguais à do escolhido não contam: sem como saber, nada é marcado. */
+export function previousChapters(chapters: ChapterView[], id: number): ChapterView[] {
+  const chosen = chapters.find((chapter) => chapter.id === id);
+  if (!chosen) return [];
+  return chapters.filter((chapter) => chapter.order < chosen.order);
 }
 
 export interface ChapterSession {
@@ -211,6 +257,7 @@ export interface SeriesResume {
   chapterId: number;
   title: string;
   progress: { pageIndex: number; pageCount: number } | null;
+  state: ChapterReadState;
 }
 
 /** Até onde a pessoa leu e onde a obra está guardada. Quem decide onde a leitura continua é o backend. */
@@ -237,6 +284,8 @@ export interface LibrarySeries extends SeriesReading {
   favorite: boolean;
   addedAt: number;
   lastOpenedAt: number | null;
+  following: boolean;
+  newCount: number;
 }
 
 export interface ComicOrigin {
@@ -323,7 +372,7 @@ export function chapterStream(sessions: ChapterSession[]): Array<ReaderChapter &
 }
 
 export function chapterFinished(chapter: ChapterView): boolean {
-  return !!chapter.progress && chapter.progress.pageIndex >= chapter.progress.pageCount - 1;
+  return chapter.readState === "read";
 }
 
 const HISTORY_LIMIT = 8;

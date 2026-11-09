@@ -93,12 +93,13 @@ function card(id: number, title: string, overrides: Partial<SeriesCard> = {}): S
     lastCheckedAt: null,
     lastUpdateAt: null,
     favorite: false,
+    newCount: 0,
     ...overrides,
   };
 }
 
 function chapter(id: number, title: string, overrides: Partial<ChapterView> = {}): ChapterView {
-  return { id, remoteId: String(id), title, number: String(id), publishedAt: null, order: id, state: "available", comicId: null, progress: null, download: null, ...overrides };
+  return { id, remoteId: String(id), title, number: String(id), publishedAt: null, order: id, state: "available", comicId: null, progress: null, download: null, readState: "unread", isNew: false, firstSeenAt: null, completedAt: null, ...overrides };
 }
 
 let handlers: Record<string, (args: Record<string, unknown>) => unknown>;
@@ -605,7 +606,7 @@ describe("Obra e capítulos", () => {
     readStatus: "unread",
     chapterCount: chapters.length,
     chaptersRead: 0,
-    resume: chapters[0] ? { chapterId: chapters[0].id, title: chapters[0].title, progress: null } : null,
+    resume: chapters[0] ? { chapterId: chapters[0].id, title: chapters[0].title, progress: null, state: "unread" } : null,
     collections: [],
     sourceError: null,
     sourceProtected: false,
@@ -621,17 +622,19 @@ describe("Obra e capítulos", () => {
   }
 
   it("distingue os estados do capítulo e omite o que a fonte não informou", async () => {
-    const chapters = [chapter(1, "Disponível"), chapter(2, "Baixado", { state: "downloaded" }), chapter(3, "Offline", { state: "offline", comicId: 9, progress: { pageIndex: 2, pageCount: 5 } })];
+    const chapters = [chapter(1, "Disponível"), chapter(2, "Baixado", { state: "downloaded" }), chapter(3, "Offline", { state: "offline", comicId: 9, progress: { pageIndex: 2, pageCount: 5 }, readState: "in_progress" }), chapter(4, "Visto", { progress: { pageIndex: 1, pageCount: 5 } })];
     handlers.series_stored = () => view(chapters);
     handlers.series_open = () => view(chapters);
     await openSeries();
     const rows = await screen.findAllByTestId("chapter");
-    expect(rows).toHaveLength(3);
+    expect(rows).toHaveLength(4);
     const text = rows.map((row) => row.textContent ?? "").join("|");
     expect(text).toContain("Disponível online");
     expect(text).toContain("Baixado");
     expect(text).toContain("Na biblioteca");
     expect(text).toContain("Página 3 de 5");
+    // Progresso de um capítulo não lido (só aberto, sem leitura efetiva) não aparece.
+    expect(text).not.toContain("Página 2 de 5");
     expect(screen.queryByText("Autoria")).toBeNull();
     expect(screen.queryByText("Gêneros")).toBeNull();
   });
@@ -646,15 +649,17 @@ describe("Obra e capítulos", () => {
   });
 
   it("todo capítulo tem Ler, sem precisar baixar, e a obra continua de onde parou", async () => {
-    const chapters = [chapter(1, "Um", { order: 0, progress: { pageIndex: 4, pageCount: 5 } }), chapter(2, "Dois", { order: 1 }), chapter(3, "Três", { order: 2 })];
-    const reading = { readStatus: "reading", chaptersRead: 1, resume: { chapterId: 2, title: "Dois", progress: null } };
+    const chapters = [chapter(1, "Um", { order: 0, progress: { pageIndex: 4, pageCount: 5 }, readState: "read", completedAt: 1 }), chapter(2, "Dois", { order: 1 }), chapter(3, "Três", { order: 2 })];
+    const reading = { readStatus: "reading", chaptersRead: 1, resume: { chapterId: 2, title: "Dois", progress: null, state: "unread" } };
     handlers.series_stored = () => view(chapters, reading);
     handlers.series_open = () => view(chapters, reading);
     handlers.chapter_open = () => reject("source_error", "Fora do ar.");
     await openSeries();
     const rows = await screen.findAllByTestId("chapter");
     for (const row of rows) expect(within(row).getByRole("button", { name: "Ler" })).toBeTruthy();
-    expect(rows.map((row) => row.textContent).join("|")).toContain("Lido");
+    const first = rows.find((row) => row.textContent?.includes("Um"))!;
+    expect(first.textContent).toContain("Lido");
+    expect(first.dataset.readState).toBe("read");
     await userEvent.click(screen.getByRole("button", { name: "Continuar" }));
     await waitFor(() => expect(calls.find((c) => c.cmd === "chapter_open")?.args.id).toBe(2));
     expect(calls.some((c) => c.cmd === "downloads_enqueue")).toBe(false);
@@ -668,10 +673,10 @@ describe("Obra e capítulos", () => {
     handlers.downloads_enqueue = () => [];
     await openSeries();
     await screen.findAllByTestId("chapter");
-    await userEvent.click(screen.getByRole("button", { name: "Baixar todos" }));
+    await userEvent.click(screen.getByRole("button", { name: "Baixar todos os capítulos" }));
     await waitFor(() => expect(calls.filter((c) => c.cmd === "downloads_enqueue").at(-1)?.args.chapterIds).toEqual([3, 2, 1]));
     await userEvent.click(screen.getByLabelText("Selecionar Dois"));
-    await userEvent.click(screen.getByRole("button", { name: "Baixar 1" }));
+    await userEvent.click(screen.getByRole("button", { name: "Baixar 1 capítulo selecionado" }));
     await waitFor(() => expect(calls.filter((c) => c.cmd === "downloads_enqueue").at(-1)?.args.chapterIds).toEqual([2]));
   });
 
@@ -803,10 +808,12 @@ describe("regras puras", () => {
     ]);
   });
 
-  it("um capítulo só termina na última página", () => {
-    const read = (pageIndex: number) => ({ progress: { pageIndex, pageCount: 5 } });
-    expect(chapterFinished(chapter(1, "a", read(4)))).toBe(true);
-    expect(chapterFinished(chapter(1, "a", read(3)))).toBe(false);
+  it("um capítulo só termina quando está marcado como lido, não pela página guardada", () => {
+    const atLast = { progress: { pageIndex: 4, pageCount: 5 } };
+    expect(chapterFinished(chapter(1, "a", { readState: "read" }))).toBe(true);
+    expect(chapterFinished(chapter(1, "a", atLast))).toBe(false);
+    expect(chapterFinished(chapter(1, "a", { ...atLast, readState: "in_progress" }))).toBe(false);
+    expect(chapterFinished(chapter(1, "a", { readState: "reading" }))).toBe(false);
     expect(chapterFinished(chapter(1, "a"))).toBe(false);
   });
 

@@ -5,6 +5,7 @@ import { Cover } from "../../components/Cover";
 import { ProgressBar } from "../../components/Feedback";
 import { Menu, type MenuEntry } from "../../components/Menu";
 import { cn } from "../../components/cn";
+import { NewCount } from "../../components/NewCount";
 import { seriesProgressLabel, seriesRatio } from "../../domain/library-items";
 import type { LibrarySeries } from "../../domain/online";
 import { STATUS_LABELS, formatDate, progressLabel, progressRatio, readActionLabel, subtitle } from "../../domain/progress";
@@ -19,29 +20,45 @@ interface StatusProps {
   title: string;
 }
 
-function StatusLine({ status, label, ratio, title, compact }: StatusProps & { compact?: boolean }) {
+function StatusLine({ status, label, ratio, title, compact, onResume }: StatusProps & { compact?: boolean; onResume?: (() => void) | undefined }) {
   const Icon = status === "completed" ? CircleCheck : status === "reading" ? BookOpen : CircleDashed;
   // Uma linha só: em andamento mostra onde parou (o estado fica implícito e no leitor de tela).
   const reading = status === "reading";
   return (
     <div className="min-w-0">
-      <p className={cn("flex items-center gap-1.5 text-xs", status === "completed" ? "font-medium text-success" : reading ? "text-fg" : "text-muted")}>
-        <Icon size={13} aria-hidden className={cn("shrink-0", reading && "text-accent")} />
-        {reading && <span className="sr-only">{STATUS_LABELS.reading}: </span>}
-        <span className="truncate">{reading ? label : STATUS_LABELS[status]}</span>
-      </p>
+      {reading && onResume ? (
+        // Na obra, onde parou é também o atalho para continuar dali: o mesmo que o botão "Continuar".
+        <button
+          type="button"
+          onClick={onResume}
+          className="flex max-w-full items-center gap-1.5 rounded-sm text-left text-xs text-fg hover:underline"
+          aria-label={`Continuar ${title}: ${label}`}
+          data-testid="resume-chapter"
+        >
+          <Icon size={13} aria-hidden className="shrink-0 text-accent" />
+          <span className="truncate">{label}</span>
+        </button>
+      ) : (
+        <p className={cn("flex items-center gap-1.5 text-xs", status === "completed" ? "font-medium text-success" : reading ? "text-fg" : "text-muted")}>
+          <Icon size={13} aria-hidden className={cn("shrink-0", reading && "text-accent")} />
+          {reading && <span className="sr-only">{STATUS_LABELS.reading}: </span>}
+          <span className="truncate">{reading ? label : STATUS_LABELS[status]}</span>
+        </p>
+      )}
       {reading && !compact && ratio !== null && <ProgressBar value={ratio} label={`Progresso de ${title}`} className="mt-1.5" />}
     </div>
   );
 }
 
-function Flags({ missing, favorite }: { missing: boolean; favorite: boolean }) {
+function Flags({ missing, favorite, newCount = 0 }: { missing: boolean; favorite: boolean; newCount?: number }) {
   return (
     <div className="pointer-events-none absolute top-1.5 right-1.5 left-1.5 flex items-start justify-between gap-1">
       {missing ? (
         <span className="inline-flex items-center gap-1 rounded bg-danger-emphasis px-1.5 py-0.5 text-[11px] font-semibold text-on-emphasis">
           <FileWarning size={12} aria-hidden /> Arquivo ausente
         </span>
+      ) : newCount > 0 ? (
+        <NewCount count={newCount} className="shadow-overlay" />
       ) : (
         <span />
       )}
@@ -72,9 +89,13 @@ interface ItemFrame {
   /** Sem leitura possível (arquivo ausente), o botão não aparece. */
   onRead: (() => void) | null;
   menu: MenuEntry[];
+  /** Capítulos novos da obra. As HQs não têm. */
+  newCount?: number;
+  /** Clicar em onde parou abre o capítulo no ponto salvo. */
+  onResume?: () => void;
 }
 
-function CardFrame({ title, sub, ids, cover, status, favorite, missing, onOpen, onRead, menu, width, highlight }: ItemFrame & { width: number; missing?: boolean; highlight?: boolean }) {
+function CardFrame({ title, sub, ids, cover, status, favorite, missing, onOpen, onRead, menu, width, highlight, newCount, onResume }: ItemFrame & { width: number; missing?: boolean; highlight?: boolean }) {
   const titleId = useId();
   const coverHeight = width * 1.5;
   return (
@@ -82,7 +103,7 @@ function CardFrame({ title, sub, ids, cover, status, favorite, missing, onOpen, 
       <button type="button" onClick={onOpen} className={cn("block w-full rounded-md text-left", highlight && "ring-2 ring-accent ring-offset-2 ring-offset-bg")} aria-label={`Ver detalhes de ${title}`}>
         <div className="relative">
           {cover}
-          <Flags missing={missing ?? false} favorite={favorite} />
+          <Flags missing={missing ?? false} favorite={favorite} newCount={newCount} />
         </div>
       </button>
       {onRead && (
@@ -104,13 +125,13 @@ function CardFrame({ title, sub, ids, cover, status, favorite, missing, onOpen, 
         </div>
       </div>
       <div className="mt-1">
-        <StatusLine {...status} />
+        <StatusLine {...status} onResume={onResume} />
       </div>
     </article>
   );
 }
 
-function RowFrame({ title, sub, ids, cover, status, favorite, onOpen, onRead, menu, note, kind, addedAt }: ItemFrame & { note?: ReactNode; kind: string; addedAt: number }) {
+function RowFrame({ title, sub, ids, cover, status, favorite, onOpen, onRead, menu, note, kind, addedAt, newCount = 0 }: ItemFrame & { note?: ReactNode; kind: string; addedAt: number }) {
   return (
     <div className="group flex h-[88px] items-center gap-3 border-b border-border px-3" {...ids}>
       <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 items-center gap-3 rounded-md py-1 text-left" aria-label={`Ver detalhes de ${title}`}>
@@ -124,6 +145,7 @@ function RowFrame({ title, sub, ids, cover, status, favorite, onOpen, onRead, me
                 <span className="sr-only">Favorito</span>
               </>
             )}
+            <NewCount count={newCount} />
           </p>
           <p className="truncate text-sm text-muted">{sub}</p>
           {note}
@@ -223,6 +245,8 @@ export const SeriesItemCard = memo(function SeriesItemCard({ series, width, coll
       favorite={series.favorite}
       cover={<OnlineCover series={series} />}
       status={seriesStatus(series)}
+      newCount={series.newCount}
+      onResume={() => actions.readSeries(series)}
       onOpen={() => actions.openSeries(series)}
       onRead={() => actions.readSeries(series)}
       menu={actions.seriesMenu(series, { collectionId })}
@@ -241,6 +265,7 @@ export const SeriesItemRow = memo(function SeriesItemRow({ series, collectionId 
       cover={<OnlineCover series={series} className="rounded" />}
       kind="Online"
       addedAt={series.addedAt}
+      newCount={series.newCount}
       status={seriesStatus(series)}
       onOpen={() => actions.openSeries(series)}
       onRead={() => actions.readSeries(series)}

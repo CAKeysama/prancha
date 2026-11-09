@@ -27,11 +27,16 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   icon?: LucideIcon;
   trailingIcon?: LucideIcon;
   loading?: boolean;
+  /** Classe do ícone (cor, preenchimento, animação). */
+  iconClassName?: string;
+  /** Preenche o ícone com a cor do traço (estrela e sino ativos). */
+  iconFilled?: boolean;
+  onIconAnimationEnd?: () => void;
   children?: ReactNode;
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { variant = "secondary", size = "md", icon: Icon, trailingIcon: Trailing, loading, className, children, disabled, type, ...rest },
+  { variant = "secondary", size = "md", icon: Icon, trailingIcon: Trailing, loading, iconClassName, iconFilled, onIconAnimationEnd, className, children, disabled, type, ...rest },
   ref,
 ) {
   return (
@@ -50,7 +55,11 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       )}
       {...rest}
     >
-      {loading ? <Spinner size={14} /> : Icon ? <Icon size={size === "sm" ? 14 : 16} aria-hidden /> : null}
+      {loading ? (
+        <Spinner size={14} />
+      ) : Icon ? (
+        <Icon size={size === "sm" ? 14 : 16} aria-hidden className={iconClassName} fill={iconFilled ? "currentColor" : "none"} onAnimationEnd={onIconAnimationEnd} />
+      ) : null}
       {children}
       {Trailing ? <Trailing size={14} aria-hidden className="text-muted" /> : null}
     </button>
@@ -66,14 +75,16 @@ interface IconButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 
   size?: Size;
   pressed?: boolean;
   tooltipSide?: "top" | "bottom";
+  /** Espera do tooltip, no hover e no foco por teclado. Ver `TOOLTIP_DELAY_MS`. */
+  tooltipDelay?: number;
 }
 
 export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton(
-  { icon: Icon, label, shortcut, variant = "ghost", size = "md", pressed, className, tooltipSide = "bottom", type, ...rest },
+  { icon: Icon, label, shortcut, variant = "ghost", size = "md", pressed, className, tooltipSide = "bottom", tooltipDelay, type, ...rest },
   ref,
 ) {
   return (
-    <Tooltip content={shortcut ? `${label} (${shortcut})` : label} side={tooltipSide}>
+    <Tooltip content={shortcut ? `${label} (${shortcut})` : label} side={tooltipSide} delay={tooltipDelay}>
       <button
         ref={ref}
         type={type ?? "button"}

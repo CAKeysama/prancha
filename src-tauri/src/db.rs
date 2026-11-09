@@ -17,6 +17,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0004_online_reading.sql"),
     include_str!("../migrations/0005_series_library.sql"),
     include_str!("../migrations/0006_series_classification.sql"),
+    include_str!("../migrations/0007_reading_state.sql"),
 ];
 
 pub fn schema_version() -> i64 {
@@ -196,6 +197,67 @@ mod tests {
         assert_eq!(state("nativa"), "known");
         assert_eq!(state("sem-extensao"), "pending", "sem saber de onde veio, não vale como segura");
         assert_eq!(state("entrada-quebrada"), "pending", "uma entrada ilegível não impede o app de abrir nem vale como segura");
+    }
+
+    /// O progresso que já existia vira estado; nada do que já estava registrado aparece como novo.
+    #[test]
+    fn existing_progress_becomes_reading_state_and_nothing_is_new() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        configure(&conn).unwrap();
+        for sql in &MIGRATIONS[..6] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.pragma_update(None, "user_version", 6).unwrap();
+        conn.execute_batch(
+            "INSERT INTO comics (id, path, file_name, format, fingerprint, title, added_at, updated_at, status) VALUES (7, 'C:/c.cbz', 'c.cbz', 'cbz', 'abc', 'Baixado', 1, 900, 'completed');
+             INSERT INTO online_series (id, extension_id, source_id, remote_id, title, created_at, updated_at) VALUES (1, 'e', 's', 'obra', 'Obra', 50, 50);
+             INSERT INTO online_chapters (id, series_id, remote_id, title, sort_order) VALUES (1, 1, 'fim', 'Fim', 0);
+             INSERT INTO online_chapters (id, series_id, remote_id, title, sort_order) VALUES (2, 1, 'meio', 'Meio', 1);
+             INSERT INTO online_chapters (id, series_id, remote_id, title, sort_order) VALUES (3, 1, 'aberto', 'Aberto', 2);
+             INSERT INTO online_chapters (id, series_id, remote_id, title, sort_order, comic_id) VALUES (4, 1, 'baixado', 'Baixado', 3, 7);
+             INSERT INTO online_chapters (id, series_id, remote_id, title, sort_order) VALUES (5, 1, 'nunca', 'Nunca', 4);
+             INSERT INTO chapter_progress (chapter_id, page_index, page_count, scroll_ratio, updated_at) VALUES (1, 9, 10, 0, 100);
+             INSERT INTO chapter_progress (chapter_id, page_index, page_count, scroll_ratio, updated_at) VALUES (2, 2, 10, 0.3, 200);
+             INSERT INTO chapter_progress (chapter_id, page_index, page_count, scroll_ratio, updated_at) VALUES (3, 0, 10, 0, 300);",
+        )
+        .unwrap();
+        migrate(&mut conn).unwrap();
+        assert_eq!(conn.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0)).unwrap(), schema_version());
+
+        let state = |id: i64| {
+            conn.query_row(
+                "SELECT completed_at, reading_started_at, last_read_at, manual_unread FROM online_chapters WHERE id = ?1",
+                [id],
+                |r| Ok((r.get::<_, Option<i64>>(0)?, r.get::<_, Option<i64>>(1)?, r.get::<_, Option<i64>>(2)?, r.get::<_, i64>(3)?)),
+            )
+            .unwrap()
+        };
+        assert_eq!(state(1), (Some(100), Some(100), Some(100), 0), "na última página, concluído");
+        assert_eq!(state(2), (None, Some(200), Some(200), 0), "no meio, iniciado");
+        assert_eq!(state(3), (None, None, None, 0), "só abrir não é começar");
+        assert_eq!(state(4), (Some(900), Some(900), Some(900), 0), "a HQ concluída conclui o capítulo");
+        assert_eq!(state(5), (None, None, None, 0));
+
+        let novelty: Vec<(Option<i64>, Option<i64>)> = conn
+            .prepare("SELECT first_seen_at, acknowledged_at FROM online_chapters ORDER BY id")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(novelty, vec![(Some(50), Some(50)); 5], "nenhum capítulo antigo é novo");
+
+        let progress: Vec<(i64, i64, i64, f64, i64)> = conn
+            .prepare("SELECT chapter_id, page_index, page_count, scroll_ratio, updated_at FROM chapter_progress ORDER BY chapter_id")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(progress, vec![(1, 9, 10, 0.0, 100), (2, 2, 10, 0.3, 200), (3, 0, 10, 0.0, 300)], "a posição não muda");
+        assert_eq!(count(&conn, "reading_sessions"), 0);
+        let comic_status: String = conn.query_row("SELECT status FROM comics WHERE id = 7", [], |r| r.get(0)).unwrap();
+        assert_eq!(comic_status, "completed");
     }
 
     #[test]

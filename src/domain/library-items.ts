@@ -1,6 +1,6 @@
 // Quadrinhos da biblioteca e obras das fontes, juntos nas mesmas telas.
 
-import type { LibrarySeries } from "./online";
+import { READ_STATE_LABELS, type LibrarySeries } from "./online";
 import { progressRatio } from "./progress";
 import type { ComicSummary, HomeData, LibraryQuery, SortKey } from "./types";
 
@@ -34,8 +34,10 @@ export function seriesRatio(series: LibrarySeries): number | null {
 export function seriesProgressLabel(series: Pick<LibrarySeries, "readStatus" | "resume">): string {
   if (series.readStatus === "completed") return "Leitura concluída";
   if (series.readStatus === "unread" || !series.resume) return "Não iniciado";
-  const { title, progress } = series.resume;
-  return progress ? `${title} · página ${progress.pageIndex + 1} de ${progress.pageCount}` : title;
+  const { title, state } = series.resume;
+  // "Capítulo 42 · Em andamento": onde parou, com o estado do capítulo. A página fica na barra e no leitor.
+  if (state === "in_progress" || state === "reading") return `${title} · ${READ_STATE_LABELS[state]}`;
+  return title;
 }
 
 const titles = new Intl.Collator("pt-BR", { numeric: true, sensitivity: "base" });

@@ -18,6 +18,7 @@ use std::time::{Duration, Instant};
 use http::{Reply, serve};
 use prancha_lib::core::Core;
 use prancha_lib::error::AppError;
+use prancha_lib::extensions::reading::{self, ReadState};
 use prancha_lib::extensions::{downloads, install, sources, suwayomi};
 use prancha_lib::library;
 use prancha_lib::extensions::net::{Access, Limits, Net, NetError, Request};
@@ -1449,24 +1450,30 @@ fn a_saved_series_shows_where_the_reading_stopped_and_is_never_pruned() {
     assert_eq!((saved().reading.read_status, saved().reading.chapter_count, saved().reading.chapters_read), ("unread", 3, 0));
     assert_eq!(saved().reading.resume.unwrap().chapter_id, chapters[0].id);
 
+    // Só gravar a posição (abrir o capítulo) não é começar a ler.
+    sources::save_chapter_progress(&core.db(), chapters[1].id, 0, 3, 0.0).unwrap();
+    assert_eq!(saved().reading.read_status, "unread");
+
+    reading::start(&mut core.db(), chapters[1].id).unwrap();
     sources::save_chapter_progress(&core.db(), chapters[1].id, 1, 3, 0.0).unwrap();
-    let reading = saved().reading;
-    assert_eq!((reading.read_status, reading.chapters_read), ("reading", 1));
-    let resume = reading.resume.unwrap();
-    assert_eq!((resume.chapter_id, resume.progress.unwrap().page_index), (chapters[1].id, 1));
+    reading::end(&core.db(), chapters[1].id).unwrap();
+    let state = saved().reading;
+    assert_eq!((state.read_status, state.chapters_read), ("reading", 0));
+    let resume = state.resume.unwrap();
+    assert_eq!((resume.chapter_id, resume.progress.unwrap().page_index, resume.state), (chapters[1].id, 1, ReadState::InProgress));
     assert!(saved().last_opened_at.is_some());
 
-    sources::save_chapter_progress(&core.db(), chapters[1].id, 2, 3, 0.0).unwrap();
-    let reading = saved().reading;
-    assert_eq!((reading.read_status, reading.chapters_read), ("reading", 2));
-    let resume = reading.resume.unwrap();
+    reading::complete(&mut core.db(), chapters[1].id).unwrap();
+    let state = saved().reading;
+    assert_eq!((state.read_status, state.chapters_read), ("reading", 1));
+    let resume = state.resume.unwrap();
     assert_eq!(resume.chapter_id, chapters[2].id, "terminado, continua no seguinte");
     assert!(resume.progress.is_none());
 
-    sources::save_chapter_progress(&core.db(), chapters[2].id, 2, 3, 0.0).unwrap();
-    let reading = saved().reading;
-    assert_eq!((reading.read_status, reading.chapters_read), ("completed", 3));
-    assert_eq!(reading.resume.unwrap().chapter_id, chapters[0].id, "terminada, ler de novo começa do primeiro");
+    reading::set_read(&mut core.db(), &[chapters[0].id, chapters[2].id], true).unwrap();
+    let state = saved().reading;
+    assert_eq!((state.read_status, state.chapters_read), ("completed", 3));
+    assert_eq!(state.resume.unwrap().chapter_id, chapters[0].id, "terminada, ler de novo começa do primeiro");
 
     sources::set_series_read(&mut core.db(), id, false).unwrap();
     assert_eq!(saved().reading.read_status, "unread");
@@ -2130,7 +2137,9 @@ fn online_reading_continues_where_it_stopped_and_a_finished_chapter_starts_over(
     assert_eq!((progress.page_index, progress.page_count), (1, 3));
 
     sources::save_chapter_progress(&core.db(), chapter_id, 2, 3, 0.0).unwrap();
-    assert_eq!(sources::open_chapter(&core, chapter_id, None).unwrap().start.page_index, 0);
+    assert_eq!(sources::open_chapter(&core, chapter_id, None).unwrap().start.page_index, 2, "sem conclusão, a última página aberta não recomeça");
+    reading::complete(&mut core.db(), chapter_id).unwrap();
+    assert_eq!(sources::open_chapter(&core, chapter_id, None).unwrap().start.page_index, 0, "concluído, reler começa do início");
 
     sources::reset_chapter_progress(&core.db(), chapter_id).unwrap();
     assert!(sources::chapters_of(&core.db(), series_id).unwrap()[0].progress.is_none());
@@ -2618,4 +2627,386 @@ fn removing_a_repository_clears_only_its_catalog() {
     assert_eq!(repository::list(&core.db()).unwrap().len(), 1);
     assert_eq!(code(repository::sync(&core, &gone.id)), "repo_not_found");
     assert_eq!(repository::sync(&core, &keep.id).unwrap().status, "ok");
+}
+
+// ---------------------------------------------------------------------------
+// Estado de leitura por capítulo
+// ---------------------------------------------------------------------------
+
+use prancha_lib::extensions::runtime::Chapter;
+
+fn remote(title: &str, order: u32) -> Chapter {
+    Chapter { id: title.to_string(), title: title.to_string(), number: None, published_at: None, order }
+}
+
+/// Uma sincronização com a fonte: os capítulos na ordem em que a lista chegou, com a posição de leitura de cada um.
+fn sync(core: &Core, series: i64, chapters: &[(&str, u32)]) -> Vec<i64> {
+    let chapters: Vec<Chapter> = chapters.iter().map(|(title, order)| remote(title, *order)).collect();
+    sources::store_chapters(&mut core.db(), series, &chapters).unwrap()
+}
+
+fn chapter_id(core: &Core, series: i64, remote: &str) -> i64 {
+    core.db().query_row("SELECT id FROM online_chapters WHERE series_id = ?1 AND remote_id = ?2", rusqlite::params![series, remote], |r| r.get(0)).unwrap()
+}
+
+/// Obra encontrada na busca e sincronizada uma vez. Devolve a obra e os capítulos na ordem dada.
+fn synced_series(core: &Core, query: &str, titles: &[&str]) -> (i64, Vec<i64>) {
+    let series = found_series(core, query);
+    let chapters: Vec<(&str, u32)> = titles.iter().enumerate().map(|(order, title)| (*title, order as u32)).collect();
+    sync(core, series, &chapters);
+    (series, titles.iter().map(|title| chapter_id(core, series, title)).collect())
+}
+
+fn info(core: &Core, id: i64) -> reading::ChapterReadInfo {
+    reading::chapter_info(&core.db(), id).unwrap()
+}
+
+fn state(core: &Core, id: i64) -> ReadState {
+    info(core, id).read_state
+}
+
+fn position(core: &Core, id: i64) -> Option<(i64, i64)> {
+    use rusqlite::OptionalExtension;
+    core.db().query_row("SELECT page_index, page_count FROM chapter_progress WHERE chapter_id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?))).optional().unwrap()
+}
+
+fn column(core: &Core, id: i64, name: &str) -> Option<i64> {
+    core.db().query_row(&format!("SELECT {name} FROM online_chapters WHERE id = ?1"), [id], |r| r.get(0)).unwrap()
+}
+
+/// (sessões abertas, motivos de encerramento em ordem) do capítulo.
+fn sessions(core: &Core, id: i64) -> (i64, Vec<String>) {
+    let conn = core.db();
+    let open = conn.query_row("SELECT count(*) FROM reading_sessions WHERE chapter_id = ?1 AND ended_at IS NULL", [id], |r| r.get(0)).unwrap();
+    let mut statement = conn.prepare("SELECT end_reason FROM reading_sessions WHERE chapter_id = ?1 AND ended_at IS NOT NULL ORDER BY id").unwrap();
+    let reasons = statement.query_map([id], |r| r.get(0)).unwrap().map(Result::unwrap).collect();
+    (open, reasons)
+}
+
+fn listed(core: &Core, series: i64, id: i64) -> sources::ChapterView {
+    sources::chapters_of(&core.db(), series).unwrap().into_iter().find(|chapter| chapter.id == id).unwrap()
+}
+
+fn new_count(core: &Core, series: i64) -> i64 {
+    sources::card(&core.db(), series).unwrap().new_count
+}
+
+#[test]
+fn a_chapter_goes_from_unread_to_reading_to_in_progress_and_keeps_its_position() {
+    let (_dir, core, _repo) = core_with_fixture(&[]);
+    let (series, ids) = synced_series(&core, "obra", &["Capítulo 1", "Capítulo 2"]);
+    let id = ids[0];
+    assert_eq!(state(&core, id), ReadState::Unread);
+    assert_eq!(reading::acknowledge(&core.db(), id).unwrap().read_state, ReadState::Unread, "abrir não muda o estado");
+    sources::save_chapter_progress(&core.db(), id, 0, 10, 0.0).unwrap();
+    assert!(!reading::touch(&core.db(), id).unwrap(), "sem início, não há sessão para manter");
+    assert_eq!(state(&core, id), ReadState::Unread);
+
+    assert_eq!(reading::start(&mut core.db(), id).unwrap().read_state, ReadState::Reading);
+    assert_eq!(listed(&core, series, id).read_state, ReadState::Reading);
+    sources::save_chapter_progress(&core.db(), id, 4, 10, 0.2).unwrap();
+    assert!(reading::touch(&core.db(), id).unwrap());
+    let ended = reading::end(&core.db(), id).unwrap();
+    assert_eq!((ended.read_state, ended.completed_at), (ReadState::InProgress, None));
+    assert_eq!(listed(&core, series, id).read_state, ReadState::InProgress);
+    assert_eq!(position(&core, id), Some((4, 10)));
+
+    assert_eq!(reading::start(&mut core.db(), id).unwrap().read_state, ReadState::Reading, "reaberto, volta a ser lido");
+    assert_eq!(position(&core, id), Some((4, 10)));
+    assert_eq!(reading::end(&core.db(), id).unwrap().read_state, ReadState::InProgress);
+    assert_eq!(position(&core, id), Some((4, 10)), "a posição atravessa as sessões");
+    assert_eq!(sessions(&core, id), (0, vec!["left".to_string(), "left".to_string()]));
+    assert_eq!(state(&core, ids[1]), ReadState::Unread, "o outro capítulo não muda");
+}
+
+#[test]
+fn completing_is_idempotent_and_rereading_keeps_the_first_completion() {
+    let (_dir, core, _repo) = core_with_fixture(&[]);
+    let (_series, ids) = synced_series(&core, "obra", &["Capítulo 1"]);
+    let id = ids[0];
+    reading::start(&mut core.db(), id).unwrap();
+    let done = reading::complete(&mut core.db(), id).unwrap();
+    assert_eq!(done.read_state, ReadState::Read);
+    let at = done.completed_at.expect("data da conclusão");
+    assert_eq!(sessions(&core, id), (0, vec!["completed".to_string()]));
+    let last_read = column(&core, id, "last_read_at");
+
+    std::thread::sleep(Duration::from_millis(5));
+    let again = reading::complete(&mut core.db(), id).unwrap();
+    assert_eq!((again.read_state, again.completed_at), (ReadState::Read, Some(at)));
+    assert_eq!(column(&core, id, "last_read_at"), last_read, "repetir não grava nada");
+
+    std::thread::sleep(Duration::from_millis(5));
+    let rereading = reading::start(&mut core.db(), id).unwrap();
+    assert_eq!((rereading.read_state, rereading.completed_at), (ReadState::Reading, Some(at)), "relendo aparece como lendo");
+    let back = reading::end(&core.db(), id).unwrap();
+    assert_eq!((back.read_state, back.completed_at), (ReadState::Read, Some(at)), "terminada a sessão, volta a lido");
+    reading::start(&mut core.db(), id).unwrap();
+    assert_eq!(reading::complete(&mut core.db(), id).unwrap().completed_at, Some(at), "concluir de novo não troca a data");
+}
+
+#[test]
+fn marking_unread_keeps_the_position_and_does_not_bring_the_novelty_back() {
+    let (_dir, core, _repo) = core_with_fixture(&[]);
+    let (series, ids) = synced_series(&core, "obra", &["Capítulo 1", "Capítulo 2"]);
+    let id = ids[0];
+    let acknowledged = column(&core, id, "acknowledged_at");
+    assert!(acknowledged.is_some());
+    reading::start(&mut core.db(), id).unwrap();
+    sources::save_chapter_progress(&core.db(), id, 5, 10, 0.0).unwrap();
+    reading::complete(&mut core.db(), id).unwrap();
+
+    let unread = reading::set_read(&mut core.db(), &[id], false).unwrap();
+    assert_eq!(unread.len(), 1);
+    assert_eq!((unread[0].read_state, unread[0].completed_at, unread[0].is_new), (ReadState::Unread, None, false));
+    assert_eq!(column(&core, id, "manual_unread"), Some(1));
+    assert_eq!(column(&core, id, "acknowledged_at"), acknowledged, "a novidade não volta");
+    assert_eq!(position(&core, id), Some((5, 10)), "a posição fica");
+    assert_eq!(listed(&core, series, id).progress.map(|p| p.page_index), Some(5));
+    assert_eq!(reading::set_read(&mut core.db(), &[id], false).unwrap()[0].read_state, ReadState::Unread, "repetir não muda nada");
+
+    assert_eq!(reading::start(&mut core.db(), id).unwrap().read_state, ReadState::Reading);
+    assert_eq!(column(&core, id, "manual_unread"), Some(0));
+    assert_eq!(reading::end(&core.db(), id).unwrap().read_state, ReadState::InProgress);
+    assert_eq!(position(&core, id), Some((5, 10)));
+
+    assert_eq!(reading::set_read(&mut core.db(), &[ids[1]], false).unwrap()[0].read_state, ReadState::Unread, "nunca lido continua não lido");
+}
+
+#[test]
+fn marking_read_acknowledges_the_novelty_and_ends_the_session() {
+    let (_dir, core, _repo) = core_with_fixture(&[]);
+    let (series, ids) = synced_series(&core, "obra", &["Capítulo 1"]);
+    sources::set_following(&core.db(), series, true).unwrap();
+    let fresh = sync(&core, series, &[("Capítulo 1", 0), ("Capítulo 2", 1)]);
+    assert_eq!(fresh.len(), 1);
+    assert!(info(&core, fresh[0]).is_new);
+    reading::start(&mut core.db(), ids[0]).unwrap();
+
+    let marked = reading::set_read(&mut core.db(), &[ids[0], fresh[0]], true).unwrap();
+    assert!(marked.iter().all(|chapter| chapter.read_state == ReadState::Read && !chapter.is_new && chapter.completed_at.is_some()), "{marked:?}");
+    assert_eq!(sessions(&core, ids[0]), (0, vec!["manual".to_string()]));
+    assert_eq!(new_count(&core, series), 0);
+    assert_eq!(code(reading::set_read(&mut core.db(), &[ids[0], 999_999], true)), "chapter_not_found");
+    assert!(info(&core, ids[0]).completed_at.is_some(), "a falha não desfaz o que estava");
+}
+
+#[test]
+fn a_session_left_open_by_a_crash_becomes_in_progress_and_never_read() {
+    let (dir, core, _repo) = core_with_fixture(&[]);
+    let (series, ids) = synced_series(&core, "obra", &["Capítulo 1", "Capítulo 2"]);
+    let id = ids[0];
+    reading::start(&mut core.db(), id).unwrap();
+    sources::save_chapter_progress(&core.db(), id, 9, 10, 0.0).unwrap();
+    let last_activity: i64 = core.db().query_row("SELECT last_activity_at FROM reading_sessions WHERE chapter_id = ?1", [id], |r| r.get(0)).unwrap();
+    // Queda: a sessão nunca recebe o fim. Na próxima abertura, o app a encerra.
+    let reopened = Core::init(dir.path().to_path_buf(), Arc::new(|_, _| {})).unwrap();
+    let (ended_at, reason): (i64, String) = reopened.db().query_row("SELECT ended_at, end_reason FROM reading_sessions WHERE chapter_id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+    assert_eq!((ended_at, reason.as_str()), (last_activity, "recovered"));
+    let recovered = reading::chapter_info(&reopened.db(), id).unwrap();
+    assert_eq!((recovered.read_state, recovered.completed_at), (ReadState::InProgress, None), "mesmo na última página, não vira lido");
+    assert_eq!(position(&core, id), Some((9, 10)));
+    assert_eq!(reading::recover_sessions(&reopened.db()).unwrap(), 0, "nada mais aberto");
+    drop(reopened);
+
+    // Sem atividade há mais que o limite, a sessão não vale como "Lendo", mesmo aberta.
+    let other = ids[1];
+    reading::start(&mut core.db(), other).unwrap();
+    core.db()
+        .execute("UPDATE reading_sessions SET last_activity_at = ?2 WHERE chapter_id = ?1 AND ended_at IS NULL", [other, prancha_lib::db::now_ms() - reading::SESSION_STALE_MS - 1000])
+        .unwrap();
+    assert_eq!(state(&core, other), ReadState::InProgress);
+    assert_eq!(listed(&core, series, other).read_state, ReadState::InProgress);
+    assert_eq!(reading::recover_sessions(&core.db()).unwrap(), 1);
+    assert_eq!(sessions(&core, other), (0, vec!["recovered".to_string()]));
+    assert_eq!(state(&core, other), ReadState::InProgress);
+}
+
+#[test]
+fn only_one_chapter_is_being_read_at_a_time() {
+    let (_dir, core, _repo) = core_with_fixture(&[]);
+    let (series, ids) = synced_series(&core, "obra", &["Capítulo 1", "Capítulo 2"]);
+    let (a, b) = (ids[0], ids[1]);
+    reading::start(&mut core.db(), a).unwrap();
+    sources::save_chapter_progress(&core.db(), a, 3, 10, 0.0).unwrap();
+    assert_eq!(reading::start(&mut core.db(), b).unwrap().read_state, ReadState::Reading);
+    assert_eq!(state(&core, a), ReadState::InProgress);
+    assert_eq!(sessions(&core, a), (0, vec!["replaced".to_string()]));
+    assert_eq!(sessions(&core, b).0, 1);
+    reading::start(&mut core.db(), b).unwrap();
+    assert_eq!(sessions(&core, b), (1, vec![]), "repetir o início não abre outra sessão");
+    let open: i64 = core.db().query_row("SELECT count(*) FROM reading_sessions WHERE ended_at IS NULL", [], |r| r.get(0)).unwrap();
+    assert_eq!(open, 1);
+    assert_eq!(position(&core, a), Some((3, 10)));
+    let states: Vec<ReadState> = sources::chapters_of(&core.db(), series).unwrap().iter().map(|c| c.read_state).collect();
+    assert_eq!(states, [ReadState::InProgress, ReadState::Reading]);
+}
+
+#[test]
+fn marking_previous_chapters_follows_the_source_order_and_skips_ties() {
+    let (_dir, core, _repo) = core_with_fixture(&[]);
+    let series = found_series(&core, "obra");
+    // A lista chega embaralhada, e a ordem da fonte não é a do texto.
+    sync(&core, series, &[("Vol. 2 Cap. 3", 50), ("Capítulo 10.5", 30), ("Especial", 25), ("Capítulo 9", 10), ("Capítulo 10 Extra", 30), ("Capítulo 10", 20)]);
+    let id = |title: &str| chapter_id(&core, series, title);
+    let (nine, ten, half, extra, special, volume) = (id("Capítulo 9"), id("Capítulo 10"), id("Capítulo 10.5"), id("Capítulo 10 Extra"), id("Especial"), id("Vol. 2 Cap. 3"));
+
+    assert_eq!(reading::previous_ids(&core.db(), half).unwrap(), [nine, ten, special]);
+    assert_eq!(reading::previous_ids(&core.db(), special).unwrap(), [nine, ten]);
+    assert!(reading::previous_ids(&core.db(), nine).unwrap().is_empty());
+    assert_eq!(code(reading::previous_ids(&core.db(), 999_999)), "chapter_not_found");
+
+    let marked = reading::mark_previous_read(&mut core.db(), half).unwrap();
+    assert_eq!(marked.iter().map(|c| c.id).collect::<Vec<_>>(), [nine, ten, special]);
+    let read = |id: i64| state(&core, id) == ReadState::Read;
+    assert!(read(nine) && read(ten) && read(special));
+    assert!(!read(half), "o escolhido não é marcado");
+    assert!(!read(extra), "na mesma posição, não é anterior");
+    assert!(!read(volume), "o seguinte não é marcado");
+
+    let dates = || -> Vec<Option<i64>> { [nine, ten, special].iter().map(|id| info(&core, *id).completed_at).collect() };
+    let before = dates();
+    std::thread::sleep(Duration::from_millis(5));
+    assert_eq!(reading::mark_previous_read(&mut core.db(), half).unwrap().len(), 3);
+    assert_eq!(dates(), before, "repetir não muda nada");
+    assert!(!read(half) && !read(extra) && !read(volume));
+
+    // Sem ordem informada, ninguém é anterior a ninguém.
+    let other = found_series(&core, "outra");
+    sync(&core, other, &[("A", 0), ("B", 0), ("C", 0)]);
+    let c = chapter_id(&core, other, "C");
+    assert!(reading::previous_ids(&core.db(), c).unwrap().is_empty());
+    assert!(reading::mark_previous_read(&mut core.db(), c).unwrap().is_empty());
+    assert!(sources::chapters_of(&core.db(), other).unwrap().iter().all(|chapter| chapter.read_state == ReadState::Unread));
+}
+
+#[test]
+fn only_chapters_that_arrive_after_the_first_sync_of_a_followed_series_are_new() {
+    let (_dir, core, _repo) = core_with_fixture(&[]);
+    let series = found_series(&core, "obra");
+    sources::set_following(&core.db(), series, true).unwrap();
+    assert!(sync(&core, series, &[("Capítulo 1", 0), ("Capítulo 2", 1)]).is_empty(), "a primeira sincronização é a referência");
+    assert!(sources::chapters_of(&core.db(), series).unwrap().iter().all(|chapter| !chapter.is_new && chapter.first_seen_at.is_some()));
+    assert_eq!(new_count(&core, series), 0);
+
+    let fresh = sync(&core, series, &[("Capítulo 1", 0), ("Capítulo 2", 1), ("Capítulo 3", 2)]);
+    let third = chapter_id(&core, series, "Capítulo 3");
+    assert_eq!(fresh, [third]);
+    let flags: Vec<bool> = sources::chapters_of(&core.db(), series).unwrap().iter().map(|chapter| chapter.is_new).collect();
+    assert_eq!(flags, [false, false, true]);
+    assert_eq!(listed(&core, series, third).read_state, ReadState::Unread, "novo e não lido são coisas diferentes");
+    assert_eq!(new_count(&core, series), 1);
+    let library = sources::library_series(&core.db()).unwrap();
+    assert_eq!(library.iter().map(|s| (s.id, s.new_count, s.following)).collect::<Vec<_>>(), [(series, 1, true)]);
+
+    assert!(sync(&core, series, &[("Capítulo 1", 0), ("Capítulo 2", 1), ("Capítulo 3", 2)]).is_empty(), "o mesmo de novo não é novidade");
+    assert_eq!(new_count(&core, series), 1, "a contagem continua");
+
+    assert!(!reading::acknowledge(&core.db(), third).unwrap().is_new);
+    assert_eq!(new_count(&core, series), 0);
+
+    let fresh = sync(&core, series, &[("Capítulo 1", 0), ("Capítulo 2", 1), ("Capítulo 3", 2), ("Capítulo 4", 3), ("Capítulo 5", 4)]);
+    assert_eq!(fresh.len(), 2);
+    assert_eq!(new_count(&core, series), 2);
+    reading::complete(&mut core.db(), fresh[0]).unwrap();
+    assert_eq!(new_count(&core, series), 1);
+    reading::set_read(&mut core.db(), &[fresh[1]], true).unwrap();
+    assert_eq!(new_count(&core, series), 0);
+    reading::set_read(&mut core.db(), &[third, fresh[0], fresh[1]], false).unwrap();
+    assert_eq!(new_count(&core, series), 0, "não lido não traz a novidade de volta");
+    assert_eq!(sources::library_series(&core.db()).unwrap()[0].new_count, 0);
+
+    // Sem acompanhar, nada é novidade.
+    let other = found_series(&core, "outra");
+    assert!(sync(&core, other, &[("A", 0)]).is_empty());
+    assert!(sync(&core, other, &[("A", 0), ("B", 1)]).is_empty());
+    assert_eq!(new_count(&core, other), 0);
+    assert!(sources::chapters_of(&core.db(), other).unwrap().iter().all(|chapter| !chapter.is_new));
+}
+
+#[test]
+fn syncing_again_keeps_reading_state_and_only_drops_chapters_nobody_read() {
+    let (_dir, core, _repo) = core_with_fixture(&[]);
+    let (series, ids) = synced_series(&core, "obra", &["Lendo", "Lido", "Marcado", "Intocado", "Fica"]);
+    reading::start(&mut core.db(), ids[0]).unwrap();
+    reading::end(&core.db(), ids[0]).unwrap();
+    reading::complete(&mut core.db(), ids[1]).unwrap();
+    reading::set_read(&mut core.db(), &[ids[2]], true).unwrap();
+    let snapshot = |core: &Core| -> Vec<(ReadState, Option<i64>, Option<i64>, Option<i64>)> {
+        ids[..3].iter().map(|id| (state(core, *id), column(core, *id, "completed_at"), column(core, *id, "acknowledged_at"), column(core, *id, "first_seen_at"))).collect()
+    };
+    let before = snapshot(&core);
+    assert_eq!(before.iter().map(|s| s.0).collect::<Vec<_>>(), [ReadState::InProgress, ReadState::Read, ReadState::Read]);
+
+    std::thread::sleep(Duration::from_millis(5));
+    sync(&core, series, &[("Lendo", 0), ("Lido", 1), ("Marcado", 2), ("Intocado", 3), ("Fica", 4)]);
+    assert_eq!(snapshot(&core), before, "sincronizar de novo não mexe no estado");
+
+    sync(&core, series, &[("Fica", 4)]);
+    let remaining: Vec<String> = sources::chapters_of(&core.db(), series).unwrap().into_iter().map(|c| c.remote_id).collect();
+    assert_eq!(remaining, ["Lendo", "Lido", "Marcado", "Fica"], "o que tem histórico fica, o intocado sai");
+    assert_eq!(snapshot(&core), before);
+}
+
+#[test]
+fn uninstalling_the_extension_keeps_chapters_and_their_reading_state() {
+    let (_dir, core, _repo) = core_with_fixture(&[]);
+    let (series, ids) = synced_series(&core, "obra", &["Capítulo 1", "Capítulo 2", "Capítulo 3"]);
+    reading::complete(&mut core.db(), ids[0]).unwrap();
+    reading::start(&mut core.db(), ids[1]).unwrap();
+    sources::save_chapter_progress(&core.db(), ids[1], 2, 8, 0.0).unwrap();
+    reading::end(&core.db(), ids[1]).unwrap();
+    let completed = info(&core, ids[0]).completed_at;
+
+    install::remove(&core, EXT).unwrap();
+    let stored = sources::stored_series(&core.db(), series).unwrap();
+    let states: Vec<ReadState> = stored.chapters.iter().map(|c| c.read_state).collect();
+    assert_eq!(states, [ReadState::Read, ReadState::InProgress, ReadState::Unread]);
+    assert_eq!(stored.chapters[0].completed_at, completed);
+    assert_eq!(stored.chapters[1].progress.as_ref().map(|p| (p.page_index, p.page_count)), Some((2, 8)));
+    let reopened = sources::open_series(&core, series, None).unwrap();
+    assert!(reopened.source_error.is_some());
+    assert_eq!(reopened.chapters.iter().map(|c| c.read_state).collect::<Vec<_>>(), states);
+}
+
+#[test]
+fn favoriting_twice_keeps_one_series_and_unfollowing_keeps_the_reading() {
+    let (_dir, core, _repo) = core_with_fixture(&[]);
+    let (series, ids) = synced_series(&core, "obra", &["Capítulo 1", "Capítulo 2"]);
+    let total = |core: &Core| -> i64 { core.db().query_row("SELECT count(*) FROM online_series", [], |r| r.get(0)).unwrap() };
+    let before = total(&core);
+    sources::set_favorite(&core.db(), series, true).unwrap();
+    sources::set_favorite(&core.db(), series, true).unwrap();
+    assert_eq!(total(&core), before, "favoritar de novo não duplica");
+    assert!(sources::card(&core.db(), series).unwrap().favorite);
+    let favorite: i64 = core.db().query_row("SELECT favorite FROM online_series WHERE id = ?1", [series], |r| r.get(0)).unwrap();
+    assert_eq!(favorite, 1);
+    assert_eq!(sources::library_series(&core.db()).unwrap().iter().filter(|s| s.id == series).count(), 1);
+    assert_eq!(found_series(&core, "obra"), series, "achar de novo na busca é a mesma obra");
+
+    assert!(sources::set_following(&core.db(), series, true).unwrap().following);
+    assert!(sources::card(&core.db(), series).unwrap().following);
+    reading::complete(&mut core.db(), ids[0]).unwrap();
+    reading::start(&mut core.db(), ids[1]).unwrap();
+    reading::end(&core.db(), ids[1]).unwrap();
+    assert!(!sources::set_following(&core.db(), series, false).unwrap().following);
+    assert!(!sources::card(&core.db(), series).unwrap().following);
+    let states: Vec<ReadState> = sources::chapters_of(&core.db(), series).unwrap().iter().map(|c| c.read_state).collect();
+    assert_eq!(states, [ReadState::Read, ReadState::InProgress], "deixar de acompanhar não apaga a leitura");
+}
+
+#[test]
+fn marking_a_whole_series_unread_keeps_every_position() {
+    let (_dir, core, _repo) = core_with_fixture(&[]);
+    let (series, ids) = synced_series(&core, "obra", &["Capítulo 1", "Capítulo 2"]);
+    reading::start(&mut core.db(), ids[0]).unwrap();
+    sources::save_chapter_progress(&core.db(), ids[0], 3, 10, 0.4).unwrap();
+    reading::end(&core.db(), ids[0]).unwrap();
+
+    sources::set_series_read(&mut core.db(), series, true).unwrap();
+    assert!(sources::chapters_of(&core.db(), series).unwrap().iter().all(|c| c.read_state == ReadState::Read));
+    assert_eq!(position(&core, ids[0]), Some((3, 10)));
+    sources::set_series_read(&mut core.db(), series, false).unwrap();
+    assert!(sources::chapters_of(&core.db(), series).unwrap().iter().all(|c| c.read_state == ReadState::Unread && c.completed_at.is_none()));
+    assert_eq!(position(&core, ids[0]), Some((3, 10)), "a posição fica");
 }

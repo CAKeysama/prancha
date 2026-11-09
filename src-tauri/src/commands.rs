@@ -21,6 +21,7 @@ use crate::extensions::downloads::{self, DownloadView};
 use crate::extensions::install::{self, InstalledExtension};
 use crate::extensions::net::Cancel;
 use crate::extensions::recommended::{self, RecommendedList};
+use crate::extensions::reading::{self, ChapterReadInfo};
 use crate::extensions::repository::{self, CatalogItem, CatalogQuery, RepositoryInfo, RepositoryPreview};
 use crate::extensions::sources::{self, BrowsePage, ChapterSession, ComicOrigin, SeriesCard, SeriesView, SourceSummary};
 use crate::extensions::suwayomi;
@@ -1025,7 +1026,7 @@ pub async fn series_open(state: S<'_>, request_id: String, id: i64) -> AppResult
 
 #[tauri::command]
 pub async fn series_set_following(state: S<'_>, id: i64, following: bool) -> AppResult<SeriesCard> {
-    blocking(&state, move |c| sources::set_following(&c.db(), id, following)).await
+    changing(&state, move |c| sources::set_following(&c.db(), id, following)).await
 }
 
 const VERIFICATION_WINDOW: &str = "verificacao";
@@ -1163,6 +1164,52 @@ pub async fn chapter_save_progress(state: S<'_>, id: i64, page_index: i64, page_
 #[tauri::command]
 pub async fn chapter_reset_progress(state: S<'_>, id: i64) -> AppResult<()> {
     changing(&state, move |c| sources::reset_chapter_progress(&c.db(), id)).await
+}
+
+// Estado de leitura de cada capítulo. Ver extensions/reading.rs.
+
+#[tauri::command]
+pub async fn chapter_acknowledge(state: S<'_>, id: i64) -> AppResult<ChapterReadInfo> {
+    changing(&state, move |c| reading::acknowledge(&c.db(), id)).await
+}
+
+#[tauri::command]
+pub async fn chapter_reading_start(state: S<'_>, id: i64) -> AppResult<ChapterReadInfo> {
+    changing(&state, move |c| reading::start(&mut c.db(), id)).await
+}
+
+/// Só mantém a sessão viva: não muda o que as telas mostram, e por isso não avisa a biblioteca.
+#[tauri::command]
+pub async fn chapter_reading_touch(state: S<'_>, id: i64) -> AppResult<bool> {
+    blocking(&state, move |c| reading::touch(&c.db(), id)).await
+}
+
+#[tauri::command]
+pub async fn chapter_reading_end(state: S<'_>, id: i64) -> AppResult<ChapterReadInfo> {
+    changing(&state, move |c| reading::end(&c.db(), id)).await
+}
+
+#[tauri::command]
+pub async fn chapter_reading_complete(state: S<'_>, id: i64) -> AppResult<ChapterReadInfo> {
+    changing(&state, move |c| reading::complete(&mut c.db(), id)).await
+}
+
+#[tauri::command]
+pub async fn chapters_set_read(state: S<'_>, ids: Vec<i64>, read: bool) -> AppResult<Vec<ChapterReadInfo>> {
+    changing(&state, move |c| reading::set_read(&mut c.db(), &ids, read)).await
+}
+
+#[tauri::command]
+pub async fn chapters_mark_previous_read(state: S<'_>, id: i64) -> AppResult<Vec<ChapterReadInfo>> {
+    changing(&state, move |c| reading::mark_previous_read(&mut c.db(), id)).await
+}
+
+/// Consulta a fonte de cada obra acompanhada, uma de cada vez, e devolve a lista com os contadores de novos.
+#[tauri::command]
+pub async fn series_refresh_following(state: S<'_>, request_id: String) -> AppResult<Vec<SeriesCard>> {
+    let out = cancellable(&state, request_id, move |c, cancel| sources::refresh_following(c, Some(cancel))).await?;
+    library_changed(&state);
+    Ok(out)
 }
 
 #[tauri::command]
