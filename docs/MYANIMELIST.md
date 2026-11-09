@@ -24,7 +24,7 @@ O Client ID é público (aparece no endereço de autorização), não é segredo
 Como ele chega ao app:
 
 1. No job **Gerar os instaladores** do `release.yml`, `vars.MAL_CLIENT_ID` vira a variável de ambiente `PRANCHA_MAL_CLIENT_ID` do `npm run tauri build`, e o Rust a embute no executável com `option_env!` (`client_id_from_env` em `src-tauri/src/mal/mod.rs`). Ela não existe em arquivo nenhum do repositório.
-2. Antes de compilar, o mesmo job confere que a variável existe e tem formato de Client ID; depois, que o valor está dentro do `prancha.exe`. Nenhuma das duas etapas mostra o valor. Sem ela, nenhuma versão sai.
+2. Antes de compilar, o mesmo job confere que a variável existe e tem formato de Client ID; depois, que o valor está dentro do `prancha.exe`. Por ser uma variável, e não um segredo, o GitHub mostra o valor no registro dessas etapas: ele é público de qualquer forma. Sem ela, nenhuma versão sai.
 3. O job **Client ID do MyAnimeList** do `ci.yml` pesquisa na API real (`GET /v2/manga?q=berserk&limit=1` com `X-MAL-CLIENT-ID`) a cada PR e push na main: uma recusa (401/403) mostra que a variável não corresponde ao cadastro. Ele fica fora da proteção da main, porque depende de um serviço de fora.
 
 Sem o Client ID (num build local, por exemplo), a categoria **Integrações** diz que a integração não está configurada e nada é consultado. Em builds de depuração, `PRANCHA_MAL_CLIENT_ID` também vale como variável de ambiente na execução, para testar com `npm run tauri dev`.

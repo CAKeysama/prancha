@@ -97,7 +97,7 @@ jobs:
             echo "::error::A variável MAL_CLIENT_ID não tem o formato de um Client ID do MyAnimeList (letras e números)."
             exit 1
           fi
-          # O valor vai só no cabeçalho, nunca na saída. Tenta de novo em falhas de rede e erros 5xx do MAL.
+          # Por ser variável (pública), o GitHub mostra o valor no registro da etapa; ele não é segredo. Tenta de novo em falhas de rede e erros 5xx do MAL.
           for attempt in 1 2 3; do
             status="$(curl -sS -o body.json -w '%{http_code}' --max-time 20 -H "X-MAL-CLIENT-ID: $MAL_CLIENT_ID" \
               'https://api.myanimelist.net/v2/manga?q=berserk&limit=1&fields=num_chapters' || echo 000)"
