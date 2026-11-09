@@ -20,6 +20,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0007_reading_state.sql"),
     include_str!("../migrations/0008_notifications.sql"),
     include_str!("../migrations/0009_series_rating.sql"),
+    include_str!("../migrations/0010_remove_adult_filter.sql"),
 ];
 
 pub fn schema_version() -> i64 {
@@ -262,40 +263,42 @@ mod tests {
         assert_eq!(comic_status, "completed");
     }
 
-    /// A primeira versão com a classificação por evidências esconde exatamente o que o filtro antigo escondia,
-    /// até a primeira análise; e a obra nativa marcada como adulta numa fonte livre guarda a declaração.
+    /// Sem o filtro +18, o banco perde a classificação e as preferências dele, e nenhuma obra some.
     #[test]
-    fn series_rated_by_the_old_filter_keep_their_visibility_until_analyzed() {
+    fn removing_the_adult_filter_drops_its_data_and_keeps_the_series() {
         let mut conn = Connection::open_in_memory().unwrap();
         configure(&conn).unwrap();
-        for sql in &MIGRATIONS[..8] {
+        for sql in &MIGRATIONS[..9] {
             conn.execute_batch(sql).unwrap();
         }
-        conn.pragma_update(None, "user_version", 8).unwrap();
+        conn.pragma_update(None, "user_version", 9).unwrap();
         conn.execute_batch(
-            "INSERT INTO installed_extensions (id, repository_id, repository_name, public_key, key_fingerprint, name, version, entry, file_name, sha256, installed_at, updated_at)
-                VALUES ('nativa', 'r', 'R', 'k', 'f', 'E', '1.0.0', '{\"runtime\":\"wasm-component\"}', 'e', 'h', 1, 1);
-             INSERT INTO extension_sources (extension_id, source_id, name, language, rating, direction, supports_latest, supports_search) VALUES ('nativa', 's', 'S', 'pt-BR', 'general', 'ltr', 1, 1);
-             INSERT INTO online_series (extension_id, source_id, remote_id, title, adult, classification, created_at, updated_at) VALUES
-                ('nativa', 's', 'adulta', 'A', 1, 'known', 1, 7),
-                ('nativa', 's', 'livre', 'B', 0, 'known', 1, 1),
-                ('ponte', 's', 'pendente', 'C', 0, 'pending', 1, 1),
-                ('ponte', 's', 'sem-generos', 'D', 0, 'unknown', 1, 1);",
+            "INSERT INTO online_series (id, extension_id, source_id, remote_id, title, adult, classification, rating_state, created_at, updated_at) VALUES
+                (1, 'e', 's', 'adulta', 'A', 1, 'known', 'confirmed', 1, 1),
+                (2, 'e', 's', 'livre', 'B', 0, 'known', 'none', 1, 1),
+                (3, 'e', 's', 'pendente', 'C', 0, 'pending', 'insufficient', 1, 1);
+             INSERT INTO series_rating_evidence (series_id, position, kind, origin, value, reliability, points, verdict, observed_at) VALUES (1, 0, 'tag', 'gêneros', 'Hentai', 1, 90, 'adult', 1);
+             INSERT INTO series_rating_overrides (extension_id, source_id, remote_id, state, set_at) VALUES ('e', 's', 'livre', 'none', 1);
+             INSERT INTO blocked_series (extension_id, source_id, remote_id) VALUES ('e', 's', 'bloqueada');
+             INSERT INTO settings (key, value) VALUES ('content.adult', 'true'), ('content.suspect', '\"show\"'), ('appearance.theme', '\"light\"');",
         )
         .unwrap();
         migrate(&mut conn).unwrap();
-        let row = |remote: &str| {
-            conn.query_row("SELECT rating_state, rating_version, declared_rating, declared_adult_at FROM online_series WHERE remote_id = ?1", [remote], |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, Option<String>>(2)?, r.get::<_, Option<i64>>(3)?))
-            })
+        let tables: Vec<String> = conn
+            .prepare("SELECT name FROM sqlite_master WHERE name LIKE 'series_rating%' OR name LIKE 'series_cover%' OR name LIKE 'idx_%rating%'")
             .unwrap()
-        };
-        assert_eq!(row("adulta"), ("suspect".into(), 0, Some("adult".into()), Some(7)));
-        assert_eq!(row("livre"), ("none".into(), 0, None, None));
-        assert_eq!(row("pendente"), ("insufficient".into(), 0, None, None));
-        assert_eq!(row("sem-generos"), ("insufficient".into(), 0, None, None));
-        let shown: i64 = conn.query_row(&format!("SELECT count(*) FROM online_series o WHERE {} OR {}", crate::library::SERIES_SAFE_SQL, crate::library::ADULT_ALLOWED_SQL), [], |r| r.get(0)).unwrap();
-        assert_eq!(shown, 1, "com o filtro ligado, só a que já aparecia");
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert!(tables.is_empty(), "{tables:?}");
+        let columns: Vec<String> = conn.prepare("SELECT name FROM pragma_table_info('online_series')").unwrap().query_map([], |r| r.get(0)).unwrap().collect::<Result<_, _>>().unwrap();
+        assert!(columns.iter().all(|c| c != "adult" && !c.starts_with("rating") && !c.starts_with("declared") && !c.starts_with("known_") && c != "rated_at"), "{columns:?}");
+        assert!(columns.iter().any(|c| c == "classification"));
+        assert_eq!(count(&conn, "online_series"), 3);
+        assert_eq!(count(&conn, "blocked_series"), 1, "o bloqueio de obras com menores continua");
+        let settings: Vec<String> = conn.prepare("SELECT key FROM settings ORDER BY key").unwrap().query_map([], |r| r.get(0)).unwrap().collect::<Result<_, _>>().unwrap();
+        assert_eq!(settings, ["appearance.theme"]);
     }
 
     #[test]

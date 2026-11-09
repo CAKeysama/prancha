@@ -19,7 +19,7 @@ use http::{Reply, serve};
 use prancha_lib::core::Core;
 use prancha_lib::error::AppError;
 use prancha_lib::extensions::reading::{self, ReadState};
-use prancha_lib::extensions::{downloads, install, rating_store, sources, suwayomi};
+use prancha_lib::extensions::{downloads, install, sources, suwayomi};
 use prancha_lib::library;
 use prancha_lib::notifications;
 use prancha_lib::extensions::net::{Access, Limits, Net, NetError, Request};
@@ -662,12 +662,12 @@ fn mihon_repo() -> TestRepo {
 }
 
 #[test]
-fn a_mihon_repository_lists_only_what_is_marked_safe_until_the_filter_goes_off() {
+fn a_mihon_repository_lists_every_valid_extension() {
     let (_dir, core) = core();
     let repo = mihon_repo();
     let preview = repository::preview(&core, &repo.server.base).unwrap();
     assert!(preview.external);
-    assert_eq!((preview.name.as_str(), preview.fingerprint.as_str(), preview.extension_count), ("Keiyoushi", MIHON_KEY, 1));
+    assert_eq!((preview.name.as_str(), preview.fingerprint.as_str(), preview.extension_count), ("Keiyoushi", MIHON_KEY, 3));
     assert_eq!(preview.website.as_deref(), Some("https://keiyoushi.github.io"));
 
     // Os endereços que aparecem por aí levam ao mesmo repositório.
@@ -677,12 +677,11 @@ fn a_mihon_repository_lists_only_what_is_marked_safe_until_the_filter_goes_off()
     }
 
     let added = repository::add(&core, &preview.url, MIHON_KEY).unwrap();
-    assert_eq!((added.status.as_str(), added.extension_count, added.fingerprint.as_str()), ("ok", 1, MIHON_KEY));
+    assert_eq!((added.status.as_str(), added.extension_count, added.fingerprint.as_str()), ("ok", 3, MIHON_KEY));
     let items = repository::catalog(&core.db(), &CatalogQuery::default(), APP_VERSION).unwrap();
-    assert_eq!(items.len(), 1);
-    assert_eq!(items[0].entry.id, "eu.kanade.tachiyomi.extension.all.segura");
-    assert_eq!(items[0].entry.runtime, suwayomi::RUNTIME);
-    assert_eq!(items[0].incompatible, None);
+    let ids: Vec<_> = items.iter().map(|i| i.entry.id.as_str()).collect();
+    assert_eq!(ids, ["eu.kanade.tachiyomi.extension.all.adulta", "eu.kanade.tachiyomi.extension.all.mista", "eu.kanade.tachiyomi.extension.all.segura"], "a quebrada fica de fora");
+    assert!(items.iter().all(|i| i.entry.runtime == suwayomi::RUNTIME && i.incompatible.is_none()));
     assert_eq!(repository::catalog_languages(&core.db()).unwrap(), ["pt-BR"]);
 
     assert_eq!(repository::sync(&core, &added.id).unwrap().status, "ok");
@@ -944,7 +943,7 @@ fn an_unchanged_index_is_not_downloaded_again() {
 }
 
 #[test]
-fn the_catalog_hides_adult_extensions_and_marks_incompatible_ones() {
+fn the_catalog_lists_adult_extensions_and_marks_incompatible_ones() {
     let (_dir, core) = core();
     let repo = TestRepo::new("com.exemplo.repo", 1);
     let mut adult = repo.entry("com.exemplo.adulta", "1.0.0", b"a");
@@ -960,12 +959,13 @@ fn the_catalog_hides_adult_extensions_and_marks_incompatible_ones() {
     english["name"] = json!("Aurora");
     repo.publish(&[adult, newer_api, apk, future, english]);
     let preview = repository::preview(&core, &repo.manifest_url()).unwrap();
-    assert_eq!(preview.extension_count, 4, "a adulta não conta");
+    assert_eq!(preview.extension_count, 5, "a adulta conta como as outras");
     repository::add(&core, &repo.manifest_url(), &repo.fingerprint()).unwrap();
 
     let items = repository::catalog(&core.db(), &CatalogQuery::default(), APP_VERSION).unwrap();
     let ids: Vec<_> = items.iter().map(|i| i.entry.id.as_str()).collect();
-    assert_eq!(ids, ["com.exemplo.ingles", "com.exemplo.api", "com.exemplo.apk", "com.exemplo.futura"]);
+    assert_eq!(ids, ["com.exemplo.ingles", "com.exemplo.adulta", "com.exemplo.api", "com.exemplo.apk", "com.exemplo.futura"]);
+    assert!(items.iter().find(|i| i.entry.id == "com.exemplo.adulta").unwrap().incompatible.is_none());
     let reason = |id: &str| items.iter().find(|i| i.entry.id == id).unwrap().incompatible.clone();
     assert!(reason("com.exemplo.ingles").is_none());
     assert!(reason("com.exemplo.api").is_some());
@@ -976,9 +976,9 @@ fn the_catalog_hides_adult_extensions_and_marks_incompatible_ones() {
     assert_eq!(search(CatalogQuery { text: Some("auro".into()), ..Default::default() }), 1);
     assert_eq!(search(CatalogQuery { text: Some("%".into()), ..Default::default() }), 0, "curinga é texto comum");
     assert_eq!(search(CatalogQuery { language: Some("en".into()), ..Default::default() }), 1);
-    assert_eq!(search(CatalogQuery { language: Some("pt-BR".into()), ..Default::default() }), 3);
+    assert_eq!(search(CatalogQuery { language: Some("pt-BR".into()), ..Default::default() }), 4);
     assert_eq!(search(CatalogQuery { limit: Some(2), ..Default::default() }), 2);
-    assert_eq!(search(CatalogQuery { limit: Some(2), offset: Some(3), ..Default::default() }), 1);
+    assert_eq!(search(CatalogQuery { limit: Some(2), offset: Some(4), ..Default::default() }), 1);
     assert_eq!(repository::catalog_languages(&core.db()).unwrap(), ["en", "pt-BR"]);
 }
 
@@ -1024,8 +1024,8 @@ fn a_valid_extension_installs_and_runs() {
     assert_eq!(installed.repository_id, repo.id);
     assert_eq!(installed.fingerprint, repo.fingerprint());
     assert!(installed.enabled);
-    let ids: Vec<_> = installed.sources.iter().map(|s| (s.id.as_str(), s.available)).collect();
-    assert_eq!(ids, [("adulta", false), ("livre", true), ("sem-classificacao", false)], "com o filtro +18 ligado, a adulta e a sem classificação ficam desabilitadas");
+    let ids: Vec<_> = installed.sources.iter().map(|s| s.id.as_str()).collect();
+    assert_eq!(ids, ["adulta", "livre", "sem-classificacao"]);
     assert_eq!(packages(&core).len(), 1);
 
     let runnable = install::runnable(&core, EXT).unwrap();
@@ -1284,15 +1284,15 @@ fn titles(page: &sources::BrowsePage) -> Vec<&str> {
 }
 
 #[test]
-fn explore_lists_only_usable_sources() {
+fn explore_lists_every_source_of_enabled_extensions() {
     let (_dir, core, _repo) = core_with_fixture(&[]);
     let listed = sources::available_sources(&core.db()).unwrap();
     let ids: Vec<_> = listed.iter().map(|s| s.source_id.as_str()).collect();
-    assert_eq!(ids, ["livre"], "sem a adulta e sem a que não tem classificação");
-    assert_eq!(listed[0].extension_id, EXT);
+    assert_eq!(ids, ["adulta", "livre", "sem-classificacao"], "a classificação da fonte não esconde nenhuma");
+    assert!(listed.iter().all(|s| s.extension_id == EXT));
 
-    assert_eq!(code(sources::popular(&core, EXT, "sem-classificacao", 1, None, None)), "source_disabled");
-    assert_eq!(code(sources::search(&core, EXT, "adulta", "x", 1, None, None)), "source_disabled");
+    sources::popular(&core, EXT, "sem-classificacao", 1, None, None).unwrap();
+    sources::search(&core, EXT, "adulta", "x", 1, None, None).unwrap();
     assert_eq!(code(sources::popular(&core, EXT, "inexistente", 1, None, None)), "source_not_found");
 
     install::set_enabled(&core.db(), EXT, false).unwrap();
@@ -1344,11 +1344,9 @@ fn a_source_that_fails_reports_the_kind_of_failure() {
 fn results_are_filtered_and_cleaned() {
     let (_dir, core, _repo) = core_with_fixture(&["exemplo.com"]);
     let page = sources::search(&core, EXT, "livre", "classificados", 1, None, None).unwrap();
-    assert_eq!(titles(&page), ["Juvenil", "Capa insegura"], "sem a adulta e sem título em branco");
-    assert_eq!(page.results[0].status.as_deref(), Some("ongoing"));
-    assert!(!page.results[1].has_cover, "capa por HTTP é descartada");
-    let stored: i64 = core.db().query_row("SELECT count(*) FROM online_series WHERE title = 'Adulta'", [], |r| r.get(0)).unwrap();
-    assert_eq!(stored, 0);
+    assert_eq!(titles(&page), ["Adulta", "Juvenil", "Capa insegura"], "sem título em branco");
+    assert_eq!(page.results[1].status.as_deref(), Some("ongoing"));
+    assert!(!page.results[2].has_cover, "capa por HTTP é descartada");
 }
 
 #[test]
@@ -1386,19 +1384,15 @@ fn opening_a_series_stores_details_and_chapters() {
 }
 
 #[test]
-fn a_series_marked_adult_in_the_details_is_refused_and_stays_out_of_the_lists() {
+fn a_series_marked_adult_in_the_details_opens_and_stays_in_the_lists() {
     let (_dir, core, _repo) = core_with_fixture(&[]);
     let id = found_series(&core, "obra");
     let remote: String = core.db().query_row("SELECT remote_id FROM online_series WHERE id = ?1", [id], |r| r.get(0)).unwrap();
     core.db().execute("UPDATE online_series SET remote_id = 'adulta' WHERE id = ?1", [id]).unwrap();
-    assert_eq!(code(sources::open_series(&core, id, None)), "source_rating");
+    assert!(sources::open_series(&core, id, None).unwrap().source_error.is_none());
 
-    // A lista da fonte não traz a marca: quem lembra é o Prancha.
     core.db().execute("UPDATE online_series SET remote_id = ?1 WHERE id = ?2", (&remote, id)).unwrap();
-    let listed = || sources::search(&core, EXT, "livre", "obra", 1, None, None).unwrap().results.iter().any(|series| series.id == id);
-    assert!(!listed());
-    prancha_lib::library::set_setting(&core.db(), "content.adult", &json!(true)).unwrap();
-    assert!(listed());
+    assert!(sources::search(&core, EXT, "livre", "obra", 1, None, None).unwrap().results.iter().any(|series| series.id == id));
 }
 
 #[test]
@@ -1525,24 +1519,14 @@ fn a_series_in_a_collection_counts_while_the_plugin_is_installed() {
 }
 
 #[test]
-fn the_adult_filter_starts_on_and_decides_what_appears() {
+fn adult_sources_and_series_appear_everywhere() {
     let (_dir, core, _repo) = core_with_fixture(&[]);
-    let set_filter = |hide: bool| prancha_lib::library::set_setting(&core.db(), "content.adult", &json!(!hide)).unwrap();
-    let source_ids = || sources::available_sources(&core.db()).unwrap().into_iter().map(|s| s.source_id).collect::<Vec<_>>();
-    assert_eq!(source_ids(), ["livre"]);
-    assert_eq!(code(sources::search(&core, EXT, "adulta", "x", 1, None, None)), "source_disabled");
-
-    set_filter(false);
-    assert_eq!(source_ids(), ["adulta", "livre", "sem-classificacao"]);
     let found = sources::search(&core, EXT, "adulta", "x", 1, None, None).unwrap();
     let adult_source = found.results[0].id;
-    assert!(titles(&sources::search(&core, EXT, "livre", "classificados", 1, None, None).unwrap()).contains(&"Adulta"));
     let marked = found_series(&core, "marcada");
     core.db().execute("UPDATE online_series SET remote_id = 'adulta' WHERE id = ?1", [marked]).unwrap();
     sources::open_series(&core, marked, None).unwrap();
-    assert!(install::list(&core.db()).unwrap()[0].sources.iter().all(|source| source.available));
 
-    // Guardadas com o filtro desligado, somem ao ligar e voltam ao desligar.
     let folder = prancha_lib::library::create_collection(&core.db(), "Pasta").unwrap();
     prancha_lib::library::set_setting(&core.db(), "plugins.online", &json!(true)).unwrap();
     for id in [adult_source, marked] {
@@ -1553,21 +1537,11 @@ fn the_adult_filter_starts_on_and_decides_what_appears() {
     assert_eq!(sources::library_series(&core.db()).unwrap().len(), 2);
     assert_eq!(sources::list_following(&core.db()).unwrap().len(), 2);
     assert_eq!(prancha_lib::library::list_collections(&core.db()).unwrap()[0].comic_count, 2);
-
-    set_filter(true);
-    assert!(sources::library_series(&core.db()).unwrap().is_empty());
-    assert!(sources::list_following(&core.db()).unwrap().is_empty());
-    assert_eq!(prancha_lib::library::list_collections(&core.db()).unwrap()[0].comic_count, 0);
-    assert_eq!(source_ids(), ["livre"]);
-    assert_eq!(code(sources::open_series(&core, marked, None)), "source_rating");
-    assert!(sources::card(&core.db(), marked).is_ok(), "uma obra guardada não é esquecida");
-
-    set_filter(false);
-    assert_eq!(sources::library_series(&core.db()).unwrap().len(), 2);
+    assert!(sources::stored_series(&core.db(), marked).is_ok());
 }
 
 #[test]
-fn the_catalog_shows_adult_extensions_only_with_the_filter_off() {
+fn adult_extensions_install_like_any_other() {
     let (_dir, core) = core();
     let repo = TestRepo::new("com.exemplo.repo", 1);
     let mut adult = repo.entry("com.exemplo.adulta", "1.0.0", b"a");
@@ -1575,17 +1549,12 @@ fn the_catalog_shows_adult_extensions_only_with_the_filter_off() {
     adult["languages"] = json!(["ja"]);
     repo.publish(&[adult, repo.entry("com.exemplo.livre", "1.0.0", b"b")]);
     repository::add(&core, &repo.manifest_url(), &repo.fingerprint()).unwrap();
-    let ids = || repository::catalog(&core.db(), &CatalogQuery::default(), APP_VERSION).unwrap().into_iter().map(|i| i.entry.id).collect::<Vec<_>>();
-    assert_eq!(ids(), ["com.exemplo.livre"]);
-    assert_eq!(repository::list(&core.db()).unwrap()[0].extension_count, 1);
-    assert_eq!(repository::catalog_languages(&core.db()).unwrap(), ["pt-BR"]);
-    assert_eq!(code(install::install(&core, &repo.id, "com.exemplo.adulta")), "extension_rating");
-
-    prancha_lib::library::set_setting(&core.db(), "content.adult", &json!(true)).unwrap();
-    assert_eq!(ids(), ["com.exemplo.adulta", "com.exemplo.livre"]);
+    let ids = repository::catalog(&core.db(), &CatalogQuery::default(), APP_VERSION).unwrap().into_iter().map(|i| i.entry.id).collect::<Vec<_>>();
+    assert_eq!(ids, ["com.exemplo.adulta", "com.exemplo.livre"]);
     assert_eq!(repository::list(&core.db()).unwrap()[0].extension_count, 2);
     assert_eq!(repository::catalog_languages(&core.db()).unwrap(), ["ja", "pt-BR"]);
     assert_eq!(repository::preview(&core, &repo.manifest_url()).unwrap().extension_count, 2);
+    assert_ne!(code(install::install(&core, &repo.id, "com.exemplo.adulta")), "extension_rating");
 }
 
 #[test]
@@ -1625,7 +1594,7 @@ fn a_cover_outside_the_extension_hosts_is_not_fetched() {
 }
 
 // ---------------------------------------------------------------------------
-// Filtro +18 nas fontes do Mihon, com um Suwayomi de mentira e obras de teste
+// Fontes do Mihon, com um Suwayomi de mentira e obras de teste
 // ---------------------------------------------------------------------------
 
 const BRIDGED: &str = "eu.kanade.tachiyomi.extension.all.teste";
@@ -1693,10 +1662,6 @@ impl FakeSuwayomi {
     fn checks_of(&self, remote_id: &str) -> usize {
         self.server.seen().iter().filter_map(|seen| serde_json::from_slice::<Value>(&seen.body).ok()).filter(|call| call["query"].as_str().is_some_and(|query| query.contains("fetchManga(")) && call["variables"]["i"].to_string() == remote_id).count()
     }
-
-    fn covers_requested(&self) -> usize {
-        self.server.seen().iter().filter(|seen| seen.path.ends_with("/thumbnail")).count()
-    }
 }
 
 fn core_with_bridge(fake: &FakeSuwayomi) -> (tempfile::TempDir, Arc<Core>) {
@@ -1723,34 +1688,22 @@ fn bridged_list(core: &Core) -> sources::BrowsePage {
     sources::popular(core, BRIDGED, BRIDGED_SOURCE, 1, None, None).unwrap()
 }
 
-fn set_filter(core: &Core, hide: bool) {
-    library::set_setting(&core.db(), "content.adult", &json!(!hide)).unwrap();
-}
-
 fn stored_id(core: &Core, title: &str) -> Option<i64> {
     core.db().query_row("SELECT id FROM online_series WHERE title = ?1", [title], |r| r.get(0)).ok()
 }
 
 #[test]
-fn with_the_filter_on_a_list_without_genres_shows_only_what_the_details_classify() {
+fn a_list_without_genres_shows_every_series_after_the_details() {
     let fake = FakeSuwayomi::new(vec![fake_work("Segura", &[], &["Ação"]), fake_work("Marcada", &[], &["Ecchi"]), fake_work("Sem gêneros", &[], &[])], Duration::ZERO);
     let (_dir, core) = core_with_bridge(&fake);
 
     let page = bridged_list(&core);
-    assert_eq!(titles(&page), ["Segura"]);
-    assert_eq!((page.hidden, page.unverified), (2, 0));
-    assert_eq!(page.results[0].genres, ["Ação"], "a consulta já guarda os detalhes");
-    assert!(sources::cover(&core, page.results[0].id).unwrap().is_some());
-    for title in ["Marcada", "Sem gêneros"] {
-        assert_eq!(sources::cover(&core, stored_id(&core, title).unwrap()).unwrap(), None, "{title}");
-    }
-    assert_eq!(fake.covers_requested(), 1, "a capa de obra escondida nem é pedida");
-
-    set_filter(&core, false);
-    let page = bridged_list(&core);
     assert_eq!(titles(&page), ["Segura", "Marcada", "Sem gêneros"]);
-    assert_eq!((page.hidden, page.unverified), (0, 0));
-    assert!(sources::cover(&core, stored_id(&core, "Marcada").unwrap()).unwrap().is_some());
+    assert_eq!(page.unverified, 0);
+    assert_eq!(page.results[0].genres, ["Ação"], "a consulta já guarda os detalhes");
+    for series in &page.results {
+        assert!(sources::cover(&core, series.id).unwrap().is_some(), "{}", series.title);
+    }
 }
 
 #[test]
@@ -1759,7 +1712,7 @@ fn a_classified_series_is_not_asked_about_again() {
     let (_dir, core) = core_with_bridge(&fake);
     bridged_list(&core);
     assert_eq!(fake.checks(), 2);
-    assert_eq!(titles(&bridged_list(&core)), ["Segura"]);
+    assert_eq!(titles(&bridged_list(&core)), ["Segura", "Sem gêneros"]);
     assert_eq!(fake.checks(), 2, "nem a que a fonte não classifica volta a ser consultada");
 }
 
@@ -1768,30 +1721,21 @@ fn a_list_that_brings_genres_needs_no_extra_call() {
     let fake = FakeSuwayomi::new(vec![fake_work("Com gêneros", &["Ação"], &["Ação"]), fake_work("Adulta", &["Hentai"], &["Hentai"])], Duration::ZERO);
     let (_dir, core) = core_with_bridge(&fake);
     let page = bridged_list(&core);
-    assert_eq!(titles(&page), ["Com gêneros"]);
-    assert_eq!(page.hidden, 1);
+    assert_eq!(titles(&page), ["Com gêneros", "Adulta"]);
     assert_eq!(fake.checks(), 0);
-    assert_eq!(stored_id(&core, "Adulta"), None);
     assert_eq!(page.results[0].genres, ["Ação"]);
 }
 
 #[test]
-fn a_series_that_could_not_be_checked_stays_hidden_and_is_tried_again() {
+fn a_series_that_could_not_be_checked_waits_and_is_tried_again() {
     let mut failing = fake_work("Falhou", &[], &["Ação"]);
     failing.failure = Some("HTTP error 500".into());
     let fake = FakeSuwayomi::new(vec![fake_work("Boa", &[], &["Ação"]), failing], Duration::ZERO);
     let (_dir, core) = core_with_bridge(&fake);
 
-    for hide in [true, false] {
-        set_filter(&core, hide);
-        let page = bridged_list(&core);
-        assert_eq!(titles(&page), ["Boa"], "sem saber os gêneros, nem com o filtro desligado");
-        assert_eq!((page.hidden, page.unverified), (0, 1));
-    }
-    assert_eq!(sources::cover(&core, stored_id(&core, "Falhou").unwrap()).unwrap().is_some(), true, "guardada e com o filtro desligado, como antes");
-
-    set_filter(&core, true);
-    assert_eq!(sources::cover(&core, stored_id(&core, "Falhou").unwrap()).unwrap(), None);
+    let page = bridged_list(&core);
+    assert_eq!(titles(&page), ["Boa"], "sem saber os gêneros, ainda não dá para descartar sexualização de menores");
+    assert_eq!(page.unverified, 1);
     fake.works.lock().unwrap()[1].failure = None;
     assert_eq!(titles(&bridged_list(&core)), ["Boa", "Falhou"]);
 }
@@ -1824,7 +1768,7 @@ fn a_few_failures_along_the_way_do_not_hide_the_rest_of_the_list() {
     let (_dir, core) = core_with_bridge(&fake);
     let page = bridged_list(&core);
     assert_eq!(page.results.len(), 35);
-    assert_eq!((page.hidden, page.unverified), (0, 5));
+    assert_eq!(page.unverified, 5);
     assert_eq!(fake.checks(), 40, "só falhas seguidas param as consultas");
 }
 
@@ -1882,17 +1826,15 @@ fn checking_a_list_costs_time_only_on_the_first_visit() {
 }
 
 #[test]
-fn a_series_that_sexualizes_minors_never_appears_with_the_filter_on_or_off() {
+fn a_series_that_sexualizes_minors_never_appears() {
     let works = vec![fake_work("Comum", &[], &["Ação"]), fake_work("Obra Lolicon", &[], &["Ação"]), fake_work("Pelo gênero nos detalhes", &[], &["Loli"]), fake_work("Pelo gênero na lista", &["Shota"], &["Ação"])];
     let blocked = ["Obra Lolicon", "Pelo gênero nos detalhes", "Pelo gênero na lista"];
     let fake = FakeSuwayomi::new(works, Duration::ZERO);
     let (_dir, core) = core_with_bridge(&fake);
 
-    for hide in [false, true, false] {
-        set_filter(&core, hide);
+    for _ in 0..2 {
         let page = bridged_list(&core);
-        assert_eq!(titles(&page), ["Comum"], "filtro ligado: {hide}");
-        assert_eq!(page.hidden, 0, "desligar o filtro não traz estas de volta, então a tela não sugere isso");
+        assert_eq!(titles(&page), ["Comum"]);
         for title in blocked {
             assert_eq!(stored_id(&core, title), None, "{title} não fica no banco");
         }
@@ -1905,12 +1847,8 @@ fn a_series_that_sexualizes_minors_never_appears_with_the_filter_on_or_off() {
 #[test]
 fn a_native_source_is_checked_by_title_too() {
     let (_dir, core, _repo) = core_with_fixture(&[]);
-    for hide in [true, false] {
-        set_filter(&core, hide);
-        let page = sources::search(&core, EXT, "livre", "Lolicon", 1, None, None).unwrap();
-        assert!(page.results.is_empty(), "filtro ligado: {hide}");
-        assert_eq!(page.hidden, 0);
-    }
+    let page = sources::search(&core, EXT, "livre", "Lolicon", 1, None, None).unwrap();
+    assert!(page.results.is_empty());
     assert_eq!(stored_id(&core, "Lolicon 1"), None);
 }
 
@@ -1941,8 +1879,6 @@ fn what_was_stored_before_is_removed_at_startup_without_touching_the_rest() {
             (1, 'e', 's', 'titulo', 'Obra Lolicon', '[]', 1, 'known', 1, 1),
             (2, 'e', 's', 'genero', 'Obra', '[\"Shota\"]', 1, 'known', 1, 1),
             (3, 'e', 's', 'comum', 'Comum', '[\"Ação\"]', 1, 'known', 1, 1);
-         -- A extensão já foi removida; a última análise sabia que a fonte era livre.
-         UPDATE online_series SET known_source_rating = 'general', known_runtime = 'native';
          INSERT INTO online_chapters (id, series_id, remote_id, title, sort_order, file_path) VALUES (1, 1, 'cap', 'Cap', 0, 'capitulo.cbz');
          INSERT INTO chapter_downloads (id, chapter_id, status, created_at, updated_at) VALUES (1, 1, 'paused', 1, 1);",
     )
@@ -1954,10 +1890,6 @@ fn what_was_stored_before_is_removed_at_startup_without_touching_the_rest() {
     std::fs::write(partial.join("0001.png"), b"pagina").unwrap();
 
     assert_eq!(sources::forget_blocked(&core, &conn).unwrap(), 2);
-    // Como na abertura do app: as obras guardadas sem análise são classificadas em seguida.
-    drop(conn);
-    while rating_store::analyze_outdated_batch(&mut core.db()).unwrap() > 0 {}
-    let conn = core.db();
     let left: Vec<String> = sources::library_series(&conn).unwrap().into_iter().map(|series| series.title).collect();
     assert_eq!(left, ["Comum"]);
     assert!(!cover.exists() && !partial.exists(), "nem capa nem páginas soltas ficam no disco");
@@ -1967,31 +1899,22 @@ fn what_was_stored_before_is_removed_at_startup_without_touching_the_rest() {
 }
 
 #[test]
-fn a_series_without_classification_stays_out_of_every_screen_with_the_filter_on() {
+fn a_series_without_genres_appears_on_every_screen() {
     let fake = FakeSuwayomi::new(vec![fake_work("Sem gêneros", &[], &[])], Duration::ZERO);
     let (_dir, core) = core_with_bridge(&fake);
     let folder = library::create_collection(&core.db(), "Pasta").unwrap();
     library::set_setting(&core.db(), "plugins.online", &json!(true)).unwrap();
 
-    set_filter(&core, false);
     let id = bridged_list(&core).results[0].id;
-    assert!(sources::open_series(&core, id, None).is_ok(), "com o filtro desligado, abre");
+    assert!(sources::open_series(&core, id, None).is_ok());
     assert!(sources::cover(&core, id).unwrap().is_some());
     sources::set_favorite(&core.db(), id, true).unwrap();
     sources::set_following(&core.db(), id, true).unwrap();
     sources::set_series_collections(&mut core.db(), id, &[folder]).unwrap();
 
-    set_filter(&core, true);
-    assert!(sources::library_series(&core.db()).unwrap().is_empty());
-    assert!(sources::list_following(&core.db()).unwrap().is_empty());
-    assert_eq!(library::list_collections(&core.db()).unwrap()[0].comic_count, 0);
-    assert_eq!(sources::cover(&core, id).unwrap(), None, "nem a capa que já estava em cache");
-    assert_eq!(code(sources::open_series(&core, id, None)), "source_unrated");
-
-    let adult: bool = core.db().query_row("SELECT adult FROM online_series WHERE id = ?1", [id], |r| r.get(0)).unwrap();
-    assert!(!adult, "não é a mesma coisa que ser adulta");
-    set_filter(&core, false);
-    assert_eq!(sources::library_series(&core.db()).unwrap().len(), 1, "guardada, volta ao desligar");
+    assert_eq!(sources::library_series(&core.db()).unwrap().len(), 1);
+    assert_eq!(sources::list_following(&core.db()).unwrap().len(), 1);
+    assert_eq!(library::list_collections(&core.db()).unwrap()[0].comic_count, 1);
 }
 
 #[test]
@@ -2026,8 +1949,6 @@ fn chapter(core: &Core, series: &str, remote: &str) -> i64 {
     )
     .unwrap();
     let series_id: i64 = conn.query_row("SELECT id FROM online_series WHERE remote_id = ?1", [series], |r| r.get(0)).unwrap();
-    // Como toda obra gravada pelo app: já classificada.
-    rating_store::analyze(&conn, series_id).unwrap();
     conn.execute("INSERT INTO online_chapters (series_id, remote_id, title, number, sort_order) VALUES (?1, ?2, 'Capítulo 1', '1', 0)", rusqlite::params![series_id, remote]).unwrap();
     conn.last_insert_rowid()
 }

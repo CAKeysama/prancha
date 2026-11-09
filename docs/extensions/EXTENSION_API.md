@@ -82,11 +82,9 @@ O texto aparece para a pessoa: escreva em português e diga o que aconteceu. Um 
 
 | Valor | Comportamento |
 |---|---|
-| `general`, `teen` | Disponível. |
-| `unknown` | Com o filtro +18 ligado, que é o padrão, a fonte fica desabilitada. Declare a classificação real. |
-| `adult` | Com o filtro +18 ligado, a extensão não instala, e resultados marcados como `adult` são descartados, em qualquer fonte. |
+| `general`, `teen`, `adult`, `unknown` | Disponível. A classificação é guardada como informação e não esconde nada. Declare a real. |
 
-Um resultado cujo título ou gêneros indiquem sexualização de menores é descartado em qualquer classificação, com o filtro ligado ou desligado. A obra deixa de aparecer no Prancha.
+Um resultado cujo título ou gêneros indiquem sexualização de menores é descartado em qualquer classificação. A obra deixa de aparecer no Prancha.
 
 ## Limites de execução
 

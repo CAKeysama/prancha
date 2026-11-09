@@ -1,6 +1,5 @@
 import type { SortKey } from "./types";
 import { DEFAULT_SHORTCUTS, type ShortcutMap, sanitizeShortcuts } from "./shortcuts";
-import type { SuspectBehavior } from "./rating";
 
 type ThemePreference = "dark" | "light" | "system";
 export type ReaderMode = "single" | "double" | "vertical" | "webtoon";
@@ -39,8 +38,6 @@ export interface Settings {
   "reader.shortcuts": ShortcutMap;
   /** Plugin de fontes de leitura: sem ele, nada de Explorar, extensões ou repositórios. */
   "plugins.online": boolean;
-  /** Ligado por quem confirma ter 18 anos: o filtro +18 vem ativo. */
-  "content.adult": boolean;
   /** O que entra na central de notificações. */
   "notifications.chapters": boolean;
   "notifications.updates": boolean;
@@ -53,8 +50,6 @@ export interface Settings {
   "notifications.nativeDownloads": boolean;
   /** Silêncio temporário das notificações do sistema (ms desde a época), ou nada. */
   "notifications.nativeMutedUntil": number | null;
-  /** Com o filtro +18 ligado, o que fazer com obras suspeitas ou sem informações. As confirmadas seguem `content.adult`. */
-  "content.suspect": SuspectBehavior;
   onboarding: OnboardingState;
 }
 
@@ -77,7 +72,6 @@ export const DEFAULT_SETTINGS: Settings = {
   "reader.controls": "autohide",
   "reader.shortcuts": DEFAULT_SHORTCUTS,
   "plugins.online": false,
-  "content.adult": false,
   "notifications.chapters": true,
   "notifications.updates": true,
   "notifications.downloadsCompleted": true,
@@ -87,7 +81,6 @@ export const DEFAULT_SETTINGS: Settings = {
   "notifications.native": true,
   "notifications.nativeDownloads": false,
   "notifications.nativeMutedUntil": null,
-  "content.suspect": "hide",
   onboarding: { status: "active", step: 1, comicId: null },
 };
 
@@ -104,7 +97,6 @@ const ENUMS: Partial<Record<SettingKey, readonly string[]>> = {
   "reader.wheel": ["page", "scroll"],
   "reader.end": ["stay", "library"],
   "reader.controls": ["autohide", "always"],
-  "content.suspect": ["hide", "mark", "show"],
 };
 
 function sanitizeOnboarding(v: unknown): OnboardingState {

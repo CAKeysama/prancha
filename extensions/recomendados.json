@@ -1,13 +1,7 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-08",
+  "updatedAt": "2026-11-09",
   "repositories": [
-    {
-      "id": "prancha-demonstracao",
-      "name": "Demonstração do Prancha",
-      "description": "Repositório do próprio projeto, com obras originais criadas só para demonstrar as extensões.",
-      "url": "https://raw.githubusercontent.com/CAKeysama/prancha/main/extensions/demo-repo/prancha-repo.json"
-    },
     {
       "id": "keiyoushi",
       "name": "Keiyoushi",

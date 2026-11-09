@@ -724,8 +724,8 @@ fn map_unique(e: rusqlite::Error, name: &str) -> AppError {
 }
 
 pub fn list_collections(conn: &Connection) -> AppResult<Vec<CollectionInfo>> {
-    // Obras de fontes só contam com o plugin instalado e dentro do filtro +18.
-    let shown = format!("EXISTS (SELECT 1 FROM settings WHERE key = 'plugins.online' AND value = 'true') AND ({SERIES_SAFE_SQL} OR {ADULT_ALLOWED_SQL})");
+    // Obras de fontes só contam com o plugin instalado.
+    let shown = "EXISTS (SELECT 1 FROM settings WHERE key = 'plugins.online' AND value = 'true')";
     let mut stmt = conn.prepare(&format!(
         "SELECT c.id, c.name, c.created_at, c.updated_at, \
          (SELECT count(*) FROM comic_collections cc WHERE cc.collection_id = c.id) + \
@@ -830,22 +830,6 @@ pub fn remove_from_collection(conn: &Connection, collection_id: i64, comic_id: i
 // ---------------------------------------------------------------------------
 // Configurações (JSON por chave)
 // ---------------------------------------------------------------------------
-
-/// Verdadeiro em SQL depois que a pessoa desliga o filtro +18, que vem ligado.
-pub const ADULT_ALLOWED_SQL: &str = "EXISTS (SELECT 1 FROM settings WHERE key = 'content.adult' AND value = 'true')";
-
-/// Verdadeiro em SQL para a obra `o` que passa pelo filtro +18 ligado: nenhuma evidência de conteúdo adulto ou,
-/// se a pessoa escolheu ver, suspeita ou sem informações. Confirmada como +18, só com o filtro desligado.
-/// `SERIES_SAFE_SQL OR ADULT_ALLOWED_SQL` é a regra inteira, e vale para todas as telas.
-pub const SERIES_SAFE_SQL: &str = "(o.rating_state = 'none' OR (o.rating_state IN ('suspect', 'insufficient') AND EXISTS (SELECT 1 FROM settings WHERE key = 'content.suspect' AND value IN ('\"mark\"', '\"show\"'))))";
-
-/// Verdadeiro em SQL para a obra `o` com algum indício, ou sem informação para dizer que não tem:
-/// o que não deve aparecer onde a pessoa não escolheu ver, como numa notificação do sistema.
-pub const SERIES_FLAGGED_SQL: &str = "(o.rating_state <> 'none')";
-
-pub fn adult_allowed(conn: &Connection) -> bool {
-    conn.query_row(&format!("SELECT {ADULT_ALLOWED_SQL}"), [], |r| r.get(0)).unwrap_or(false)
-}
 
 fn valid_key(key: &str) -> bool {
     !key.is_empty() && key.len() <= 64 && key.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))

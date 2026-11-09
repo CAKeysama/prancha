@@ -17,7 +17,7 @@ use serde_json::{Value, json};
 use crate::core::Core;
 use crate::db::now_ms;
 use crate::error::{AppError, AppResult};
-use crate::library::{self, ADULT_ALLOWED_SQL, SERIES_SAFE_SQL};
+use crate::library;
 
 pub const EVENT_CHANGED: &str = "notifications:changed";
 /// Clique numa notificação do sistema: a interface executa a ação dela.
@@ -352,16 +352,6 @@ fn native_notice(conn: &Connection, n: &NewNotification, id: i64, title: &str, b
     if !setting_bool(conn, "notifications.native", true) || !setting_bool(conn, key, default) || native_muted(conn, now) {
         return None;
     }
-    // Uma obra +18 não aparece pelo nome fora do aplicativo.
-    let adult = n.series_id.is_some_and(|series| {
-        conn.query_row(&format!("SELECT {} FROM online_series o WHERE o.id = ?1", library::SERIES_FLAGGED_SQL), [series], |r| r.get::<_, bool>(0)).unwrap_or(true)
-    });
-    if adult && n.kind == Kind::ChaptersNew {
-        return Some(NativeNotice { id, title: "Capítulos novos".into(), body: "Uma obra que você acompanha recebeu capítulos novos.".into() });
-    }
-    if adult {
-        return Some(NativeNotice { id, title: title.to_string(), body: "Abra o Prancha para ver os detalhes.".into() });
-    }
     Some(NativeNotice { id, title: title.to_string(), body: body.to_string() })
 }
 
@@ -524,9 +514,9 @@ pub fn chapters_discovered(conn: &Connection, series_id: i64, chapter_ids: &[i64
 // Consulta
 // ---------------------------------------------------------------------------
 
-/// A notificação de uma obra que o filtro +18 esconde também fica escondida, e não conta na badge.
+/// A notificação de uma obra que não está mais registrada fica escondida, e não conta na badge.
 fn visible_sql() -> String {
-    format!("(n.series_id IS NULL OR EXISTS (SELECT 1 FROM online_series o WHERE o.id = n.series_id AND ({SERIES_SAFE_SQL} OR {ADULT_ALLOWED_SQL})))")
+    "(n.series_id IS NULL OR EXISTS (SELECT 1 FROM online_series o WHERE o.id = n.series_id))".into()
 }
 
 pub fn unread_count(conn: &Connection) -> AppResult<i64> {
@@ -798,9 +788,9 @@ mod tests {
         let conn = db::open_in_memory().unwrap();
         conn.execute_batch(
             "INSERT INTO settings (key, value) VALUES ('plugins.online', 'true');
-             INSERT INTO online_series (id, extension_id, source_id, remote_id, title, following, classification, rating_state, created_at, updated_at) VALUES (1, 'e', 's', 'op', 'One Piece', 1, 'known', 'none', 1, 1);
-             INSERT INTO online_series (id, extension_id, source_id, remote_id, title, following, classification, rating_state, created_at, updated_at) VALUES (2, 'e', 's', 'nar', 'Naruto', 1, 'known', 'none', 1, 1);
-             INSERT INTO online_series (id, extension_id, source_id, remote_id, title, following, classification, rating_state, created_at, updated_at) VALUES (3, 'e', 's', 'x', 'Não acompanhada', 0, 'known', 'none', 1, 1);",
+             INSERT INTO online_series (id, extension_id, source_id, remote_id, title, following, classification, created_at, updated_at) VALUES (1, 'e', 's', 'op', 'One Piece', 1, 'known', 1, 1);
+             INSERT INTO online_series (id, extension_id, source_id, remote_id, title, following, classification, created_at, updated_at) VALUES (2, 'e', 's', 'nar', 'Naruto', 1, 'known', 1, 1);
+             INSERT INTO online_series (id, extension_id, source_id, remote_id, title, following, classification, created_at, updated_at) VALUES (3, 'e', 's', 'x', 'Não acompanhada', 0, 'known', 1, 1);",
         )
         .unwrap();
         conn
@@ -997,21 +987,6 @@ mod tests {
         assert_eq!(record(&conn, &download("d1"), 200).unwrap().unwrap().native, None, "downloads concluídos só para quem pedir");
         library::set_setting(&conn, "notifications.nativeDownloads", &json!(true)).unwrap();
         assert!(record(&conn, &download("d2"), 300 + DOWNLOADS_WINDOW_MS).unwrap().unwrap().native.is_some());
-    }
-
-    #[test]
-    fn adult_series_stay_out_of_native_text_and_the_filtered_list() {
-        let conn = conn();
-        conn.execute("UPDATE online_series SET adult = 1, rating_state = 'confirmed' WHERE id = 2", []).unwrap();
-        let a = chapter(&conn, 2, "1", 1);
-        let r = discover(&conn, 2, &[a], 1).unwrap();
-        let native = r.native.unwrap();
-        assert!(!native.body.contains("Naruto") && !native.title.contains("Naruto"));
-        assert_eq!(r.unread, 0, "com o filtro +18 ligado, não conta");
-        assert!(page(&conn, ListQuery::default()).items.is_empty());
-        assert!(resolve(&conn, r.id, None).is_err());
-        library::set_setting(&conn, "content.adult", &json!(true)).unwrap();
-        assert_eq!(page(&conn, ListQuery::default()).items.len(), 1);
     }
 
     #[test]

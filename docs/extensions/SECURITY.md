@@ -44,7 +44,7 @@ A exceção de loopback usada nos testes existe em duas formas: `Net::new(true)`
 
 ## O que nunca é permitido
 
-Execução de APKs, contorno de DRM, paywall, CAPTCHA ou login. Nenhuma configuração muda isso. Conteúdo adulto só aparece com o [filtro +18](README.md#filtro-18) desligado, depois de a pessoa confirmar a idade. Execução de comandos e acesso irrestrito a arquivos ou à rede também não são permitidos, exceto nas extensões do Mihon, que o Prancha não tem como limitar.
+Execução de APKs, contorno de DRM, paywall, CAPTCHA ou login. Nenhuma configuração muda isso. Execução de comandos e acesso irrestrito a arquivos ou à rede também não são permitidos, exceto nas extensões do Mihon, que o Prancha não tem como limitar.
 
 ## Extensões do Mihon
 

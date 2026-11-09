@@ -543,9 +543,6 @@ fn download(core: &Arc<Core>, job: &Job) -> AppResult<()> {
     let info = chapter_info(&core.db(), id)?;
     let extension = install::runnable(core, &info.extension_id)?;
     let source = sources::source_row(&core.db(), &info.extension_id, &info.source_id)?;
-    if !install::rating_is_available(&core.db(), &source.rating) {
-        return Err(AppError::user("source_disabled", "Esta fonte está desabilitada."));
-    }
     let pages = ordered_pages(if extension.bridged { suwayomi::pages(core, &info.chapter_remote, Some(&job.cancel))? } else { core.engine()?.pages(&extension, Some(&job.cancel), &info.source_id, &info.chapter_remote)? })?;
     let temp = temp_dir(core, id);
     std::fs::create_dir_all(&temp)?;
