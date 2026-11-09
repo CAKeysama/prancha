@@ -67,6 +67,8 @@ Cada merge publica a sua versão por conta própria, mesmo com outra ainda saind
 
 O que impede duas mudanças de usarem a mesma versão é o PR: a verificação **Versão** recusa uma versão já publicada ou menor que a última publicada, e dois PRs que mudam a versão dão conflito nos mesmos arquivos. Se mesmo assim um merge chegar à `main` com uma versão que já tem tag, o `release.yml` e o `versao.yml` ficam vermelhos em vez de pular em silêncio: abra um PR com `npm run version:bump` para publicar o que entrou.
 
+A página de downloads pode ser publicada duas vezes seguidas, pelo merge e pelo fim do `release.yml`. O GitHub recusa uma publicação enquanto a anterior ainda termina, então o `pages.yml` espera e tenta de novo, até três vezes, antes de ficar vermelho. Se ainda assim falhar, rode o workflow de novo com `gh workflow run pages.yml --ref main`, e não com **Re-run failed jobs**: a nova tentativa sobe um segundo artefato `github-pages` na mesma execução, e o `deploy-pages` recusa.
+
 Depois de editar uma release à mão, atualize as páginas com `gh workflow run pages.yml --ref main`.
 
 Para ensaiar sem publicar nada, rode o `release.yml` à mão, na aba Actions ou com `gh workflow run release.yml --ref main`. Os instaladores ficam guardados como artefato da execução.
