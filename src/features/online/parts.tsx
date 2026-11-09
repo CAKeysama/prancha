@@ -2,11 +2,13 @@ import { useState, type ReactNode } from "react";
 import { RefreshCw, Search, ShieldCheck } from "lucide-react";
 import { Button } from "../../components/Button";
 import { PlaceholderCover } from "../../components/Cover";
+import { NewCount } from "../../components/NewCount";
 import { useToast } from "../../components/Toast";
 import { cn } from "../../components/cn";
 import type { SeriesCard } from "../../domain/online";
 import { api, errorMessage, type VerifiableSite } from "../../services/api";
 import { onlineCoverUrl } from "../../services/urls";
+
 
 export function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -127,7 +129,14 @@ export function SeriesGrid({ items, onOpen, showSource }: { items: SeriesCard[];
       {items.map((series) => (
         <li key={series.id}>
           <button type="button" onClick={() => onOpen(series)} className={cn("group block w-full rounded-md text-left focus-visible:outline-2 focus-visible:outline-accent")}>
-            <OnlineCover series={series} />
+            <div className="relative">
+              <OnlineCover series={series} />
+              {series.newCount > 0 && (
+                <span className="pointer-events-none absolute top-1.5 left-1.5">
+                  <NewCount count={series.newCount} className="shadow-overlay" />
+                </span>
+              )}
+            </div>
             <span className="mt-1.5 line-clamp-2 text-sm font-medium group-hover:underline">{series.title}</span>
             {showSource && series.sourceName && <span className="block truncate text-xs text-muted">{series.sourceName}</span>}
           </button>

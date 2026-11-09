@@ -67,6 +67,8 @@ impl Core {
         let paths = AppPaths::new(data_dir)?;
         let conn = db::open(&paths.db)?;
         library::mark_interrupted_jobs(&conn)?;
+        // Nenhuma sessão de leitura sobrevive a uma abertura do app: as que uma queda deixou abertas viram "Em andamento".
+        crate::extensions::reading::recover_sessions(&conn)?;
         if let Err(e) = crate::notifications::prune(&conn, db::now_ms()) {
             log::warn!("limpeza das notificações falhou: {e}");
         }

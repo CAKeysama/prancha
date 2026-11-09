@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Bell, Compass, Search, X } from "lucide-react";
+import { Bell, Compass, RefreshCw, Search, X } from "lucide-react";
 import { Button, IconButton } from "../../components/Button";
 import { EmptyState, ErrorState, Spinner } from "../../components/Feedback";
 import { Segmented, Select } from "../../components/Form";
 import { PageHeader } from "../../components/PageHeader";
+import { TOOLTIP_DELAY_MS } from "../../components/Tooltip";
 import { useLibraryData } from "../../app/library-events";
 import { useNav } from "../../app/navigation";
 import { KIND_LABELS, groupByTitle, languageName, nextHistory, runLimited, type BrowsePage, type SeriesCard, type SourceSummary, type TitleGroup } from "../../domain/online";
@@ -63,6 +64,29 @@ export function ExploreScreen() {
   const [sections, setSections] = useState<Section[]>([]);
   const [following, setFollowing] = useState<SeriesCard[] | null>(null);
   const [followingError, setFollowingError] = useState<string | null>(null);
+  const [checkingNew, setCheckingNew] = useState(false);
+  const checkRequest = useRef<string | null>(null);
+  // Só as obras acompanhadas são consultadas. Cada uma é aberta na fonte, uma de cada vez, e os contadores voltam com a lista.
+  const checkNew = async () => {
+    if (checkRequest.current) return;
+    const requestId = `following-${Date.now()}`;
+    checkRequest.current = requestId;
+    setCheckingNew(true);
+    try {
+      setFollowing(await api.seriesRefreshFollowing(requestId));
+    } catch (e) {
+      if (!(e instanceof ApiError && e.code === "extension_cancelled")) setFollowingError(errorMessage(e));
+    } finally {
+      checkRequest.current = null;
+      setCheckingNew(false);
+    }
+  };
+  useEffect(
+    () => () => {
+      if (checkRequest.current) void api.sourceCancel(checkRequest.current).catch(() => undefined);
+    },
+    [],
+  );
   const [history, setHistory] = useState<string[]>([]);
   const [focused, setFocused] = useState(false);
   const inFlight = useRef(new Set<string>());
@@ -343,6 +367,12 @@ export function ExploreScreen() {
               <EmptyState icon={Bell} title="Nenhuma obra acompanhada">
                 Abra uma obra e escolha “Acompanhar” para encontrá-la aqui, mesmo sem baixar nada.
               </EmptyState>
+            )}
+            {following && following.length > 0 && (
+              <div className="mb-3 flex items-center justify-end gap-2">
+                {checkingNew && <Spinner size={14} label="Procurando capítulos novos…" />}
+                <IconButton icon={RefreshCw} label="Procurar capítulos novos" variant="secondary" size="sm" tooltipDelay={TOOLTIP_DELAY_MS} disabled={checkingNew} onClick={() => void checkNew()} />
+              </div>
             )}
             {following && <SeriesGrid items={following} onOpen={openSeries} showSource />}
           </>

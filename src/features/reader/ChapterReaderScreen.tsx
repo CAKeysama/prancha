@@ -4,8 +4,11 @@ import { useNav } from "../../app/navigation";
 import { Button } from "../../components/Button";
 import { ErrorState, Spinner } from "../../components/Feedback";
 import { chapterStream, type ChapterSession } from "../../domain/online";
-import { chapterAt, chapterLeftBehind, webtoonHint } from "../../domain/reader";
+import { chapterAt, webtoonHint } from "../../domain/reader";
+import { ReadingLifecycle, serialQueue } from "../../domain/reading-lifecycle";
 import { ApiError, api, errorMessage } from "../../services/api";
+import { cancellable } from "../../services/events";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { onlinePageUrl } from "../../services/urls";
 import { SourceTrouble } from "../online/parts";
 import { useLeaveFullscreenOnClose } from "./fullscreen";
@@ -15,6 +18,48 @@ let requestCounter = 0;
 
 /** Quantas páginas antes do fim o próximo capítulo já é pedido, para a passagem não ter espera. */
 const NEAR_THE_END = 5;
+
+/** O leitor avisa que continua aberto: sem isso, a sessão deixa de valer como "Lendo" (reading.rs, SESSION_STALE_MS). */
+const HEARTBEAT_MS = 60_000;
+
+/**
+ * Liga as regras do ciclo de leitura ao backend. As gravações saem na ordem em que aconteceram, e a sessão
+ * termina ao sair do leitor, ao trocar de capítulo e ao fechar a janela. Uma queda é tratada na próxima abertura.
+ */
+function useReadingLifecycle(): ReadingLifecycle {
+  const [{ lifecycle, queue }] = useState(() => {
+    const queue = serialQueue();
+    const lifecycle = new ReadingLifecycle({
+      acknowledge: (id) => void queue.push(() => api.chapterAcknowledge(id)),
+      start: (id) => void queue.push(() => api.chapterReadingStart(id)),
+      end: (id) => void queue.push(() => api.chapterReadingEnd(id)),
+      complete: (id) => void queue.push(() => api.chapterReadingComplete(id)),
+    });
+    return { lifecycle, queue };
+  });
+  useEffect(() => {
+    const beat = window.setInterval(() => {
+      const id = lifecycle.active;
+      if (id !== null) void queue.push(() => api.chapterReadingTouch(id));
+    }, HEARTBEAT_MS);
+    const onUnload = () => lifecycle.close();
+    window.addEventListener("beforeunload", onUnload);
+    const offClose = cancellable(() =>
+      getCurrentWindow().onCloseRequested(async () => {
+        lifecycle.close();
+        // Nunca impedir o fechamento por muito tempo: o que não der tempo, a recuperação resolve.
+        await Promise.race([queue.idle, new Promise((done) => window.setTimeout(done, 800))]);
+      }),
+    );
+    return () => {
+      window.clearInterval(beat);
+      window.removeEventListener("beforeunload", onUnload);
+      offClose();
+      lifecycle.close();
+    };
+  }, [lifecycle, queue]);
+  return lifecycle;
+}
 
 const isCancelled = (e: unknown) => e instanceof ApiError && e.code === "extension_cancelled";
 
@@ -84,10 +129,11 @@ function ChapterStream({ first, zoomState, onOpen, fromChapters }: { first: Chap
   const [sessions, setSessions] = useState([first]);
   const [failure, setFailure] = useState<{ message: string; protected: boolean } | null>(null);
   const request = useRef<string | null>(null);
-  const seenPage = useRef(first.start.pageIndex);
+  const lifecycle = useReadingLifecycle();
 
   const nextId = sessions.at(-1)!.nextId;
   const chapters = useMemo(() => chapterStream(sessions), [sessions]);
+  lifecycle.setChapters(chapters);
   const last = chapters.at(-1)!;
   const total = last.first + last.count;
 
@@ -116,12 +162,9 @@ function ChapterStream({ first, zoomState, onOpen, fromChapters }: { first: Chap
 
   const onPage = useCallback(
     (page: number) => {
-      const finished = chapterLeftBehind(chapters, seenPage.current, page);
-      seenPage.current = page;
-      if (finished) void api.chapterSaveProgress(finished.id, finished.count - 1, finished.count, 0).catch(() => undefined);
       if (failure === null && page >= total - NEAR_THE_END) loadNext();
     },
-    [chapters, total, failure, loadNext],
+    [total, failure, loadNext],
   );
 
   const content = useMemo<ReaderContent>(() => {
@@ -168,8 +211,9 @@ function ChapterStream({ first, zoomState, onOpen, fromChapters }: { first: Chap
       ),
       previousChapter: previousId === null ? undefined : () => onOpen(previousId),
       nextChapter: nextId === null ? undefined : () => onOpen(nextId),
+      lifecycle,
     };
-  }, [first, chapters, total, nextId, failure, onPage, loadNext, onOpen, fromChapters]);
+  }, [first, chapters, total, nextId, failure, onPage, loadNext, onOpen, fromChapters, lifecycle]);
 
   return <Reader content={content} pdf={null} zoomState={zoomState} />;
 }

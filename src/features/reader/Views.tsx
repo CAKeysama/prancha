@@ -110,8 +110,18 @@ interface VerticalProps {
   startRatio: number;
   onSize: (i: number, s: Size) => void;
   /** Página atual e posição relativa dentro dela (0–1). */
-  onPosition: (page: number, ratio: number) => void;
+  onPosition: (page: number, ratio: number, scroll: ScrollInfo) => void;
 }
+
+export interface ScrollInfo {
+  /** A rolagem veio da pessoa (roda, toque, teclado, barra), e não da restauração da posição. */
+  user: boolean;
+  /** A maior página cuja borda de baixo já entrou na tela, com tolerância de arredondamento. -1 se nenhuma. */
+  passed: number;
+}
+
+/** Diferenças de altura e arredondamento: até aqui, a borda de baixo da página conta como alcançada. */
+export const BOTTOM_TOLERANCE_PX = 4;
 
 export interface VerticalHandle {
   scrollToPage: (page: number, ratio?: number) => void;
@@ -162,6 +172,21 @@ export const VerticalView = forwardRef<VerticalHandle, VerticalProps>(function V
     onPositionRef.current = onPosition;
   });
 
+  // Só rolagem feita pela pessoa conta como leitura: a restauração da posição também rola a tela.
+  const userScrolled = useRef(false);
+  useEffect(() => {
+    const el = viewport.current;
+    if (!el) return;
+    const mark = () => {
+      userScrolled.current = true;
+    };
+    const events = ["wheel", "touchmove", "keydown", "pointerdown"] as const;
+    for (const name of events) el.addEventListener(name, mark, { passive: true });
+    return () => {
+      for (const name of events) el.removeEventListener(name, mark);
+    };
+  }, []);
+
   useEffect(() => {
     const el = viewport.current;
     if (!el) return;
@@ -187,7 +212,14 @@ export const VerticalView = forwardRef<VerticalHandle, VerticalProps>(function V
         const next: [number, number] = [Math.max(0, current - 2), Math.min(count - 1, last + 3)];
         return r[0] === next[0] && r[1] === next[1] ? r : next;
       });
-      if (restored.current) onPositionRef.current(current, ratio);
+      let passed = -1;
+      for (let i = 0; i < pageEls.current.length; i++) {
+        const p = pageEls.current[i];
+        if (!p) continue;
+        if (p.offsetTop + p.offsetHeight <= visibleEnd + BOTTOM_TOLERANCE_PX) passed = i;
+        else break;
+      }
+      if (restored.current) onPositionRef.current(current, ratio, { user: userScrolled.current, passed });
     };
     const onScroll = () => {
       if (!frame) frame = requestAnimationFrame(measure);
