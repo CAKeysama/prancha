@@ -3,6 +3,14 @@
 Tudo o que mudou em cada versão do Prancha. O projeto segue o [versionamento semântico](https://semver.org/lang/pt-BR/),
 e as notas das releases e a [página de downloads](https://cakeysama.github.io/prancha/) são geradas a partir deste arquivo.
 
+## [0.6.1] - 2026-11-09
+
+Uma versão de organização: daqui em diante, toda mudança no Prancha sai como versão nova, com o número que ela pede.
+
+### Observações
+
+- Nada muda no aplicativo. A partir desta versão, cada correção, melhoria ou novidade chega como atualização assim que fica pronta, numerada pelo [versionamento semântico](https://semver.org/lang/pt-BR/): novidades sobem o número do meio, correções sobem o último.
+
 ## [0.6.0] - 2026-11-09
 
 Agora o Prancha avisa o que mudou e lembra onde você está em cada capítulo. Há uma central de notificações, cada capítulo mostra se foi lido, está em andamento ou é novo, e o filtro +18 explica o que decidiu e aceita correção.
