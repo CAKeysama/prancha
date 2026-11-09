@@ -3,6 +3,20 @@
 Tudo o que mudou em cada versão do Prancha. O projeto segue o [versionamento semântico](https://semver.org/lang/pt-BR/),
 e as notas das releases e a [página de downloads](https://cakeysama.github.io/prancha/) são geradas a partir deste arquivo.
 
+## [0.10.0] - 2026-11-09
+
+O projeto ganhou uma página de visão geral, com as versões publicadas, os downloads dos instaladores e as verificações automáticas, tudo com dados públicos do GitHub.
+
+### Novidades
+
+- **Visão geral do projeto:** a nova página **Visão geral** do site oficial (`prancha-beta.vercel.app/visao-geral`) mostra a versão atual, o histórico de versões com notas e instaladores, os downloads por versão e como andam as verificações automáticas: quantas passam, quanto tempo levam e as execuções recentes.
+- **Configurações › Geral:** a opção **Visão geral do projeto** abre essa página no navegador.
+
+### Observações
+
+- Os números vêm só do GitHub e são atualizados a cada 15 minutos. A página não usa a telemetria nem nenhum dado de quem usa o Prancha, e o app não faz nenhuma consulta nova para mostrá-la.
+- Downloads contam os instaladores baixados, inclusive pelas atualizações automáticas. Não são o número de pessoas que usam o Prancha.
+
 ## [0.9.0] - 2026-11-09
 
 Estatísticas de uso opcionais: com a sua permissão, o Prancha passa a contar quais versões e fontes estão em uso e onde ele falha, sem nada do que você lê. Começam desligadas.
