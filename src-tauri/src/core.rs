@@ -64,6 +64,8 @@ impl Core {
         let paths = AppPaths::new(data_dir)?;
         let conn = db::open(&paths.db)?;
         library::mark_interrupted_jobs(&conn)?;
+        // Nenhuma sessão de leitura sobrevive a uma abertura do app: as que uma queda deixou abertas viram "Em andamento".
+        crate::extensions::reading::recover_sessions(&conn)?;
         let db_path = paths.db.clone();
         let importer = Importer::spawn(move || db::open(&db_path), paths.covers.clone(), emit.clone())?;
         // Capas pendentes ou geradas com parâmetros antigos são refeitas em segundo plano.

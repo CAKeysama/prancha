@@ -15,6 +15,7 @@ use serde::Serialize;
 use super::net::{Access, Cancel, Limits, Request};
 use super::runtime::{ComicDetails, ContentRating, Filter, Installed, Page, PublicationStatus, SearchPage};
 use super::suwayomi::{self, Browse};
+use super::reading::{self, ReadState};
 use super::{downloads, install, minors};
 use crate::core::Core;
 use crate::covers;
@@ -256,9 +257,12 @@ pub struct SeriesCard {
     pub last_checked_at: Option<i64>,
     pub last_update_at: Option<i64>,
     pub favorite: bool,
+    /// Capítulos que chegaram depois da primeira sincronização e ainda não foram abertos nem marcados como lidos.
+    pub new_count: i64,
 }
 
-const CARD_SELECT: &str = "SELECT o.id, o.extension_id, o.source_id, s.name, o.remote_id, o.title, o.cover_url, o.summary, o.author, o.genres, o.status, o.language, o.following, o.chapter_sort, o.last_checked_at, o.last_update_at, o.favorite
+const CARD_SELECT: &str = "SELECT o.id, o.extension_id, o.source_id, s.name, o.remote_id, o.title, o.cover_url, o.summary, o.author, o.genres, o.status, o.language, o.following, o.chapter_sort, o.last_checked_at, o.last_update_at, o.favorite,
+        (SELECT count(*) FROM online_chapters n WHERE n.series_id = o.id AND n.acknowledged_at IS NULL)
     FROM online_series o LEFT JOIN extension_sources s ON s.extension_id = o.extension_id AND s.source_id = o.source_id";
 
 fn card_from_row(r: &Row) -> rusqlite::Result<SeriesCard> {
@@ -280,6 +284,7 @@ fn card_from_row(r: &Row) -> rusqlite::Result<SeriesCard> {
         last_checked_at: r.get(14)?,
         last_update_at: r.get(15)?,
         favorite: r.get::<_, i64>(16)? != 0,
+        new_count: r.get(17)?,
     })
 }
 
@@ -611,6 +616,12 @@ pub struct ChapterView {
     pub comic_id: Option<i64>,
     pub progress: Option<ChapterProgress>,
     pub download: Option<ChapterDownload>,
+    /// `unread`, `reading` (sessão ativa no leitor), `in_progress` ou `read`.
+    pub read_state: ReadState,
+    /// Chegou depois da primeira sincronização e ainda não foi aberto nem marcado como lido. Independe do estado de leitura.
+    pub is_new: bool,
+    pub first_seen_at: Option<i64>,
+    pub completed_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -633,6 +644,8 @@ pub struct SeriesResume {
     pub chapter_id: i64,
     pub title: String,
     pub progress: Option<ChapterProgress>,
+    /// O estado do capítulo onde a leitura continua, para a biblioteca dizer "Capítulo 42 · Em andamento".
+    pub state: ReadState,
 }
 
 /// Até onde a pessoa leu e onde a obra está guardada, igual na página da obra e na biblioteca.
@@ -647,16 +660,24 @@ pub struct SeriesReading {
     pub collections: Vec<i64>,
 }
 
-/// Onde a leitura continua: no capítulo mais adiantado com progresso ou, se ele terminou, no seguinte.
-/// Terminado o último, ler de novo começa do primeiro. `chapters` vem na ordem de leitura.
+/// Onde a leitura continua: no capítulo mais adiantado já iniciado ou, se ele terminou, no seguinte ainda não lido.
+/// Terminados todos, ler de novo começa do primeiro. `chapters` vem na ordem de leitura.
 fn reading_of(conn: &Connection, id: i64, chapters: &[ChapterView]) -> AppResult<SeriesReading> {
-    let reached = chapters.iter().rposition(|chapter| chapter.progress.is_some());
-    let finished = |at: usize| chapters[at].progress.as_ref().is_some_and(|progress| progress.page_index >= progress.page_count - 1);
-    let (status, chapters_read, resume) = match reached {
-        None => ("unread", 0, chapters.first()),
-        Some(at) if !finished(at) => ("reading", at, chapters.get(at)),
-        Some(at) if at + 1 < chapters.len() => ("reading", at + 1, chapters.get(at + 1)),
-        Some(_) => ("completed", chapters.len(), chapters.first()),
+    let read = |chapter: &ChapterView| chapter.completed_at.is_some();
+    let touched = |chapter: &ChapterView| read(chapter) || matches!(chapter.read_state, ReadState::Reading | ReadState::InProgress);
+    let chapters_read = chapters.iter().filter(|chapter| read(chapter)).count();
+    let reached = chapters.iter().rposition(touched);
+    let resume = match reached {
+        None => chapters.first(),
+        Some(at) if !read(&chapters[at]) => chapters.get(at),
+        Some(at) => chapters[at + 1..].iter().find(|chapter| !read(chapter)).or_else(|| chapters.iter().find(|chapter| !read(chapter))).or(chapters.first()),
+    };
+    let status = if chapters.is_empty() || reached.is_none() {
+        "unread"
+    } else if chapters_read == chapters.len() {
+        "completed"
+    } else {
+        "reading"
     };
     let mut statement = conn.prepare("SELECT collection_id FROM series_collections WHERE series_id = ?1")?;
     let collections = statement.query_map([id], |r| r.get(0))?.collect::<Result<_, _>>()?;
@@ -664,23 +685,30 @@ fn reading_of(conn: &Connection, id: i64, chapters: &[ChapterView]) -> AppResult
         read_status: status,
         chapter_count: chapters.len(),
         chapters_read,
-        resume: resume.map(|chapter| SeriesResume { chapter_id: chapter.id, title: chapter.title.clone(), progress: chapter.progress.clone().filter(|_| status == "reading") }),
+        resume: resume.map(|chapter| SeriesResume {
+            chapter_id: chapter.id,
+            title: chapter.title.clone(),
+            progress: chapter.progress.clone().filter(|_| matches!(chapter.read_state, ReadState::Reading | ReadState::InProgress)),
+            state: chapter.read_state,
+        }),
         collections,
     })
 }
 
 pub fn chapters_of(conn: &Connection, series_id: i64) -> AppResult<Vec<ChapterView>> {
     let mut statement = conn.prepare(
-        "SELECT c.id, c.remote_id, c.title, c.number, c.published_at, c.sort_order, c.file_path, c.comic_id, coalesce(p.page_index, q.page_index), coalesce(p.page_count, q.page_count),
-                d.id, d.status, d.pages_done, d.pages_total, d.error
+        &format!("SELECT c.id, c.remote_id, c.title, c.number, c.published_at, c.sort_order, c.file_path, c.comic_id, coalesce(p.page_index, q.page_index), coalesce(p.page_count, q.page_count),
+                d.id, d.status, d.pages_done, d.pages_total, d.error,
+                {active}, c.reading_started_at IS NOT NULL, c.completed_at, c.manual_unread, c.acknowledged_at IS NULL, c.first_seen_at
          FROM online_chapters c
          LEFT JOIN reading_progress p ON p.comic_id = c.comic_id
          LEFT JOIN chapter_progress q ON q.chapter_id = c.id
          LEFT JOIN chapter_downloads d ON d.id = (SELECT max(x.id) FROM chapter_downloads x WHERE x.chapter_id = c.id)
          WHERE c.series_id = ?1
-         ORDER BY c.sort_order, c.id",
+         ORDER BY c.sort_order, c.id", active = reading::active_session_sql("?2")),
     )?;
-    let rows = statement.query_map([series_id], |r| {
+    let rows = statement.query_map(params![series_id, now_ms()], |r| {
+        let completed_at: Option<i64> = r.get(17)?;
         let file_path: Option<String> = r.get(6)?;
         let comic_id: Option<i64> = r.get(7)?;
         let downloaded = file_path.as_deref().is_some_and(|path| std::path::Path::new(path).exists());
@@ -708,15 +736,32 @@ pub fn chapters_of(conn: &Connection, series_id: i64) -> AppResult<Vec<ChapterVi
                 Some(id) => Some(ChapterDownload { id, status: r.get(11)?, pages_done: r.get(12)?, pages_total: r.get(13)?, error: r.get(14)? }),
                 None => None,
             },
+            read_state: reading::derive_state(r.get(15)?, r.get(16)?, completed_at.is_some(), r.get::<_, i64>(18)? != 0),
+            is_new: r.get(19)?,
+            first_seen_at: r.get(20)?,
+            completed_at,
         })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
-/// O capítulo só some do registro se ninguém depende dele localmente.
-fn store_chapters(conn: &mut Connection, series_id: i64, chapters: &[super::runtime::Chapter]) -> AppResult<()> {
+/// O capítulo só some do registro se ninguém depende dele localmente: arquivo, biblioteca ou histórico de leitura.
+///
+/// Novidade: um capítulo é novo quando aparece pela primeira vez numa obra acompanhada que já tinha sido sincronizada.
+/// A primeira sincronização é o ponto de referência e nunca marca o histórico como novo; obras não acompanhadas não
+/// geram novidades. O capítulo que já existia mantém `first_seen_at`, `acknowledged_at` e o estado de leitura.
+/// Devolve os ids dos capítulos que acabaram de ser marcados como novos (para quem quiser avisar a pessoa).
+pub fn store_chapters(conn: &mut Connection, series_id: i64, chapters: &[super::runtime::Chapter]) -> AppResult<Vec<i64>> {
     let tx = conn.transaction()?;
+    let now = now_ms();
+    let flags_new: bool = tx.query_row(
+        "SELECT following = 1 AND EXISTS (SELECT 1 FROM online_chapters c WHERE c.series_id = o.id) FROM online_series o WHERE o.id = ?1",
+        [series_id],
+        |r| r.get(0),
+    )?;
+    let acknowledged = if flags_new { None } else { Some(now) };
     let mut seen = HashSet::new();
+    let mut fresh = Vec::new();
     let mut newest: Option<i64> = None;
     for chapter in chapters.iter().take(MAX_CHAPTERS) {
         if chapter.id.is_empty() || chapter.id.len() > MAX_REMOTE_ID_BYTES || !seen.insert(chapter.id.as_str()) {
@@ -724,14 +769,20 @@ fn store_chapters(conn: &mut Connection, series_id: i64, chapters: &[super::runt
         }
         let Some(title) = clean(Some(&chapter.title), MAX_TITLE_CHARS) else { continue };
         newest = newest.max(chapter.published_at);
+        let known: bool = tx.query_row("SELECT EXISTS (SELECT 1 FROM online_chapters WHERE series_id = ?1 AND remote_id = ?2)", params![series_id, chapter.id], |r| r.get(0))?;
         tx.execute(
-            "INSERT INTO online_chapters (series_id, remote_id, title, number, published_at, sort_order) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            "INSERT INTO online_chapters (series_id, remote_id, title, number, published_at, sort_order, first_seen_at, acknowledged_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
              ON CONFLICT (series_id, remote_id) DO UPDATE SET title = excluded.title, number = excluded.number, published_at = excluded.published_at, sort_order = excluded.sort_order",
-            params![series_id, chapter.id, title, clean(chapter.number.as_deref(), 40), chapter.published_at, chapter.order],
+            params![series_id, chapter.id, title, clean(chapter.number.as_deref(), 40), chapter.published_at, chapter.order, now, acknowledged],
         )?;
+        if flags_new && !known {
+            fresh.push(tx.last_insert_rowid());
+        }
     }
     let existing: Vec<(i64, String)> = {
-        let mut statement = tx.prepare("SELECT id, remote_id FROM online_chapters WHERE series_id = ?1 AND comic_id IS NULL AND file_path IS NULL")?;
+        let mut statement = tx.prepare(
+            "SELECT id, remote_id FROM online_chapters WHERE series_id = ?1 AND comic_id IS NULL AND file_path IS NULL AND reading_started_at IS NULL AND completed_at IS NULL",
+        )?;
         let rows = statement.query_map([series_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
         rows.collect::<Result<_, _>>()?
     };
@@ -740,9 +791,9 @@ fn store_chapters(conn: &mut Connection, series_id: i64, chapters: &[super::runt
             tx.execute("DELETE FROM online_chapters WHERE id = ?1", [id])?;
         }
     }
-    tx.execute("UPDATE online_series SET last_checked_at = ?2, last_update_at = coalesce(?3, last_update_at), updated_at = ?2 WHERE id = ?1", params![series_id, now_ms(), newest])?;
+    tx.execute("UPDATE online_series SET last_checked_at = ?2, last_update_at = coalesce(?3, last_update_at), updated_at = ?2 WHERE id = ?1", params![series_id, now, newest])?;
     tx.commit()?;
-    Ok(())
+    Ok(fresh)
 }
 
 /// O que há registrado, sem consultar a fonte. Funciona sem internet e depois de remover a extensão.
@@ -753,7 +804,7 @@ pub fn stored_series(conn: &Connection, id: i64) -> AppResult<SeriesView> {
 
 fn remove_if_unused(core: &Core, conn: &Connection, id: i64) -> AppResult<()> {
     let removed = conn.execute(
-        "DELETE FROM online_series WHERE id = ?1 AND following = 0 AND favorite = 0 AND NOT EXISTS (SELECT 1 FROM series_collections x WHERE x.series_id = ?1) AND NOT EXISTS (SELECT 1 FROM online_chapters c WHERE c.series_id = ?1 AND (c.comic_id IS NOT NULL OR c.file_path IS NOT NULL OR EXISTS (SELECT 1 FROM chapter_progress q WHERE q.chapter_id = c.id)))",
+        "DELETE FROM online_series WHERE id = ?1 AND following = 0 AND favorite = 0 AND NOT EXISTS (SELECT 1 FROM series_collections x WHERE x.series_id = ?1) AND NOT EXISTS (SELECT 1 FROM online_chapters c WHERE c.series_id = ?1 AND (c.comic_id IS NOT NULL OR c.file_path IS NOT NULL OR c.reading_started_at IS NOT NULL OR c.completed_at IS NOT NULL OR EXISTS (SELECT 1 FROM chapter_progress q WHERE q.chapter_id = c.id)))",
         [id],
     )?;
     if removed > 0 {
@@ -911,9 +962,10 @@ pub fn open_chapter(core: &Core, id: i64, cancel: Option<&Cancel>) -> AppResult<
             let (extension, _) = usable(core, &chapter.extension_id, &chapter.source_id)?;
             let count = fetch_pages(core, id, &chapter, &extension, cancel)?.len() as i64;
             let stored: Option<(i64, f64, i64)> = core.db().query_row("SELECT page_index, scroll_ratio, updated_at FROM chapter_progress WHERE chapter_id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).optional()?;
-            // Como na biblioteca, um capítulo terminado recomeça.
+            // Como na biblioteca, um capítulo concluído recomeça ao reler. Um não concluído volta exatamente onde parou.
+            let completed: bool = core.db().query_row("SELECT completed_at IS NOT NULL FROM online_chapters WHERE id = ?1", [id], |r| r.get(0))?;
             let start = match stored {
-                Some((page, ratio, updated_at)) if page < count - 1 => Progress { page_index: page, page_count: count, scroll_ratio: ratio, updated_at },
+                Some((page, ratio, updated_at)) if page < count && !(completed && page >= count - 1) => Progress { page_index: page, page_count: count, scroll_ratio: ratio, updated_at },
                 _ => Progress { page_index: 0, page_count: count, scroll_ratio: 0.0, updated_at: now_ms() },
             };
             (count, start, None)
@@ -968,8 +1020,10 @@ pub fn save_chapter_progress(conn: &Connection, id: i64, page_index: i64, page_c
     if page_count <= 0 {
         return Err(AppError::user("invalid", "Número de páginas inválido."));
     }
+    // Gravar a posição também mantém viva a sessão de leitura, se houver uma. Não inicia nem conclui nada.
     if let Some(comic) = chapter_row(conn, id)?.comic_id {
         library::save_progress(conn, comic, page_index, page_count, scroll_ratio)?;
+        reading::touch(conn, id)?;
         return Ok(());
     }
     let scroll_ratio = if scroll_ratio.is_finite() { scroll_ratio.clamp(0.0, 1.0) } else { 0.0 };
@@ -978,6 +1032,7 @@ pub fn save_chapter_progress(conn: &Connection, id: i64, page_index: i64, page_c
          ON CONFLICT (chapter_id) DO UPDATE SET page_index = ?2, page_count = ?3, scroll_ratio = ?4, updated_at = ?5",
         params![id, page_index.clamp(0, page_count - 1), page_count, scroll_ratio, now_ms()],
     )?;
+    reading::touch(conn, id)?;
     Ok(())
 }
 
@@ -1037,6 +1092,22 @@ pub fn list_following(conn: &Connection) -> AppResult<Vec<SeriesCard>> {
     Ok(rows)
 }
 
+/// Só as obras acompanhadas participam da busca por capítulos novos. Uma fonte que falha não impede as outras,
+/// e o que já estava registrado (estados, novidades) não muda por causa dela.
+pub fn refresh_following(core: &Core, cancel: Option<&Cancel>) -> AppResult<Vec<SeriesCard>> {
+    let ids: Vec<i64> = list_following(&core.db())?.into_iter().map(|series| series.id).collect();
+    for id in ids {
+        if cancel.is_some_and(|cancel| cancel.load(Ordering::Relaxed)) {
+            break;
+        }
+        match open_series(core, id, cancel) {
+            Err(error) if error.code() == "extension_cancelled" => break,
+            _ => {}
+        }
+    }
+    list_following(&core.db())
+}
+
 // ---------------------------------------------------------------------------
 // Obras na biblioteca
 // ---------------------------------------------------------------------------
@@ -1051,6 +1122,8 @@ pub struct LibrarySeries {
     pub favorite: bool,
     pub added_at: i64,
     pub last_opened_at: Option<i64>,
+    pub following: bool,
+    pub new_count: i64,
     #[serde(flatten)]
     pub reading: SeriesReading,
 }
@@ -1059,23 +1132,28 @@ pub struct LibrarySeries {
 pub fn library_series(conn: &Connection) -> AppResult<Vec<LibrarySeries>> {
     let mut statement = conn.prepare(&format!(
         "SELECT o.id, o.title, o.cover_url IS NOT NULL, s.name, o.favorite, o.created_at,
-                (SELECT max(coalesce(p.updated_at, q.updated_at)) FROM online_chapters c
+                (SELECT max(max(coalesce(p.updated_at, q.updated_at, 0), coalesce(c.last_read_at, 0))) FROM online_chapters c
                  LEFT JOIN reading_progress p ON p.comic_id = c.comic_id
-                 LEFT JOIN chapter_progress q ON q.chapter_id = c.id WHERE c.series_id = o.id)
+                 LEFT JOIN chapter_progress q ON q.chapter_id = c.id WHERE c.series_id = o.id),
+                o.following
          FROM online_series o LEFT JOIN extension_sources s ON s.extension_id = o.extension_id AND s.source_id = o.source_id
          WHERE ({safe} OR {adult})
            AND (o.favorite = 1 OR o.following = 1
                 OR EXISTS (SELECT 1 FROM series_collections x WHERE x.series_id = o.id)
-                OR EXISTS (SELECT 1 FROM online_chapters c JOIN chapter_progress q ON q.chapter_id = c.id WHERE c.series_id = o.id))",
+                OR EXISTS (SELECT 1 FROM online_chapters c JOIN chapter_progress q ON q.chapter_id = c.id WHERE c.series_id = o.id)
+                OR EXISTS (SELECT 1 FROM online_chapters c WHERE c.series_id = o.id AND (c.reading_started_at IS NOT NULL OR c.completed_at IS NOT NULL)))",
         safe = library::SERIES_SAFE_SQL,
         adult = library::ADULT_ALLOWED_SQL,
     ))?;
-    let rows: Vec<(i64, String, bool, Option<String>, bool, i64, Option<i64>)> =
-        statement.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)))?.collect::<Result<_, _>>()?;
+    let rows: Vec<(i64, String, bool, Option<String>, bool, i64, Option<i64>, bool)> = statement
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get::<_, Option<i64>>(6)?.filter(|at| *at > 0), r.get(7)?)))?
+        .collect::<Result<_, _>>()?;
+    let new_counts = reading::new_counts(conn)?;
     rows.into_iter()
-        .map(|(id, title, has_cover, source_name, favorite, added_at, last_opened_at)| {
+        .map(|(id, title, has_cover, source_name, favorite, added_at, last_opened_at, following)| {
             let reading = reading_of(conn, id, &chapters_of(conn, id)?)?;
-            Ok(LibrarySeries { id, title, has_cover, source_name, favorite, added_at, last_opened_at, reading })
+            let new_count = new_counts.get(&id).copied().unwrap_or(0);
+            Ok(LibrarySeries { id, title, has_cover, source_name, favorite, added_at, last_opened_at, following, new_count, reading })
         })
         .collect()
 }
@@ -1115,29 +1193,15 @@ pub fn remove_series_from_collection(conn: &Connection, collection_id: i64, id: 
     Ok(())
 }
 
-/// Marca a obra inteira como lida ou não lida, incluindo os capítulos baixados.
+/// Marca a obra inteira como lida ou não lida, incluindo os capítulos baixados. A posição salva de cada capítulo fica.
 pub fn set_series_read(conn: &mut Connection, id: i64, read: bool) -> AppResult<()> {
     card(conn, id)?;
-    let tx = conn.transaction()?;
-    let comics: Vec<i64> = {
-        let mut statement = tx.prepare("SELECT comic_id FROM online_chapters WHERE series_id = ?1 AND comic_id IS NOT NULL")?;
+    let ids: Vec<i64> = {
+        let mut statement = conn.prepare("SELECT id FROM online_chapters WHERE series_id = ?1")?;
         let rows = statement.query_map([id], |r| r.get(0))?.collect::<Result<_, _>>()?;
         rows
     };
-    if read {
-        // Sem abrir o capítulo não se sabe quantas páginas ele tem, e "uma de uma" já conta como lido.
-        tx.execute(
-            "INSERT INTO chapter_progress (chapter_id, page_index, page_count, updated_at) SELECT id, 0, 1, ?2 FROM online_chapters WHERE series_id = ?1
-             ON CONFLICT (chapter_id) DO UPDATE SET page_index = page_count - 1, updated_at = ?2",
-            params![id, now_ms()],
-        )?;
-    } else {
-        tx.execute("DELETE FROM chapter_progress WHERE chapter_id IN (SELECT id FROM online_chapters WHERE series_id = ?1)", [id])?;
-    }
-    for comic in comics {
-        library::set_read_status(&tx, comic, if read { "completed" } else { "unread" })?;
-    }
-    tx.commit()?;
+    reading::set_read(conn, &ids, read)?;
     Ok(())
 }
 
@@ -1147,6 +1211,11 @@ pub fn forget_series(core: &Core, id: i64) -> AppResult<()> {
     conn.execute("UPDATE online_series SET favorite = 0, following = 0 WHERE id = ?1", [id])?;
     conn.execute("DELETE FROM series_collections WHERE series_id = ?1", [id])?;
     conn.execute("DELETE FROM chapter_progress WHERE chapter_id IN (SELECT id FROM online_chapters WHERE series_id = ?1)", [id])?;
+    conn.execute(
+        "UPDATE online_chapters SET reading_started_at = NULL, last_read_at = NULL, completed_at = NULL, manual_unread = 0 WHERE series_id = ?1",
+        [id],
+    )?;
+    conn.execute("DELETE FROM reading_sessions WHERE chapter_id IN (SELECT id FROM online_chapters WHERE series_id = ?1)", [id])?;
     remove_if_unused(core, &conn, id)
 }
 
@@ -1179,7 +1248,7 @@ pub fn prune_stale(core: &Core, conn: &Connection) -> AppResult<usize> {
             "SELECT o.id FROM online_series o WHERE o.following = 0 AND o.favorite = 0 AND o.updated_at < ?1
                AND NOT EXISTS (SELECT 1 FROM series_collections x WHERE x.series_id = o.id)
                AND NOT EXISTS (SELECT 1 FROM online_chapters c WHERE c.series_id = o.id
-                    AND (c.comic_id IS NOT NULL OR c.file_path IS NOT NULL OR EXISTS (SELECT 1 FROM chapter_downloads d WHERE d.chapter_id = c.id) OR EXISTS (SELECT 1 FROM chapter_progress q WHERE q.chapter_id = c.id)))",
+                    AND (c.comic_id IS NOT NULL OR c.file_path IS NOT NULL OR EXISTS (SELECT 1 FROM chapter_downloads d WHERE d.chapter_id = c.id) OR c.reading_started_at IS NOT NULL OR c.completed_at IS NOT NULL OR EXISTS (SELECT 1 FROM chapter_progress q WHERE q.chapter_id = c.id)))",
         )?;
         let rows = statement.query_map([now_ms() - STALE_AFTER_MS], |r| r.get(0))?;
         rows.collect::<Result<_, _>>()?

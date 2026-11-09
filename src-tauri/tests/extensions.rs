@@ -18,6 +18,7 @@ use std::time::{Duration, Instant};
 use http::{Reply, serve};
 use prancha_lib::core::Core;
 use prancha_lib::error::AppError;
+use prancha_lib::extensions::reading::{self, ReadState};
 use prancha_lib::extensions::{downloads, install, sources, suwayomi};
 use prancha_lib::library;
 use prancha_lib::extensions::net::{Access, Limits, Net, NetError, Request};
@@ -1449,24 +1450,30 @@ fn a_saved_series_shows_where_the_reading_stopped_and_is_never_pruned() {
     assert_eq!((saved().reading.read_status, saved().reading.chapter_count, saved().reading.chapters_read), ("unread", 3, 0));
     assert_eq!(saved().reading.resume.unwrap().chapter_id, chapters[0].id);
 
+    // Só gravar a posição (abrir o capítulo) não é começar a ler.
+    sources::save_chapter_progress(&core.db(), chapters[1].id, 0, 3, 0.0).unwrap();
+    assert_eq!(saved().reading.read_status, "unread");
+
+    reading::start(&mut core.db(), chapters[1].id).unwrap();
     sources::save_chapter_progress(&core.db(), chapters[1].id, 1, 3, 0.0).unwrap();
-    let reading = saved().reading;
-    assert_eq!((reading.read_status, reading.chapters_read), ("reading", 1));
-    let resume = reading.resume.unwrap();
-    assert_eq!((resume.chapter_id, resume.progress.unwrap().page_index), (chapters[1].id, 1));
+    reading::end(&core.db(), chapters[1].id).unwrap();
+    let state = saved().reading;
+    assert_eq!((state.read_status, state.chapters_read), ("reading", 0));
+    let resume = state.resume.unwrap();
+    assert_eq!((resume.chapter_id, resume.progress.unwrap().page_index, resume.state), (chapters[1].id, 1, ReadState::InProgress));
     assert!(saved().last_opened_at.is_some());
 
-    sources::save_chapter_progress(&core.db(), chapters[1].id, 2, 3, 0.0).unwrap();
-    let reading = saved().reading;
-    assert_eq!((reading.read_status, reading.chapters_read), ("reading", 2));
-    let resume = reading.resume.unwrap();
+    reading::complete(&mut core.db(), chapters[1].id).unwrap();
+    let state = saved().reading;
+    assert_eq!((state.read_status, state.chapters_read), ("reading", 1));
+    let resume = state.resume.unwrap();
     assert_eq!(resume.chapter_id, chapters[2].id, "terminado, continua no seguinte");
     assert!(resume.progress.is_none());
 
-    sources::save_chapter_progress(&core.db(), chapters[2].id, 2, 3, 0.0).unwrap();
-    let reading = saved().reading;
-    assert_eq!((reading.read_status, reading.chapters_read), ("completed", 3));
-    assert_eq!(reading.resume.unwrap().chapter_id, chapters[0].id, "terminada, ler de novo começa do primeiro");
+    reading::set_read(&mut core.db(), &[chapters[0].id, chapters[2].id], true).unwrap();
+    let state = saved().reading;
+    assert_eq!((state.read_status, state.chapters_read), ("completed", 3));
+    assert_eq!(state.resume.unwrap().chapter_id, chapters[0].id, "terminada, ler de novo começa do primeiro");
 
     sources::set_series_read(&mut core.db(), id, false).unwrap();
     assert_eq!(saved().reading.read_status, "unread");
@@ -2130,7 +2137,9 @@ fn online_reading_continues_where_it_stopped_and_a_finished_chapter_starts_over(
     assert_eq!((progress.page_index, progress.page_count), (1, 3));
 
     sources::save_chapter_progress(&core.db(), chapter_id, 2, 3, 0.0).unwrap();
-    assert_eq!(sources::open_chapter(&core, chapter_id, None).unwrap().start.page_index, 0);
+    assert_eq!(sources::open_chapter(&core, chapter_id, None).unwrap().start.page_index, 2, "sem conclusão, a última página aberta não recomeça");
+    reading::complete(&mut core.db(), chapter_id).unwrap();
+    assert_eq!(sources::open_chapter(&core, chapter_id, None).unwrap().start.page_index, 0, "concluído, reler começa do início");
 
     sources::reset_chapter_progress(&core.db(), chapter_id).unwrap();
     assert!(sources::chapters_of(&core.db(), series_id).unwrap()[0].progress.is_none());
