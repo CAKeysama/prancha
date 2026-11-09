@@ -2300,7 +2300,10 @@ fn finished_downloads_of_a_series_become_one_notification_and_failures_another()
         notifications::NativeOutcome::Shown
     }));
     let server = pages_server();
-    let first = downloaded(&core, chapter(&core, "lote", &format!("{}|0", server.base)));
+    let first_chapter = chapter(&core, "lote", &format!("{}|0", server.base));
+    // Obra já classificada, como toda obra que aparece com o filtro +18 ligado.
+    core.db().execute("UPDATE online_series SET classification = 'known' WHERE remote_id = 'lote'", []).unwrap();
+    let first = downloaded(&core, first_chapter);
     assert_eq!(first.status, "completed");
     wait_for_notifications(&core, 1);
     let second = downloaded(&core, chapter(&core, "lote", &format!("{}|0,1", server.base)));
