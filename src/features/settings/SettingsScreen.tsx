@@ -34,6 +34,7 @@ import { APP_DESCRIPTION, APP_NAME } from "../../app/config";
 import licenses from "../../generated/licenses.json";
 import { useTelemetry } from "../telemetry/telemetry-context";
 import { TelemetryDetails } from "../telemetry/TelemetryDetails";
+import { MalSettings } from "../mal/MalSettings";
 
 /** A opção escolhida na pesquisa, destacada por um instante. */
 const Highlight = createContext<string | null>(null);
@@ -1021,6 +1022,12 @@ export function SettingsScreen({ section }: { section?: string } = {}) {
 
               {category === "atualizacoes" && <UpdatesSection />}
 
+              {category === "integracoes" && (
+                <Section id="integracoes" title="Integrações" description="Contas de outros serviços ligadas ao Prancha. Nada é consultado nem enviado antes de você conectar.">
+                  <MalSettings anchor={(id, children) => <Anchor id={id}>{children}</Anchor>} />
+                </Section>
+              )}
+
               {category === "privacidade" && <PrivacySection />}
 
               {category === "geral" && (
@@ -1067,7 +1074,7 @@ export function SettingsScreen({ section }: { section?: string } = {}) {
                         <HardDrive size={16} aria-hidden /> Sobre o {APP_NAME}
                       </p>
                       <p className="mt-1 text-sm text-muted">
-                        {APP_DESCRIPTION}. Funciona no seu computador, sem conta. A internet é usada para procurar atualizações, com o plugin Fontes de leitura para repositórios e fontes online e, só se você ligar, para a telemetria (Configurações › Privacidade).
+                        {APP_DESCRIPTION}. Funciona no seu computador, sem conta. A internet é usada para procurar atualizações, com o plugin Fontes de leitura para repositórios e fontes online e, só se você ligar, para a telemetria (Configurações › Privacidade) e para o MyAnimeList (Configurações › Integrações).
                       </p>
                       <dl className="mt-3 grid grid-cols-[160px_1fr] gap-y-1 text-sm">
                         <dt className="text-muted">Versão</dt>

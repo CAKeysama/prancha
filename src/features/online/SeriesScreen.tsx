@@ -33,6 +33,7 @@ import { onDownloadChanged } from "../../services/events";
 import { useComicActions } from "../library/comic-actions";
 import { searchAcrossSources } from "./ExploreScreen";
 import { Fact, OnlineCover, SourceTrouble, siteAnswered } from "./parts";
+import { MalSeriesFact } from "../mal/MalSeries";
 
 let requestCounter = 0;
 
@@ -465,6 +466,7 @@ export function SeriesScreen({ id }: { id: number }) {
               <Fact label="Fonte">{view.sourceName ?? "Fonte não instalada"}</Fact>
               {view.language && <Fact label="Idioma">{languageName(view.language)}</Fact>}
               {view.lastCheckedAt && <Fact label="Última consulta">{formatDate(view.lastCheckedAt)}</Fact>}
+              <MalSeriesFact seriesId={view.id} title={view.title} />
             </dl>
 
             <div className="mt-6 mb-1 flex flex-wrap items-center gap-2">

@@ -10,6 +10,7 @@ const EVENTS = {
   component: "component:progress",
   notifications: "notifications:changed",
   notificationActivate: "notifications:activate",
+  mal: "mal:changed",
 } as const;
 
 /** Liga um ouvinte do Tauri; devolve a função que o desliga, mesmo antes de ele ficar pronto (segura em StrictMode). */
@@ -45,3 +46,5 @@ export const onNotificationsChanged = (h: (e: { unread: number; created?: number
   subscribe<{ unread: number; created?: number }>(EVENTS.notifications, h);
 /** Clique numa notificação do sistema operacional. */
 export const onNotificationActivated = (h: (e: { id: number }) => void) => subscribe<{ id: number }>(EVENTS.notificationActivate, h);
+
+export const onMalChanged = (h: () => void) => subscribe<unknown>(EVENTS.mal, () => h());

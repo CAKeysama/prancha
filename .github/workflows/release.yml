@@ -98,6 +98,8 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # Identificador público do aplicativo no MyAnimeList (variável, não segredo). Sem ele, a integração não aparece.
+          PRANCHA_MAL_CLIENT_ID: ${{ vars.MAL_CLIENT_ID }}
 
       - name: Reúne os instaladores, as assinaturas e os SHA-256
         shell: bash

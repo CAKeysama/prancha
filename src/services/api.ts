@@ -35,6 +35,7 @@ import type {
 import type { ReaderMode } from "../domain/settings";
 import type { UpdateProgress, UpdatesHistory, UpdatesSnapshot } from "../domain/updates";
 import type { TelemetryStatus } from "../domain/telemetry";
+import type { MalCandidate, MalSeriesStatus, MalStatus } from "../domain/mal";
 import type { NotificationAction, NotificationCategory, NotificationPage, NotificationQuery, NotificationTarget } from "../domain/notifications";
 
 export class ApiError extends Error {
@@ -223,4 +224,17 @@ export const api = {
   telemetryForget: () => call<TelemetryStatus>("telemetry_forget"),
   telemetryRecord: (events: unknown[]) => call<number>("telemetry_record", { events }),
   telemetryReady: () => call<void>("telemetry_ready"),
+
+  malStatus: () => call<MalStatus>("mal_status"),
+  malConnect: () => call<MalStatus>("mal_connect"),
+  malConnectCancel: () => call<void>("mal_connect_cancel"),
+  malDisconnect: () => call<number>("mal_disconnect"),
+  malSeries: (seriesId: number, lookup: boolean) => call<MalSeriesStatus>("mal_series", { seriesId, lookup }),
+  malSearch: (seriesId: number, query: string) => call<MalCandidate[]>("mal_search", { seriesId, query }),
+  malLink: (seriesId: number, malId: number) => call<MalSeriesStatus>("mal_link", { seriesId, malId }),
+  malUnlink: (seriesId: number) => call<MalSeriesStatus>("mal_unlink", { seriesId }),
+  malResetLink: (seriesId: number) => call<MalSeriesStatus>("mal_reset_link", { seriesId }),
+  malRetry: () => call<number>("mal_retry"),
+  malDiscardFailed: () => call<number>("mal_discard_failed"),
+  malOpen: (malId: number) => call<void>("mal_open", { malId }),
 };

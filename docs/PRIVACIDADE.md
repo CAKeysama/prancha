@@ -7,6 +7,7 @@ O Prancha funciona no seu computador e não tem conta. Suas HQs, o progresso, os
 - **Atualizações:** para saber se há uma versão nova, o Prancha consulta as releases do projeto no GitHub.
 - **Fontes de leitura (plugin opcional):** quando você usa repositórios e extensões, o Prancha fala com os sites dessas fontes para buscar obras, capas e páginas.
 - **Telemetria (opcional, desligada até você aceitar):** estatísticas de uso enviadas ao servidor do projeto. Detalhes abaixo.
+- **MyAnimeList (opcional, só com a conta conectada):** o Prancha procura no catálogo do MAL o título, o autor e o número de capítulos das obras das fontes que você abre, e atualiza os capítulos lidos na sua lista quando você termina um capítulo. Você entra pelo site do MAL, e o Prancha não vê sua senha; o acesso fica cifrado pelo Windows neste computador. Desconectar apaga esse acesso. Detalhes em [MYANIMELIST.md](MYANIMELIST.md).
 
 ## Telemetria
 
