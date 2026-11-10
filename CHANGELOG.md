@@ -3,6 +3,14 @@
 Tudo o que mudou em cada versão do Prancha. O projeto segue o [versionamento semântico](https://semver.org/lang/pt-BR/),
 e as notas das releases e a [página de downloads](https://cakeysama.github.io/prancha/) são geradas a partir deste arquivo.
 
+## [0.11.3] - 2026-11-10
+
+O botão de baixar um capítulo vira o de cancelar no mesmo clique.
+
+### Correções
+
+- Ao baixar um capítulo pela página da obra, o botão vira **Cancelar download** na hora, sem esperar a fila responder. Cancelar nesse instante também funciona: o download é cancelado assim que entra na fila.
+
 ## [0.11.2] - 2026-11-09
 
 O login do MyAnimeList passa a usar uma porta que raramente está ocupada.
