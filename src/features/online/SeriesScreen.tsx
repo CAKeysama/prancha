@@ -58,6 +58,8 @@ export function clearSeriesMemory() {
 
 const ACTIVE = new Set(["queued", "running", "paused"]);
 const isActive = (chapter: ChapterView) => !!chapter.download && ACTIVE.has(chapter.download.status);
+/** Id provisório do download entre o clique e a resposta do backend: o botão já vira "cancelar" na hora. */
+const PENDING_DOWNLOAD = -1;
 
 function publishedDate(ms: number): string {
   return new Date(ms).toLocaleDateString("pt-BR", { dateStyle: "medium" });
@@ -91,7 +93,7 @@ function StateMark({ state }: { state: ChapterReadState }) {
 interface RowActions {
   onSelect: (id: number, selected: boolean) => void;
   onDownload: (id: number) => void;
-  onCancel: (downloadId: number) => void;
+  onCancel: (chapterId: number, downloadId: number) => void;
   onRead: (id: number) => void;
   onSetRead: (id: number, read: boolean) => void;
   onReadPrevious: (id: number) => void;
@@ -167,7 +169,7 @@ const ChapterRow = memo(function ChapterRow({ chapter, selected, busy, hasPrevio
         {/* O lugar do download existe mesmo sem botão: os ícones ficam alinhados em coluna na lista inteira. */}
         <span className="inline-flex size-8 items-center justify-center">
           {active && download ? (
-            <IconButton icon={X} label="Cancelar download" tooltipDelay={TOOLTIP_DELAY_MS} aria-describedby={statusId} onClick={() => actions.onCancel(download.id)} />
+            <IconButton icon={X} label="Cancelar download" tooltipDelay={TOOLTIP_DELAY_MS} aria-describedby={statusId} onClick={() => actions.onCancel(chapter.id, download.id)} />
           ) : chapter.state !== "offline" ? (
             <IconButton icon={failed ? RefreshCw : Download} label={failed ? "Tentar baixar de novo" : "Baixar capítulo"} tooltipDelay={TOOLTIP_DELAY_MS} aria-describedby={statusId} onClick={() => actions.onDownload(chapter.id)} />
           ) : null}
@@ -254,9 +256,16 @@ export function SeriesScreen({ id }: { id: number }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [version, readStored]);
 
+  /** Capítulos cancelados antes de o backend devolver o id do download: o cancelamento sai assim que o id chega. */
+  const cancelWhenQueued = useRef<Set<number>>(new Set());
   useEffect(() => {
     return onDownloadChanged((event) => {
       if (event.seriesId !== id) return;
+      if (cancelWhenQueued.current.has(event.chapterId) && ACTIVE.has(event.status)) {
+        cancelWhenQueued.current.delete(event.chapterId);
+        void api.downloadCancel(event.id).catch(() => undefined);
+        return;
+      }
       setView((current) =>
         current && {
           ...current,
@@ -272,18 +281,43 @@ export function SeriesScreen({ id }: { id: number }) {
   const chapters = useMemo(() => (view ? sortedChapters(view.chapters, view.chapterSort) : []), [view]);
 
   const enqueueRef = useRef<(ids: number[]) => Promise<void>>(async () => undefined);
-  const cancelRef = useRef<(downloadId: number) => Promise<void>>(async () => undefined);
+  const cancelRef = useRef<(chapterId: number, downloadId: number) => Promise<void>>(async () => undefined);
+  const setChapterDownload = (ids: Set<number>, download: ChapterView["download"], only: (chapter: ChapterView) => boolean = () => true) =>
+    setView((current) => current && { ...current, chapters: current.chapters.map((chapter) => (ids.has(chapter.id) && only(chapter) ? { ...chapter, download } : chapter)) });
   const enqueue = async (ids: number[]) => {
     if (ids.length === 0) return;
+    // O botão vira "cancelar" no clique, sem esperar a fila responder.
+    const asked = new Set(ids);
+    setChapterDownload(asked, { id: PENDING_DOWNLOAD, status: "queued", pagesDone: 0, pagesTotal: 0, error: null }, (chapter) => chapter.state !== "offline" && !isActive(chapter));
     try {
       await api.downloadsEnqueue(ids);
       setSelected(new Set());
-      readStored();
     } catch (e) {
       toast.error("Não foi possível iniciar o download", errorMessage(e));
     }
+    try {
+      const stored = await api.seriesStored(id);
+      setView((current) => (current ? { ...stored, sourceError: current.sourceError, sourceProtected: current.sourceProtected } : stored));
+      // Cancelado enquanto o pedido ia ao backend e o aviso da fila não chegou: cancela pelo que ficou gravado.
+      for (const chapter of stored.chapters) {
+        if (!asked.has(chapter.id) || !cancelWhenQueued.current.delete(chapter.id)) continue;
+        if (chapter.download && ACTIVE.has(chapter.download.status)) {
+          await api.downloadCancel(chapter.download.id).catch(() => undefined);
+          readStored();
+        }
+      }
+    } catch {
+      // A próxima leitura da obra corrige a tela.
+    }
+    for (const chapter of ids) cancelWhenQueued.current.delete(chapter);
   };
-  const cancel = async (downloadId: number) => {
+  const cancel = async (chapterId: number, downloadId: number) => {
+    if (downloadId === PENDING_DOWNLOAD) {
+      // O download ainda não tem id: a linha volta ao normal já, e o cancelamento sai quando o id chegar.
+      cancelWhenQueued.current.add(chapterId);
+      setChapterDownload(new Set([chapterId]), { id: PENDING_DOWNLOAD, status: "cancelled", pagesDone: 0, pagesTotal: 0, error: null });
+      return;
+    }
     try {
       await api.downloadCancel(downloadId);
     } catch (e) {
@@ -350,7 +384,7 @@ export function SeriesScreen({ id }: { id: number }) {
           return next;
         }),
       onDownload: (chapter) => void enqueueRef.current([chapter]),
-      onCancel: (downloadId) => void cancelRef.current(downloadId),
+      onCancel: (chapter, downloadId) => void cancelRef.current(chapter, downloadId),
       onRead: (chapter) => nav.navigate({ name: "chapter", id: chapter }),
       onSetRead: (chapter, read) => void changeStates([chapter], read ? markedRead : markedUnread, () => api.chaptersSetRead([chapter], read)),
       onReadPrevious: (chapter) => {

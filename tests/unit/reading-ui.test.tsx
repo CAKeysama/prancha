@@ -326,6 +326,40 @@ describe("Lista de capítulos da obra", () => {
     expect(all.textContent).toBe("");
   });
 
+  it("ao baixar, o botão vira cancelar na hora, e cancelar para aquele download", async () => {
+    const answer = deferred<number[]>();
+    handlers.downloads_enqueue = () => answer.promise;
+    handlers.download_cancel = () => null;
+    await openSeries();
+    await userEvent.click(within(row("Dois")).getByRole("button", { name: "Baixar capítulo" }));
+    // Antes de a fila responder, a linha já mostra o cancelar.
+    expect(within(row("Dois")).getByRole("button", { name: "Cancelar download" })).toBeInTheDocument();
+    expect(within(row("Dois")).queryByRole("button", { name: "Baixar capítulo" })).toBeNull();
+    const queued = { id: 7, status: "queued" as const, pagesDone: 0, pagesTotal: 0, error: null };
+    handlers.series_stored = () => view(CHAPTERS.map((item) => (item.id === 2 ? { ...item, download: queued } : item)));
+    await act(async () => answer.resolve([7]));
+    await waitFor(() => expect(calls.some((c) => c.cmd === "series_stored")).toBe(true));
+    await userEvent.click(within(row("Dois")).getByRole("button", { name: "Cancelar download" }));
+    await waitFor(() => expect(calls.find((c) => c.cmd === "download_cancel")?.args).toEqual({ id: 7 }));
+  });
+
+  it("cancelar antes de a fila responder cancela o download assim que ele existe", async () => {
+    const answer = deferred<number[]>();
+    handlers.downloads_enqueue = () => answer.promise;
+    handlers.download_cancel = () => null;
+    await openSeries();
+    await userEvent.click(within(row("Dois")).getByRole("button", { name: "Baixar capítulo" }));
+    await userEvent.click(within(row("Dois")).getByRole("button", { name: "Cancelar download" }));
+    // A linha volta ao normal na hora, sem esperar o backend.
+    expect(within(row("Dois")).getByRole("button", { name: "Baixar capítulo" })).toBeInTheDocument();
+    expect(calls.some((c) => c.cmd === "download_cancel")).toBe(false);
+    const queued = { id: 8, status: "queued" as const, pagesDone: 0, pagesTotal: 0, error: null };
+    handlers.series_stored = () => view(CHAPTERS.map((item) => (item.id === 2 ? { ...item, download: queued } : item)));
+    await act(async () => answer.resolve([8]));
+    await waitFor(() => expect(calls.find((c) => c.cmd === "download_cancel")?.args).toEqual({ id: 8 }));
+    expect(calls.filter((c) => c.cmd === "download_cancel")).toHaveLength(1);
+  });
+
   describe("favoritar e acompanhar", () => {
     const icon = (button: HTMLElement) => button.querySelector("svg")!;
     // O jsdom não tem AnimationEvent, e por isso o React escuta o nome com prefixo: dispara os dois.
