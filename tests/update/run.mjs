@@ -281,6 +281,8 @@ async function scenario() {
   mode = "none";
   let app = await launch();
   await invoke(app.page, "set_setting", { key: "onboarding", value: { status: "skipped", step: 1, comicId: null } });
+  // O convite da telemetria abre 4 s depois da abertura nos builds de distribuição: recusado aqui, só os diálogos da atualização aparecem.
+  await invoke(app.page, "telemetry_set_consent", { granted: false });
   await invoke(app.page, "set_setting", { key: "teste.preferencia", value: "preservada" });
   await invoke(app.page, "start_import", { paths: [COMIC] });
   let comic;

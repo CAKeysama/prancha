@@ -26,7 +26,7 @@ export function PlaceholderCover({ title, reason, className }: { title: string; 
   });
   return (
     <div
-      className={cn("relative flex h-full w-full flex-col overflow-hidden bg-elevated text-fg", className)}
+      className={cn("@container relative flex h-full w-full flex-col overflow-hidden bg-elevated text-fg", className)}
       title={reason ? `Capa substituta: ${reason}` : "Capa substituta"}
     >
       <svg className="absolute inset-0 h-full w-full text-border" viewBox="0 0 100 150" preserveAspectRatio="xMidYMid slice" aria-hidden>
@@ -40,12 +40,13 @@ export function PlaceholderCover({ title, reason, className }: { title: string; 
           ),
         )}
       </svg>
-      <div className="relative flex flex-1 items-center px-3">
-        <p className="line-clamp-4 text-center text-sm font-semibold break-words w-full">{title}</p>
+      {/* Em capas pequenas (destaque do Início, listas), letra menor e só o ícone no aviso: o título não quebra no meio. */}
+      <div className="relative flex flex-1 items-center px-1.5 @[7.5rem]:px-3">
+        <p className="line-clamp-4 w-full text-center text-xs font-semibold break-words hyphens-auto @[7.5rem]:text-sm">{title}</p>
       </div>
       <div className="relative flex items-center justify-center gap-1 border-t border-border bg-surface px-2 py-1 text-[11px] font-medium text-muted">
         <ImageOff size={12} aria-hidden />
-        <span>Capa indisponível</span>
+        <span className="@max-[7.5rem]:sr-only">Capa indisponível</span>
       </div>
     </div>
   );

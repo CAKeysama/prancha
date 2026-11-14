@@ -138,6 +138,18 @@ export function Checkbox({
   );
 }
 
+/** Setas movem a escolha num grupo de rádio, como nos controles nativos. */
+function radioKeys<T extends string>(e: React.KeyboardEvent<HTMLElement>, options: { value: T }[], value: T, onChange: (v: T) => void) {
+  const i = options.findIndex((o) => o.value === value);
+  let next = -1;
+  if (e.key === "ArrowRight" || e.key === "ArrowDown") next = (i + 1) % options.length;
+  if (e.key === "ArrowLeft" || e.key === "ArrowUp") next = (i - 1 + options.length) % options.length;
+  if (next < 0) return;
+  e.preventDefault();
+  onChange(options[next]!.value);
+  e.currentTarget.querySelectorAll<HTMLElement>('[role="radio"]')[next]?.focus();
+}
+
 interface SegmentOption<T extends string> {
   value: T;
   label: string;
@@ -173,18 +185,7 @@ export function Segmented<T extends string>({
         role="radiogroup"
         aria-labelledby={id}
         className={cn("inline-flex rounded-md border border-border bg-surface p-0.5", compactLabels ? "flex-nowrap" : "flex-wrap")}
-        onKeyDown={(e) => {
-          const i = options.findIndex((o) => o.value === value);
-          let next = -1;
-          if (e.key === "ArrowRight" || e.key === "ArrowDown") next = (i + 1) % options.length;
-          if (e.key === "ArrowLeft" || e.key === "ArrowUp") next = (i - 1 + options.length) % options.length;
-          if (next >= 0) {
-            e.preventDefault();
-            onChange(options[next]!.value);
-            const buttons = (e.currentTarget as HTMLElement).querySelectorAll<HTMLElement>('[role="radio"]');
-            buttons[next]?.focus();
-          }
-        }}
+        onKeyDown={(e) => radioKeys(e, options, value, onChange)}
       >
         {options.map((o) => {
           const selected = o.value === value;
@@ -258,6 +259,140 @@ export function Switch({
         />
         <span className="sr-only">{checked ? "Ativado" : "Desativado"}</span>
       </button>
+    </div>
+  );
+}
+
+/** Controle deslizante com rótulo e o valor escrito ao lado (o leitor de tela anuncia o texto, não só o número). */
+export function Slider({
+  label,
+  value,
+  onChange,
+  onCommit,
+  min = 0,
+  max = 100,
+  step = 1,
+  disabled,
+  valueText,
+  hideLabel,
+  className,
+}: {
+  label: string;
+  value: number;
+  /** A cada movimento: atualiza a tela. */
+  onChange: (v: number) => void;
+  /** Ao soltar (ou pelo teclado): o valor final, para salvar ou tocar um exemplo. */
+  onCommit?: (v: number) => void;
+  min?: number;
+  max?: number;
+  step?: number;
+  disabled?: boolean;
+  valueText?: string;
+  hideLabel?: boolean;
+  className?: string;
+}) {
+  const id = useId();
+  const fill = `${((value - min) / (max - min)) * 100}%`;
+  return (
+    <div className={cn("flex items-center gap-3", className)}>
+      <label htmlFor={id} className={hideLabel ? "sr-only" : "shrink-0 text-sm font-medium"}>
+        {label}
+      </label>
+      <input
+        id={id}
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        disabled={disabled}
+        aria-valuetext={valueText}
+        onChange={(e) => onChange(Number(e.target.value))}
+        onPointerUp={(e) => onCommit?.(Number((e.target as HTMLInputElement).value))}
+        onKeyUp={(e) => {
+          // Só as teclas que mudam o valor: o Tab que traz o foco até aqui não conta.
+          if (/^(Arrow|Page|Home|End)/.test(e.key)) onCommit?.(Number((e.target as HTMLInputElement).value));
+        }}
+        className="p-range min-w-0 flex-1"
+        style={{ "--p-fill": fill } as React.CSSProperties}
+      />
+      <span aria-hidden className="w-10 shrink-0 text-right text-sm text-muted tabular-nums">
+        {valueText ?? value}
+      </span>
+    </div>
+  );
+}
+
+export interface ChoiceOption<T extends string> {
+  value: T;
+  label: string;
+  description?: string;
+  /** Amostra acima do rótulo: um desenho, um trecho de texto na própria fonte. */
+  visual?: ReactNode;
+  /** Atributos do cartão, por exemplo `data-font-preview` para mostrar a opção na própria fonte. */
+  attrs?: Record<`data-${string}`, string>;
+}
+
+/** Escolha exclusiva em cartões (radiogroup), para quando a opção precisa ser vista antes de escolhida. */
+export function ChoiceCards<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+  hideLabel,
+  className,
+}: {
+  label: string;
+  value: T;
+  options: ChoiceOption<T>[];
+  onChange: (v: T) => void;
+  hideLabel?: boolean;
+  /** Grade dos cartões (colunas). */
+  className?: string;
+}) {
+  const id = useId();
+  return (
+    <div>
+      <span id={id} className={hideLabel ? "sr-only" : "mb-2 block text-sm font-medium"}>
+        {label}
+      </span>
+      <div role="radiogroup" aria-labelledby={id} className={cn("grid gap-2", className)} onKeyDown={(e) => radioKeys(e, options, value, onChange)}>
+        {options.map((o) => {
+          const selected = o.value === value;
+          return (
+            <button
+              key={o.value}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              tabIndex={selected ? 0 : -1}
+              onClick={() => onChange(o.value)}
+              {...o.attrs}
+              className={cn(
+                "group relative flex flex-col gap-2 rounded-lg border p-2.5 text-left transition-colors",
+                selected ? "border-accent bg-accent-subtle" : "border-border bg-surface hover:border-border-control",
+              )}
+            >
+              {o.visual}
+              <span className="flex items-start justify-between gap-2">
+                <span className="min-w-0">
+                  <span className="block text-base font-medium text-fg">{o.label}</span>
+                  {o.description && <span className="mt-0.5 block text-sm text-muted">{o.description}</span>}
+                </span>
+                <span
+                  aria-hidden
+                  className={cn(
+                    "mt-0.5 grid size-4 shrink-0 place-items-center rounded-full border transition-colors",
+                    selected ? "border-transparent bg-accent-emphasis text-on-emphasis" : "border-border-control",
+                  )}
+                >
+                  {selected && <Check size={11} strokeWidth={3} />}
+                </span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

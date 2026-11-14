@@ -12,7 +12,9 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { onlinePageUrl } from "../../services/urls";
 import { SourceTrouble } from "../online/parts";
 import { useLeaveFullscreenOnClose } from "./fullscreen";
+import { APPEAR_LATE } from "./PageView";
 import { Reader, type ReaderContent } from "./ReaderScreen";
+import { sound } from "../../services/sound";
 
 let requestCounter = 0;
 
@@ -33,7 +35,12 @@ function useReadingLifecycle(): ReadingLifecycle {
       acknowledge: (id) => void queue.push(() => api.chapterAcknowledge(id)),
       start: (id) => void queue.push(() => api.chapterReadingStart(id)),
       end: (id) => void queue.push(() => api.chapterReadingEnd(id)),
-      complete: (id) => void queue.push(() => api.chapterReadingComplete(id)),
+      complete: (id) => {
+        void queue.push(() => api.chapterReadingComplete(id));
+        sound.play("complete", { reader: true });
+      },
+      // Concluir e passar ao próximo acontecem juntos ao rolar: o serviço de som deixa tocar só o primeiro.
+      enter: () => sound.play("chapter", { reader: true }),
     });
     return { lifecycle, queue };
   });
@@ -93,6 +100,10 @@ export function ChapterReaderScreen({ id }: { id: number }) {
   const fromChapters = nav.stack.at(-2)?.name === "series";
   const backText = fromChapters ? "Voltar aos capítulos" : "Voltar";
   const retry = () => setAttempt((n) => n + 1);
+  const openChapter = useCallback((next: number) => {
+    sound.play("chapter", { reader: true });
+    setChapterId(next);
+  }, []);
 
   if (current?.error) {
     return (
@@ -112,16 +123,18 @@ export function ChapterReaderScreen({ id }: { id: number }) {
   }
   if (!current?.session) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 bg-reader text-fg">
-        <Spinner size={22} label="Abrindo capítulo…" />
-        {/* A fonte pode demorar: ninguém fica preso esperando. */}
-        <Button variant="ghost" size="sm" onClick={nav.back}>
-          {backText}
-        </Button>
+      <div className="flex h-full items-center justify-center bg-reader text-fg">
+        <div className="flex flex-col items-center gap-3" style={APPEAR_LATE}>
+          <Spinner size={22} label="Abrindo capítulo…" />
+          {/* A fonte pode demorar: ninguém fica preso esperando. */}
+          <Button variant="ghost" size="sm" onClick={nav.back}>
+            {backText}
+          </Button>
+        </div>
       </div>
     );
   }
-  return <ChapterStream key={key} first={current.session} zoomState={zoomState} onOpen={setChapterId} fromChapters={fromChapters} />;
+  return <ChapterStream key={key} first={current.session} zoomState={zoomState} onOpen={openChapter} fromChapters={fromChapters} />;
 }
 
 /** Os capítulos em sequência, como uma leitura só: o próximo entra no fim, sem trocar de tela. */
@@ -191,7 +204,7 @@ function ChapterStream({ first, zoomState, onOpen, fromChapters }: { first: Chap
       onPage,
       waitingForNext: nextId !== null,
       ending: (
-        <div className="flex flex-col items-center gap-2 py-12 text-center text-sm text-muted">
+        <div className="flex flex-col items-center gap-2 text-center text-sm text-muted">
           {failure !== null ? (
             <SourceTrouble message={failure.message} site={failure.protected && nextId !== null ? { chapterId: nextId } : undefined} onRetry={loadNext} size="sm" center>
               {(text, actions) => (

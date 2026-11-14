@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type FocusEvent, type ReactNode, type SetStateAction } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
@@ -57,11 +57,14 @@ import { GuidedReader } from "./GuidedReader";
 import { PageIndexPanel, ReaderSettingsPanel, ShortcutsDialog } from "./ReaderPanels";
 import { PagedView, VerticalView, type ScrollInfo, type VerticalHandle } from "./Views";
 import type { Navigation, ReadingLifecycle } from "../../domain/reading-lifecycle";
-import { usePreload } from "./PageView";
+import { APPEAR_LATE, usePreload } from "./PageView";
 import { useProgressSaver } from "./useProgressSaver";
+import { sound } from "../../services/sound";
 
 const MODE_ICONS: Record<ReaderMode, typeof Square> = { single: RectangleVertical, double: Columns2, vertical: LayoutList, webtoon: GalleryVertical };
 const FIT_ICONS: Record<"page" | "width", typeof Square> = { page: Square, width: MoveHorizontal };
+/** Sem atividade por este tempo, os controles saem da frente da página. */
+const HIDE_AFTER_MS = 2800;
 
 function isTyping(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null;
@@ -70,8 +73,10 @@ function isTyping(target: EventTarget | null): boolean {
 
 function SideButton({ side, icon: Icon, label, onClick, disabled, visible }: { side: "left-3" | "right-3"; icon: typeof Square; label: string; onClick: () => void; disabled: boolean; visible: boolean }) {
   return (
+    // Atalho para o mouse: no teclado, as setas e os botões da barra inferior fazem o mesmo.
     <button
       type="button"
+      tabIndex={-1}
       aria-label={label}
       title={label}
       onClick={onClick}
@@ -125,23 +130,29 @@ export function ReaderScreen({ id }: { id: number }) {
   const zoomState = useState(1);
   useLeaveFullscreenOnClose();
 
-  const content = useMemo<ReaderContent | null>(
-    () =>
-      session && {
-        title: session.comic.title,
-        pageCount,
-        start: session.start,
-        pageSrc: (index, token) => pageUrl(session.comic.id, index, token),
-        saveProgress: (page, count, ratio) => api.saveProgress(session.comic.id, page, count, ratio),
-        resetProgress: () => api.resetProgress(session.comic.id),
-        chapters: [{ title: null, first: 0, count: pageCount, guidedComicId: session.comic.id }],
-        backLabel: "Biblioteca",
-        backTitle: "Voltar à biblioteca",
-        chosenMode: null,
-        webtoonHint: false,
-      },
-    [session, pageCount],
-  );
+  const content = useMemo<ReaderContent | null>(() => {
+    if (!session) return null;
+    // Chegar ao fim de uma HQ ainda não concluída toca o som de concluir, uma vez.
+    let completed = session.comic.status === "completed";
+    return {
+      title: session.comic.title,
+      pageCount,
+      start: session.start,
+      pageSrc: (index, token) => pageUrl(session.comic.id, index, token),
+      saveProgress: (page, count, ratio) =>
+        api.saveProgress(session.comic.id, page, count, ratio).then((status) => {
+          if (status === "completed" && !completed) sound.play("complete", { reader: true });
+          completed = status === "completed";
+          return status;
+        }),
+      resetProgress: () => api.resetProgress(session.comic.id),
+      chapters: [{ title: null, first: 0, count: pageCount, guidedComicId: session.comic.id }],
+      backLabel: "Biblioteca",
+      backTitle: "Voltar à biblioteca",
+      chosenMode: null,
+      webtoonHint: false,
+    };
+  }, [session, pageCount]);
 
   useEffect(() => {
     let alive = true;
@@ -191,12 +202,9 @@ export function ReaderScreen({ id }: { id: number }) {
             title="Não foi possível abrir esta HQ"
             message={error.message}
             action={
-              <div className="flex gap-2">
-                <Button onClick={nav.back}>Voltar</Button>
-                <Button variant="primary" onClick={() => nav.navigate({ name: "comic", id }, { replace: true })}>
-                  Ver detalhes da HQ
-                </Button>
-              </div>
+              <Button variant="primary" onClick={() => nav.navigate({ name: "comic", id }, { replace: true })}>
+                Ver detalhes da HQ
+              </Button>
             }
           />
         </div>
@@ -206,7 +214,9 @@ export function ReaderScreen({ id }: { id: number }) {
   if (!session || !content || pageCount === 0) {
     return (
       <div className="flex h-full items-center justify-center bg-reader text-fg">
-        <Spinner size={22} label={session?.comic.format === "pdf" || !session ? "Abrindo HQ…" : "Preparando páginas…"} />
+        <span style={APPEAR_LATE}>
+          <Spinner size={22} label={session?.comic.format === "pdf" || !session ? "Abrindo HQ…" : "Preparando páginas…"} />
+        </span>
       </div>
     );
   }
@@ -241,7 +251,7 @@ export function Reader({ content, pdf, zoomState: [zoom, setZoom] }: { content: 
   const [guided, setGuided] = useState(false);
   const verticalRef = useRef<VerticalHandle>(null);
   const hideTimer = useRef<number | undefined>(undefined);
-  const [activity, setActivity] = useState(0);
+  const root = useRef<HTMLDivElement>(null);
   const [initialRatio] = useState(content.start.scrollRatio);
 
   const { schedule, flush } = useProgressSaver(content.saveProgress, pageCount);
@@ -383,21 +393,51 @@ export function Reader({ content, pdf, zoomState: [zoom, setZoom] }: { content: 
 
   // ---- Controles: ocultar automaticamente, com forma clara de reaparecer ----
   const tipActive = onboarding.readerTipVisible;
-  const autoHide = settings["reader.controls"] === "autohide" && !panel && !help && !tipActive;
+  const autoHide = settings["reader.controls"] === "autohide" && !panel && !help && !tipActive && !pinnedHidden;
+  // Cursor ou foco de teclado sobre as barras: elas não somem embaixo de quem está usando.
+  const holding = useRef({ hover: false, focus: false });
+  const autoHideRef = useRef(autoHide);
+  const armHide = useCallback(() => {
+    window.clearTimeout(hideTimer.current);
+    if (!autoHideRef.current || holding.current.hover || holding.current.focus) return;
+    hideTimer.current = window.setTimeout(() => setControlsVisible(false), HIDE_AFTER_MS);
+  }, []);
+  useEffect(() => {
+    autoHideRef.current = autoHide;
+    armHide();
+    return () => window.clearTimeout(hideTimer.current);
+  }, [autoHide, armHide]);
+  // Cada movimento do mouse só reinicia o temporizador: o leitor não é redesenhado a cada evento.
   const showControls = useCallback(() => {
     if (pinnedHidden) return;
     setControlsVisible(true);
-    setActivity((a) => a + 1);
-  }, [pinnedHidden]);
-  // Oculta após alguns segundos sem atividade (o temporizador recomeça a cada movimento).
-  useEffect(() => {
-    window.clearTimeout(hideTimer.current);
-    if (!autoHide || pinnedHidden) return;
-    hideTimer.current = window.setTimeout(() => setControlsVisible(false), 2800);
-    return () => window.clearTimeout(hideTimer.current);
-  }, [autoHide, pinnedHidden, activity]);
+    armHide();
+  }, [pinnedHidden, armHide]);
+  const barEvents = {
+    onMouseEnter: () => {
+      holding.current.hover = true;
+      window.clearTimeout(hideTimer.current);
+    },
+    onMouseLeave: () => {
+      holding.current.hover = false;
+      armHide();
+    },
+    // Só o foco do teclado segura as barras: depois de um clique, o botão fica focado, mas a pessoa já seguiu lendo.
+    onFocus: (e: FocusEvent<HTMLElement>) => {
+      if (!e.target.matches(":focus-visible")) return;
+      holding.current.focus = true;
+      showControls();
+    },
+    onBlur: (e: FocusEvent<HTMLElement>) => {
+      if (e.currentTarget.contains(e.relatedTarget)) return;
+      holding.current.focus = false;
+      armHide();
+    },
+  };
   const visible = (controlsVisible && !pinnedHidden) || !!panel || help || tipActive;
   const toggleControls = () => {
+    // Ocultas de propósito, as barras ficam inertes e o foco que estava nelas não as segura mais.
+    holding.current.focus = false;
     setPinnedHidden((h) => {
       const nextHidden = !h;
       if (!nextHidden) setControlsVisible(true);
@@ -521,6 +561,22 @@ export function Reader({ content, pdf, zoomState: [zoom, setZoom] }: { content: 
     [schedule, lifecycle],
   );
 
+  // Estáveis: a Leitura Guiada desenha a página de novo (o PDF inclusive) quando estas funções mudam.
+  const chapterFirst = chapter.first;
+  const onGuidedSize = useCallback((i: number, s: Size) => onSize(chapterFirst + i, s), [onSize, chapterFirst]);
+  const onGuidedPage = useCallback((p: number) => goToPage(chapterFirst + p, "step"), [goToPage, chapterFirst]);
+  const onGuidedExit = useCallback(() => setGuided(false), []);
+
+  // Ao fechar um painel, os atalhos ou a Leitura Guiada, o foco não fica perdido: Espaço e setas continuam lendo.
+  // Quem abriu pelo teclado recebe o foco de volta no botão (useReturnFocus); aqui só se cobre o foco que sumiu.
+  const focusReading = useCallback(() => root.current?.querySelector<HTMLElement>("[data-reader-viewport]")?.focus({ preventScroll: true }), []);
+  const covered = panel !== null || help || guided;
+  useEffect(() => {
+    if (covered) return;
+    const active = document.activeElement;
+    if (!active || active === document.body) focusReading();
+  }, [covered, focusReading]);
+
   const resetProgress = () => {
     void content
       .resetProgress(page)
@@ -548,6 +604,9 @@ export function Reader({ content, pdf, zoomState: [zoom, setZoom] }: { content: 
   const prevLabel = "Página anterior";
   const nextLabel = "Próxima página";
   const k = (a: ShortcutAction) => (shortcuts[a][0] ? formatKey(shortcuts[a][0]!) : undefined);
+  /** Dica nativa com a tecla, sem "()" vazio quando a ação ficou sem atalho. */
+  const withKey = (label: string, a: ShortcutAction) => (k(a) ? `${label} (${k(a)})` : label);
+  const barsInert = guided || (pinnedHidden && !visible);
 
   const sideButtons = !continuous && (
     <>
@@ -557,24 +616,25 @@ export function Reader({ content, pdf, zoomState: [zoom, setZoom] }: { content: 
   );
 
   return (
-    <div className="relative flex h-full flex-col overflow-hidden bg-reader text-fg" onMouseMove={showControls} aria-label={`Leitor: ${content.title}`}>
+    <div ref={root} role="region" className="relative flex h-full flex-col overflow-hidden bg-reader text-fg" onMouseMove={showControls} aria-label={`Leitor: ${content.title}`}>
       {/* Barra superior */}
       <header
-        inert={guided}
+        inert={barsInert}
         className={cn(
           "absolute inset-x-0 top-0 z-20 flex items-center gap-2 border-b border-border bg-elevated/95 px-3 py-1.5 backdrop-blur transition-transform duration-200",
           visible ? "translate-y-0" : "-translate-y-full",
         )}
-        onMouseEnter={() => window.clearTimeout(hideTimer.current)}
+        {...barEvents}
       >
         <span className={tour} data-tour="reader-back">
-          <Button variant="ghost" size="sm" icon={ArrowLeft} onClick={back} title={`${content.backTitle} (${k("back") ?? ""})`}>
+          <Button variant="ghost" size="sm" icon={ArrowLeft} onClick={back} title={withKey(content.backTitle, "back")}>
             {content.backLabel}
           </Button>
         </span>
         <div className="min-w-0 flex-1 px-2">
           <p className="truncate text-sm font-semibold">{chapter.title ? `${content.title} · ${chapter.title}` : content.title}</p>
-          <p className="text-xs text-muted" aria-live="polite">
+          {/* Na rolagem contínua a página muda sem parar: anunciar cada uma só atrapalharia. A barra de progresso continua dizendo onde se está. */}
+          <p className="text-xs text-muted" aria-live={continuous ? undefined : "polite"} data-testid="reader-indicator">
             {indicator}
           </p>
         </div>
@@ -592,7 +652,7 @@ export function Reader({ content, pdf, zoomState: [zoom, setZoom] }: { content: 
             onClick={() => setZoom(1)}
             title="Voltar o zoom para 100%"
             className="h-7 w-12 rounded-md text-center font-mono text-xs text-muted hover:bg-hover hover:text-fg"
-            aria-label={`Zoom atual ${Math.round(zoom * 100)}%. Clique para voltar a 100%`}
+            aria-label={`Zoom atual ${Math.round(zoom * 100)}%. Voltar a 100%`}
           >
             {Math.round(zoom * 100)}%
           </button>
@@ -604,14 +664,14 @@ export function Reader({ content, pdf, zoomState: [zoom, setZoom] }: { content: 
             variant="ghost"
             size="sm"
             icon={MessagesSquare}
-            title={`Ler balão por balão (${k("guided") ?? ""})`}
+            title={withKey("Ler balão por balão", "guided")}
             onClick={() => run("guided")}
           >
             <span className="max-lg:sr-only">Leitura Guiada</span>
           </Button>
         )}
         <IconButton icon={ModeIcon} label={`Alternar modo de exibição (atual: ${MODE_LABELS[mode]})`} shortcut={k("cycleMode")} onClick={() => setMode(nextMode(mode))} size="sm" />
-        <IconButton icon={ListOrdered} label="Abrir índice de páginas" shortcut={k("pageIndex")} pressed={panel === "index"} onClick={() => togglePanel("index")} size="sm" />
+        <IconButton icon={ListOrdered} label="Índice de páginas" shortcut={k("pageIndex")} pressed={panel === "index"} onClick={() => togglePanel("index")} size="sm" />
         <IconButton icon={Settings2} label="Configurações de leitura" pressed={panel === "settings"} onClick={() => togglePanel("settings")} size="sm" />
         <IconButton icon={fullscreen ? Minimize : Maximize} label={fullscreen ? "Sair da tela cheia" : "Entrar em tela cheia"} shortcut={k("fullscreen")} onClick={() => void toggleFullscreen()} size="sm" />
       </header>
@@ -643,12 +703,18 @@ export function Reader({ content, pdf, zoomState: [zoom, setZoom] }: { content: 
             A partir daqui: {chapter.title}
           </p>
         )}
-        {!continuous && atLastPage && waitingForNext && <div className="absolute inset-x-0 bottom-16 z-10 flex justify-center">{content.ending}</div>}
+        {/* Sobre a página, o aviso ganha fundo próprio: texto solto em cima da arte não se lê. */}
+        {!continuous && atLastPage && waitingForNext && (
+          <div className="absolute inset-x-0 bottom-16 z-10 flex justify-center px-4">
+            <div className="p-enter max-w-md rounded-lg border border-border bg-elevated px-4 py-3 shadow-overlay">{content.ending}</div>
+          </div>
+        )}
         {sideButtons}
         {panel === "settings" && (
           <ReaderSettingsPanel
             mode={mode}
             onMode={setMode}
+            onFit={setFit}
             onClose={() => setPanel(null)}
             onResetProgress={resetProgress}
             onShowShortcuts={() => {
@@ -669,6 +735,8 @@ export function Reader({ content, pdf, zoomState: [zoom, setZoom] }: { content: 
             current={(continuous ? [page] : spread).map((p) => p - chapter.first)}
             isPdf={!!pdf}
             onSelect={(p) => {
+              // Escolheu a página: o foco vai para a leitura, para as setas e o Espaço seguirem dali.
+              focusReading();
               goToPage(chapter.first + p);
               setPanel(null);
             }}
@@ -689,7 +757,8 @@ export function Reader({ content, pdf, zoomState: [zoom, setZoom] }: { content: 
             </div>
           </div>
         )}
-        {!visible && (
+        {/* Ocultos pelo tempo, o mouse ou qualquer atalho os traz de volta; ocultos de propósito, só este botão ou a tecla. */}
+        {!visible && pinnedHidden && (
           <button
             type="button"
             onClick={() => {
@@ -705,16 +774,16 @@ export function Reader({ content, pdf, zoomState: [zoom, setZoom] }: { content: 
 
       {/* Barra inferior */}
       <footer
-        inert={guided}
+        inert={barsInert}
         className={cn(
           "absolute inset-x-0 bottom-0 z-20 flex items-center gap-3 border-t border-border bg-elevated/95 px-4 py-2 backdrop-blur transition-transform duration-200",
           visible ? "translate-y-0" : "translate-y-full",
         )}
-        onMouseEnter={() => window.clearTimeout(hideTimer.current)}
+        {...barEvents}
       >
         <div className={cn("flex flex-1 items-center gap-3", rtl && "flex-row-reverse", tour)} data-tour="reader-nav">
           {(chapterBefore || previousChapter) && <IconButton icon={rtl ? ChevronsRight : ChevronsLeft} label="Capítulo anterior" variant="secondary" size="sm" onClick={toPreviousChapter} />}
-          <Button size="sm" icon={rtl ? ChevronRight : ChevronLeft} onClick={prev} disabled={!continuous ? spreadIdx === 0 : page === 0} title={`${prevLabel} (${k("prev") ?? ""})`}>
+          <Button size="sm" icon={rtl ? ChevronRight : ChevronLeft} onClick={prev} disabled={!continuous ? spreadIdx === 0 : page === 0} title={withKey(prevLabel, "prev")}>
             <span className="max-sm:sr-only">{prevLabel}</span>
           </Button>
           <label htmlFor="reader-progress" className="sr-only">
@@ -731,7 +800,7 @@ export function Reader({ content, pdf, zoomState: [zoom, setZoom] }: { content: 
             aria-valuetext={indicator}
             className="h-1.5 flex-1 cursor-pointer accent-[var(--color-accent)]"
           />
-          <Button size="sm" trailingIcon={rtl ? ChevronLeft : ChevronRight} onClick={next} title={`${nextLabel} (${k("next") ?? ""})`}>
+          <Button size="sm" trailingIcon={rtl ? ChevronLeft : ChevronRight} onClick={next} title={withKey(nextLabel, "next")}>
             <span className="max-sm:sr-only">{nextLabel}</span>
           </Button>
           {(chapterAfter || nextChapter) && <IconButton icon={rtl ? ChevronsLeft : ChevronsRight} label="Próximo capítulo" variant="secondary" size="sm" onClick={toNextChapter} />}
@@ -747,9 +816,9 @@ export function Reader({ content, pdf, zoomState: [zoom, setZoom] }: { content: 
           rtl={rtl}
           shortcuts={shortcuts}
           natural={sizes.get(page)}
-          onSize={(i, s) => onSize(chapter.first + i, s)}
-          onPage={(p) => goToPage(chapter.first + p, "step")}
-          onExit={() => setGuided(false)}
+          onSize={onGuidedSize}
+          onPage={onGuidedPage}
+          onExit={onGuidedExit}
         />
       )}
       {tipActive && <ReaderTip shortcuts={shortcuts} />}

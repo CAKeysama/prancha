@@ -11,9 +11,30 @@ import { SHORTCUT_ACTIONS, SHORTCUT_LABELS, formatKey, type ShortcutMap } from "
 import { useSettings } from "../../app/settings-context";
 import type { PageSrc } from "../../services/urls";
 
+/**
+ * Ao fechar, devolve o foco a quem abriu, se a pessoa chegou pelo teclado. Com o mouse, o leitor põe o foco
+ * na área de leitura, para Espaço e setas continuarem lendo em vez de acionar de novo o botão clicado.
+ */
+export function useReturnFocus() {
+  // Lido ao montar, antes de o painel puxar o foco para dentro.
+  const [opener] = useState(() => {
+    const el = document.activeElement;
+    return el instanceof HTMLElement && el !== document.body && el.matches(":focus-visible") ? el : null;
+  });
+  useEffect(
+    () => () => {
+      const active = document.activeElement;
+      if (!opener?.isConnected || (active && active !== document.body)) return;
+      opener.focus({ preventScroll: true });
+    },
+    [opener],
+  );
+}
+
 /** Painel lateral do leitor (não cobre a página inteira). */
 export function SidePanel({ title, onClose, children, side = "right" }: { title: string; onClose: () => void; children: ReactNode; side?: "left" | "right" }) {
   const ref = useRef<HTMLDivElement>(null);
+  useReturnFocus();
   useEffect(() => {
     ref.current?.querySelector<HTMLElement>("button, input, select")?.focus();
   }, []);
@@ -44,6 +65,7 @@ export function SidePanel({ title, onClose, children, side = "right" }: { title:
 export function ReaderSettingsPanel({
   mode,
   onMode,
+  onFit,
   onClose,
   onResetProgress,
   onShowShortcuts,
@@ -52,6 +74,8 @@ export function ReaderSettingsPanel({
 }: {
   mode: ReaderMode;
   onMode: (mode: ReaderMode) => void;
+  /** Como os botões da barra: trocar o ajuste volta o zoom a 100%. */
+  onFit: (fit: FitMode) => void;
   onClose: () => void;
   onResetProgress: () => void;
   onShowShortcuts: () => void;
@@ -83,7 +107,7 @@ export function ReaderSettingsPanel({
           <Segmented<FitMode>
             label="Ajuste da imagem"
             value={settings["reader.fit"]}
-            onChange={(v) => void update("reader.fit", v)}
+            onChange={onFit}
             size="sm"
             options={(["page", "width", "height"] as FitMode[]).map((f) => ({ value: f, label: FIT_LABELS[f].replace("Ajustar à ", "") }))}
           />
@@ -91,7 +115,7 @@ export function ReaderSettingsPanel({
         {mode === "double" && (
           <Switch
             label="Capa sozinha"
-            description="Na página dupla, mostra a primeira página sozinha para alinhar os pares."
+            description="Mostra a primeira página sozinha para alinhar os pares."
             checked={settings["reader.coverAlone"]}
             onChange={(v) => void update("reader.coverAlone", v)}
           />
@@ -239,7 +263,7 @@ export function ShortcutsDialog({ open, onClose, shortcuts }: { open: boolean; o
       open={open}
       onClose={onClose}
       title="Atalhos do leitor"
-      description="Os atalhos funcionam apenas com o leitor aberto. Você pode alterá-los em Configurações › Leitura."
+      description="Altere os atalhos em Configurações › Leitura."
       footer={<Button onClick={onClose}>Fechar</Button>}
     >
       <table className="w-full text-left">

@@ -6,8 +6,9 @@ import { ConfirmDialog } from "../../components/Dialog";
 import { ErrorState, ProgressBar, Spinner } from "../../components/Feedback";
 import { Menu } from "../../components/Menu";
 import { PageHeader } from "../../components/PageHeader";
+import { StateToggle } from "../../components/StateToggle";
 import { useToast } from "../../components/Toast";
-import { STATUS_LABELS, formatBytes, formatDate, progressLabel, progressRatio, readActionLabel } from "../../domain/progress";
+import { formatBytes, formatDate, progressLabel, progressRatio, readActionLabel } from "../../domain/progress";
 import { FORMAT_LABELS, type ComicDetails, type FieldSource } from "../../domain/types";
 import { api, errorMessage } from "../../services/api";
 import { useLibraryData, useLibraryVersion } from "../../app/library-events";
@@ -15,10 +16,8 @@ import { useNav } from "../../app/navigation";
 import { useSettings } from "../../app/settings-context";
 import { SourceBadge, useComicActions } from "./comic-actions";
 
-const COVER_KIND_TEXT: Record<string, string> = {
-  metadata: "Capa indicada nos metadados do arquivo (ComicInfo).",
-  format: "Imagem de capa identificada pelo nome dentro do arquivo.",
-  first_page: "Miniatura gerada a partir da primeira página válida.",
+/** Só a capa substituta e a pendente pedem explicação; as reais não têm legenda. */
+const COVER_KIND_TEXT: Partial<Record<string, string>> = {
   placeholder: "Capa substituta: a imagem original não pôde ser extraída.",
   pending: "A capa está sendo preparada.",
 };
@@ -50,7 +49,7 @@ function MissingBanner({ comic }: { comic: ComicDetails }) {
         return;
       }
       setMismatch(null);
-      toast.success("Arquivo localizado", r.matched ? "O conteúdo confere com o original. O progresso foi mantido." : "A HQ agora aponta para o novo arquivo.");
+      toast.success("Arquivo localizado", r.matched ? undefined : "A HQ agora usa o novo arquivo.");
       bump();
     } catch (e) {
       toast.error("Não foi possível usar esse arquivo", errorMessage(e));
@@ -62,10 +61,10 @@ function MissingBanner({ comic }: { comic: ComicDetails }) {
     <div role="alert" className="mb-5 flex flex-wrap items-start gap-3 rounded-md border border-danger/50 bg-danger-subtle px-4 py-3">
       <FileWarning size={18} className="mt-0.5 shrink-0 text-danger" aria-hidden />
       <div className="min-w-0 flex-1">
-        <p className="font-semibold">Arquivo original não encontrado</p>
+        <p className="font-semibold">{comic.format === "folder" ? "Pasta original não encontrada" : "Arquivo original não encontrado"}</p>
         <p className="mt-0.5 text-sm">
-          O {comic.format === "folder" ? "diretório" : "arquivo"} não está mais em <span className="font-mono text-xs break-all">{comic.path}</span>. Ele
-          pode ter sido movido, renomeado ou estar em um disco desconectado. As informações e o progresso continuam salvos.
+          Não está mais em <span className="font-mono text-xs break-all">{comic.path}</span>: pode ter sido movido, renomeado ou estar em um disco desconectado.
+          As informações e o progresso continuam salvos.
         </p>
       </div>
       <Button icon={FileSearch} onClick={() => void relocate(false)} loading={busy}>
@@ -74,12 +73,12 @@ function MissingBanner({ comic }: { comic: ComicDetails }) {
       <ConfirmDialog
         open={mismatch !== null}
         title="O conteúdo é diferente do original"
-        confirmLabel="Usar este arquivo mesmo assim"
+        confirmLabel="Usar mesmo assim"
+        busy={busy}
         onCancel={() => setMismatch(null)}
         onConfirm={() => void relocate(true, mismatch ?? undefined)}
       >
-        O arquivo escolhido não é idêntico ao que foi importado. Se continuar, a HQ passará a usar o novo arquivo, a capa será refeita e o
-        progresso salvo será mantido.
+        O arquivo escolhido não é idêntico ao importado. A HQ passa a usar o novo arquivo, a capa é refeita e o progresso continua salvo.
       </ConfirmDialog>
     </div>
   );
@@ -90,7 +89,7 @@ export function DetailsScreen({ id }: { id: number }) {
   const { settings } = useSettings();
   const actions = useComicActions();
   const toast = useToast();
-  const { data: comic, error } = useLibraryData(() => api.comic(id), [id], "comic");
+  const { data: comic, error, reload } = useLibraryData(() => api.comic(id), [id], "comic");
   const { data: origin } = useLibraryData(() => api.comicOrigin(id), [id], "comic-origin");
   const [confirmReset, setConfirmReset] = useState(false);
 
@@ -99,7 +98,15 @@ export function DetailsScreen({ id }: { id: number }) {
       <div className="h-full overflow-y-auto">
         <PageHeader title="Detalhes" onBack={nav.back} />
         <div className="p-6">
-          <ErrorState title="Não foi possível abrir os detalhes" message={error} />
+          <ErrorState
+            title="Não foi possível abrir os detalhes"
+            message={error}
+            action={
+              <Button size="sm" onClick={reload}>
+                Tentar novamente
+              </Button>
+            }
+          />
         </div>
       </div>
     );
@@ -143,21 +150,19 @@ export function DetailsScreen({ id }: { id: number }) {
           </div>
           <div className="min-w-0 flex-1">
             <div className="rounded-md border border-border bg-surface p-4">
-              {comic.status === "reading" && <p className="text-sm text-muted">{STATUS_LABELS.reading}</p>}
               <p className="text-lg font-semibold">{progressLabel(comic)}</p>
               {ratio !== null && <ProgressBar value={ratio} label="Progresso da leitura" className="mt-2" tone={comic.status === "completed" ? "success" : "accent"} />}
               <div className="mt-4 flex flex-wrap gap-2">
                 <Button variant="primary" icon={BookOpen} onClick={() => actions.read(comic)} disabled={comic.missing}>
                   {readActionLabel(comic)}
                 </Button>
-                <Button icon={Star} onClick={() => void actions.toggleFavorite(comic)} aria-pressed={comic.favorite}>
-                  {comic.favorite ? "Remover dos favoritos" : "Favoritar"}
-                </Button>
+                {/* O mesmo botão de estado da página da obra. */}
+                <StateToggle icon={Star} motion="pop" active={comic.favorite} activeText="Favorito" inactiveText="Favoritar" onToggle={() => void actions.toggleFavorite(comic)} />
                 <Button icon={Pencil} onClick={() => actions.edit(comic.id)}>
                   Editar informações
                 </Button>
                 <Button icon={FolderPlus} onClick={() => actions.collections(comic.id)}>
-                  Organizar em coleções
+                  Organizar em coleções…
                 </Button>
               </div>
             </div>
@@ -225,7 +230,7 @@ export function DetailsScreen({ id }: { id: number }) {
                         key={c.id}
                         type="button"
                         onClick={() => nav.navigate({ name: "collection", id: c.id })}
-                        className="rounded-full border border-border px-2 text-sm text-accent-fg hover:bg-hover"
+                        className="inline-flex h-6 items-center rounded-full border border-border px-2 text-sm text-accent-fg hover:bg-hover"
                       >
                         {c.name}
                       </button>
@@ -274,16 +279,17 @@ export function DetailsScreen({ id }: { id: number }) {
         open={confirmReset}
         title="Reiniciar o progresso?"
         confirmLabel="Reiniciar progresso"
+        destructive
         onCancel={() => setConfirmReset(false)}
         onConfirm={() => {
           setConfirmReset(false);
           void api
             .resetProgress(comic.id)
-            .then(() => toast.success("Progresso reiniciado", "A leitura recomeçará da primeira página."))
+            .then(() => toast.success("Progresso reiniciado", comic.title))
             .catch((e) => toast.error("Não foi possível reiniciar", errorMessage(e)));
         }}
       >
-        A posição salva será substituída pela primeira página.
+        A posição salva é substituída pela primeira página.
       </ConfirmDialog>
     </div>
   );

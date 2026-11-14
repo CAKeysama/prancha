@@ -72,7 +72,7 @@ export function PagedView({ pageSrc, spread, sizes, fit, zoom, direction, pdf, o
   }, []);
 
   return (
-    <div ref={viewport} className="h-full w-full overflow-auto" data-reader-viewport tabIndex={-1}>
+    <div ref={viewport} className="h-full w-full overflow-auto outline-none" data-reader-viewport tabIndex={-1}>
       <div className="flex min-h-full min-w-full" style={{ padding }}>
         <div className="m-auto flex items-center" key={key}>
           {size.width > 0 &&
@@ -231,6 +231,12 @@ export const VerticalView = forwardRef<VerticalHandle, VerticalProps>(function V
     };
   }, [count]);
 
+  // Zoom, ajuste, janela ou o tamanho real de uma página mudaram a altura das páginas sem rolar a tela (no topo,
+  // por exemplo): as que passaram a aparecer precisam ser montadas, em vez de ficarem como espaço vazio.
+  useEffect(() => {
+    viewport.current?.dispatchEvent(new Event("scroll"));
+  }, [layout]);
+
   return (
     <div ref={viewport} className="h-full w-full overflow-auto outline-none [overflow-anchor:auto]" data-reader-viewport tabIndex={-1}>
       <div className={cn("flex flex-col items-center", !webtoon && "py-1.5")} style={{ gap: webtoon ? 0 : GAP }}>
@@ -266,7 +272,7 @@ export const VerticalView = forwardRef<VerticalHandle, VerticalProps>(function V
             );
           })}
       </div>
-      {size.width > 0 && footer}
+      {size.width > 0 && footer && <div className="py-12">{footer}</div>}
     </div>
   );
 });

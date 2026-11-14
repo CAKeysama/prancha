@@ -1,5 +1,5 @@
 import { useMemo, type ReactNode } from "react";
-import { BookOpen, ChevronRight, FolderPlus, GraduationCap, Library, Plus } from "lucide-react";
+import { BookOpen, ChevronRight, FolderPlus, Library, Plus } from "lucide-react";
 import { Button } from "../../components/Button";
 import { ErrorState, ProgressBar, Spinner } from "../../components/Feedback";
 import { PageHeader } from "../../components/PageHeader";
@@ -9,7 +9,7 @@ import { progressLabel, progressRatio, subtitle } from "../../domain/progress";
 import { api } from "../../services/api";
 import { useLibraryData } from "../../app/library-events";
 import { useNav, type Route } from "../../app/navigation";
-import { APP_NAME, SUPPORTED_FORMATS_TEXT } from "../../app/config";
+import { SUPPORTED_FORMATS_TEXT } from "../../app/config";
 import { useScrollMemory } from "../../app/scroll-memory";
 import { AddComicsButtons } from "./AddComicsButtons";
 import { ComicShelf } from "./ComicCollectionView";
@@ -17,7 +17,6 @@ import { useImport } from "./import-context";
 import { useComicActions } from "./comic-actions";
 import { useLibrarySeries } from "./use-library-series";
 import { OnlineCover } from "../online/parts";
-import { useOnboarding } from "../onboarding/onboarding-context";
 
 function Section({ title, to, children }: { title: string; to?: Route; children: ReactNode }) {
   const nav = useNav();
@@ -68,26 +67,19 @@ function ResumeHero({ item }: { item: LibraryItem }) {
 
 function EmptyHome() {
   const { pickAndImport } = useImport();
-  const onboarding = useOnboarding();
   return (
     <div className="mx-auto flex max-w-xl flex-col items-center px-6 py-14 text-center">
-      <div className="mb-5 flex size-14 items-center justify-center rounded-xl border border-border bg-surface text-accent">
-        <Library size={26} aria-hidden />
-      </div>
+      <Library size={32} className="mb-4 text-accent" aria-hidden />
       <h2 className="text-2xl font-semibold">Sua biblioteca está vazia</h2>
-      <p className="mt-2 text-base text-muted">Adicione seus quadrinhos. O {APP_NAME} prepara as capas e lembra onde você parou.</p>
+      <p className="mt-2 text-base text-muted">{SUPPORTED_FORMATS_TEXT}, ou arraste para esta janela.</p>
       <div className="mt-6 flex flex-wrap justify-center gap-2">
-        <Button variant="primary" icon={Plus} onClick={() => void pickAndImport("files")} data-tour="add-comics">
+        <Button variant="primary" icon={Plus} onClick={() => void pickAndImport("files")}>
           Adicionar quadrinhos
         </Button>
         <Button icon={FolderPlus} onClick={() => void pickAndImport("folder")}>
-          Selecionar uma pasta
+          Adicionar pasta
         </Button>
       </div>
-      <p className="mt-4 text-sm text-muted">{SUPPORTED_FORMATS_TEXT} · ou arraste os arquivos para cá</p>
-      <Button variant="ghost" size="sm" icon={GraduationCap} className="mt-6" onClick={onboarding.restart}>
-        Ver o tutorial novamente
-      </Button>
     </div>
   );
 }
@@ -99,7 +91,7 @@ export function HomeScreen() {
   const scrollRef = useScrollMemory<HTMLDivElement>("home");
   return (
     <div ref={scrollRef} className="h-full overflow-y-auto">
-      <PageHeader title="Início" subtitle={data && data.total > 0 ? `${data.total} ${data.total === 1 ? "quadrinho" : "quadrinhos"} na biblioteca` : undefined} actions={data && data.total > 0 ? <AddComicsButtons /> : undefined} />
+      <PageHeader title="Início" actions={data && data.total > 0 ? <AddComicsButtons /> : undefined} />
       <div className="px-6 py-6">
         {error && (
           <ErrorState
@@ -133,7 +125,7 @@ export function HomeScreen() {
               </Section>
             )}
             {data.recentlyOpened.length > 0 && (
-              <Section title="Acessados recentemente" to={{ name: "recent" }}>
+              <Section title="Abertos recentemente" to={{ name: "recent" }}>
                 <ComicShelf items={data.recentlyOpened} />
               </Section>
             )}

@@ -20,11 +20,14 @@ import type { MenuEntry } from "../../components/Menu";
 import { Spinner } from "../../components/Feedback";
 import { useToast } from "../../components/Toast";
 import type { LibrarySeries } from "../../domain/online";
-import { comicCountLabel, readActionLabel } from "../../domain/progress";
+import { collectionCountLabel } from "../../domain/library-items";
+import { readActionLabel } from "../../domain/progress";
 import type { CollectionInfo, ComicDetails, ComicSummary, FieldSource, MetadataPatch } from "../../domain/types";
 import { api, errorMessage } from "../../services/api";
 import { useNav } from "../../app/navigation";
 import { useLibraryVersion } from "../../app/library-events";
+import { useSettings } from "../../app/settings-context";
+import { sound } from "../../services/sound";
 
 /** O que as ações precisam saber de uma obra, venha ela da biblioteca ou da página da obra. */
 type SeriesItem = Pick<LibrarySeries, "id" | "title" | "favorite" | "readStatus" | "resume">;
@@ -76,6 +79,7 @@ function EditMetadataDialog({ id, onClose }: { id: number; onClose: () => void }
   const [form, setForm] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<{ title?: string; year?: string }>({});
 
   useEffect(() => {
     api
@@ -103,18 +107,16 @@ function EditMetadataDialog({ id, onClose }: { id: number; onClose: () => void }
   const opt = (v: string | undefined) => (v && v.trim() ? v.trim() : null);
 
   const save = async () => {
-    if (!form.title?.trim()) {
-      setError("O título não pode ficar vazio.");
-      return;
-    }
     const yearText = form.year?.trim() ?? "";
     const year = yearText ? Number(yearText) : null;
-    if (yearText && (!Number.isInteger(year) || year! < 1800 || year! > 2200)) {
-      setError("Informe um ano entre 1800 e 2200.");
-      return;
-    }
+    const invalid = {
+      title: form.title?.trim() ? undefined : "O título não pode ficar vazio.",
+      year: yearText && (!Number.isInteger(year) || year! < 1800 || year! > 2200) ? "Informe um ano entre 1800 e 2200." : undefined,
+    };
+    setFieldErrors(invalid);
+    if (invalid.title || invalid.year) return;
     const patch: MetadataPatch = {
-      title: form.title.trim(),
+      title: form.title!.trim(),
       series: opt(form.series),
       issueNumber: opt(form.issueNumber),
       volume: opt(form.volume),
@@ -152,7 +154,7 @@ function EditMetadataDialog({ id, onClose }: { id: number; onClose: () => void }
         <>
           <Button onClick={onClose}>Cancelar</Button>
           <Button variant="primary" onClick={save} loading={saving} disabled={!details}>
-            Salvar alterações
+            Salvar
           </Button>
         </>
       }
@@ -177,13 +179,14 @@ function EditMetadataDialog({ id, onClose }: { id: number; onClose: () => void }
             value={form.title}
             onChange={set("title")}
             required
+            error={fieldErrors.title}
             data-autofocus
             badge={<SourceBadge source={src.title} />}
           />
           <TextField className="sm:col-span-3" label="Série" value={form.series} onChange={set("series")} badge={<SourceBadge source={src.series} />} />
           <TextField className="sm:col-span-1" label="Número" value={form.issueNumber} onChange={set("issueNumber")} badge={<SourceBadge source={src.issueNumber} />} />
           <TextField className="sm:col-span-1" label="Volume" value={form.volume} onChange={set("volume")} badge={<SourceBadge source={src.volume} />} />
-          <TextField className="sm:col-span-1" label="Ano" inputMode="numeric" value={form.year} onChange={set("year")} badge={<SourceBadge source={src.year} />} />
+          <TextField className="sm:col-span-1" label="Ano" inputMode="numeric" value={form.year} onChange={set("year")} error={fieldErrors.year} badge={<SourceBadge source={src.year} />} />
           <TextField className="sm:col-span-3" label="Autor (roteiro)" value={form.writer} onChange={set("writer")} badge={<SourceBadge source={src.writer} />} />
           <TextField className="sm:col-span-3" label="Artista" value={form.artist} onChange={set("artist")} badge={<SourceBadge source={src.artist} />} />
           <TextField className="sm:col-span-3" label="Editora" value={form.publisher} onChange={set("publisher")} badge={<SourceBadge source={src.publisher} />} />
@@ -204,12 +207,15 @@ function EditMetadataDialog({ id, onClose }: { id: number; onClose: () => void }
 }
 
 function CollectionsDialog({ target, onClose }: { target: { kind: "comic" | "series"; id: number }; onClose: () => void }) {
+  const { bump } = useLibraryVersion();
+  const { settings } = useSettings();
   const [all, setAll] = useState<CollectionInfo[] | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [title, setTitle] = useState("");
   const [newName, setNewName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -231,14 +237,20 @@ function CollectionsDialog({ target, onClose }: { target: { kind: "comic" | "ser
   }, [target]);
 
   const create = async () => {
+    if (!newName.trim() || creating) return;
     setError(null);
+    setCreating(true);
     try {
       const newId = await api.createCollection(newName);
       setNewName("");
+      // Criar uma coleção não passa pelo aviso de mudança do backend: a tela Coleções precisa saber.
+      bump();
       setAll(await api.collections());
       setSelected((s) => new Set(s).add(newId));
     } catch (e) {
       setError(errorMessage(e));
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -259,7 +271,7 @@ function CollectionsDialog({ target, onClose }: { target: { kind: "comic" | "ser
       open
       onClose={onClose}
       title="Coleções"
-      description={title ? `Escolha as coleções de “${title}”.` : undefined}
+      description={title || undefined}
       footer={
         <>
           <Button onClick={onClose}>Cancelar</Button>
@@ -279,7 +291,7 @@ function CollectionsDialog({ target, onClose }: { target: { kind: "comic" | "ser
       ) : (
         <div className="space-y-4">
           {all.length === 0 ? (
-            <p className="text-sm text-muted">Você ainda não tem coleções. Crie a primeira abaixo.</p>
+            <p className="text-sm text-muted">Nenhuma coleção ainda.</p>
           ) : (
             <fieldset className="space-y-2.5">
               <legend className="sr-only">Coleções disponíveis</legend>
@@ -287,7 +299,7 @@ function CollectionsDialog({ target, onClose }: { target: { kind: "comic" | "ser
                 <Checkbox
                   key={c.id}
                   label={c.name}
-                  description={comicCountLabel(c.comicCount)}
+                  description={collectionCountLabel(c.comicCount, settings["plugins.online"])}
                   checked={selected.has(c.id)}
                   onChange={(v) =>
                     setSelected((s) => {
@@ -309,7 +321,7 @@ function CollectionsDialog({ target, onClose }: { target: { kind: "comic" | "ser
             }}
           >
             <TextField className="flex-1" label="Nova coleção" placeholder="Ex.: Mangás favoritos" value={newName} onChange={(e) => setNewName(e.target.value)} />
-            <Button type="submit" icon={Plus} disabled={!newName.trim()}>
+            <Button type="submit" icon={Plus} disabled={!newName.trim()} loading={creating}>
               Criar coleção
             </Button>
           </form>
@@ -327,14 +339,12 @@ function RemoveDialog({ comic, onClose, onRemoved }: { comic: ComicSummary; onCl
     setBusy(true);
     try {
       const r = await api.removeComic(comic.id, alsoTrash);
-      toast.success(
-        "Removida da biblioteca",
-        r.trashed ? "O arquivo original foi movido para a Lixeira." : "O arquivo original continua no seu computador.",
-      );
+      sound.play("remove");
+      toast.success(r.trashed ? "Removida da biblioteca e movida para a Lixeira" : "Removida da biblioteca", comic.title);
       onRemoved();
       onClose();
     } catch (e) {
-      toast.error("Não foi possível remover", errorMessage(e));
+      toast.error("Não foi possível remover da biblioteca", errorMessage(e));
       setBusy(false);
     }
   };
@@ -348,14 +358,12 @@ function RemoveDialog({ comic, onClose, onRemoved }: { comic: ComicSummary; onCl
       onConfirm={confirm}
       onCancel={onClose}
     >
-      <p>O item sai do catálogo junto com o progresso de leitura, os favoritos e as coleções.</p>
+      <p>A HQ sai da biblioteca com o progresso de leitura, o favorito e as coleções.</p>
       <p className="mt-2 text-muted">
-        {alsoTrash
-          ? "O arquivo original também será movido para a Lixeira do sistema, de onde ainda pode ser restaurado."
-          : "O arquivo original não será apagado do seu computador."}
+        {alsoTrash ? "O arquivo original vai para a Lixeira do sistema, de onde ainda pode ser restaurado." : "O arquivo original não será apagado."}
       </p>
       {!comic.missing && (
-        <div className="mt-4 rounded-md border border-border bg-surface p-3">
+        <div className="mt-4">
           <Checkbox
             label="Também mover o arquivo original para a Lixeira"
             description={comic.format === "folder" ? "A pasta inteira com as imagens será movida." : comic.fileName}
@@ -375,17 +383,18 @@ function RemoveSeriesDialog({ series, onClose, onRemoved }: { series: SeriesItem
     setBusy(true);
     try {
       await api.seriesForget(series.id);
+      sound.play("remove");
       toast.success("Removida da biblioteca", series.title);
       onRemoved();
       onClose();
     } catch (e) {
-      toast.error("Não foi possível remover", errorMessage(e));
+      toast.error("Não foi possível remover da biblioteca", errorMessage(e));
       setBusy(false);
     }
   };
   return (
     <ConfirmDialog open destructive title={`Remover “${series.title}” da biblioteca?`} confirmLabel="Remover da biblioteca" busy={busy} onConfirm={confirm} onCancel={onClose}>
-      O progresso de leitura, o favorito e as coleções desta obra saem do Prancha. Capítulos baixados continuam na biblioteca.
+      A obra sai da biblioteca com o progresso de leitura, o favorito e as coleções. Os capítulos baixados continuam na biblioteca.
     </ConfirmDialog>
   );
 }
@@ -394,6 +403,8 @@ function RemoveSeriesDialog({ series, onClose, onRemoved }: { series: SeriesItem
 
 export function ComicActionsProvider({ children }: { children: ReactNode }) {
   const nav = useNav();
+  // `navigate` não muda; `nav` muda a cada rota e recriaria as ações (e os cartões da lista) sem motivo.
+  const { navigate } = nav;
   const toast = useToast();
   const { bump } = useLibraryVersion();
   const [editing, setEditing] = useState<number | null>(null);
@@ -401,13 +412,14 @@ export function ComicActionsProvider({ children }: { children: ReactNode }) {
   const [removing, setRemoving] = useState<ComicSummary | null>(null);
   const [removingSeries, setRemovingSeries] = useState<SeriesItem | null>(null);
 
-  const read = useCallback((c: ComicSummary) => nav.navigate({ name: "reader", id: c.id }), [nav]);
-  const openDetails = useCallback((c: ComicSummary) => nav.navigate({ name: "comic", id: c.id }), [nav]);
+  const read = useCallback((c: ComicSummary) => navigate({ name: "reader", id: c.id }), [navigate]);
+  const openDetails = useCallback((c: ComicSummary) => navigate({ name: "comic", id: c.id }), [navigate]);
 
   const toggleFavorite = useCallback(
     async (c: ComicSummary) => {
       try {
         await api.setFavorite(c.id, !c.favorite);
+        if (!c.favorite) sound.play("confirm");
       } catch (e) {
         toast.error("Não foi possível atualizar os favoritos", errorMessage(e));
       }
@@ -433,7 +445,7 @@ export function ComicActionsProvider({ children }: { children: ReactNode }) {
         items.push({ label: readActionLabel(c), icon: BookOpen, onSelect: () => read(c), disabled: c.missing });
         items.push({ label: "Ver detalhes", icon: Info, onSelect: () => openDetails(c) });
         items.push({ kind: "separator" });
-        items.push({ label: c.favorite ? "Remover dos favoritos" : "Adicionar aos favoritos", icon: c.favorite ? StarOff : Star, onSelect: () => void toggleFavorite(c) });
+        items.push({ label: c.favorite ? "Remover dos favoritos" : "Favoritar", icon: c.favorite ? StarOff : Star, onSelect: () => void toggleFavorite(c) });
         items.push({ label: "Editar informações", icon: Pencil, onSelect: () => setEditing(c.id) });
         items.push({ label: "Organizar em coleções…", icon: FolderPlus, onSelect: () => setCollecting({ kind: "comic", id: c.id }) });
       }
@@ -452,7 +464,8 @@ export function ComicActionsProvider({ children }: { children: ReactNode }) {
       items.push({ kind: "separator" });
       if (c.status !== "completed") items.push({ label: "Marcar como concluída", icon: CircleCheck, onSelect: () => void setStatus(c, "completed") });
       if (c.status !== "unread") items.push({ label: "Marcar como não lida", icon: CircleDashed, onSelect: () => void setStatus(c, "unread") });
-      if (!c.missing)
+      // Nos detalhes, "Mostrar na pasta" já fica ao lado da localização.
+      if (!c.missing && !opts?.inDetails)
         items.push({
           label: "Mostrar na pasta",
           icon: FolderOpen,
@@ -467,13 +480,14 @@ export function ComicActionsProvider({ children }: { children: ReactNode }) {
     [read, openDetails, toggleFavorite, setStatus, toast],
   );
 
-  const readSeries = useCallback((s: SeriesItem) => nav.navigate(s.resume ? { name: "chapter", id: s.resume.chapterId } : { name: "series", id: s.id }), [nav]);
-  const openSeries = useCallback((s: SeriesItem) => nav.navigate({ name: "series", id: s.id }), [nav]);
+  const readSeries = useCallback((s: SeriesItem) => navigate(s.resume ? { name: "chapter", id: s.resume.chapterId } : { name: "series", id: s.id }), [navigate]);
+  const openSeries = useCallback((s: SeriesItem) => navigate({ name: "series", id: s.id }), [navigate]);
 
   const toggleSeriesFavorite = useCallback(
     async (s: SeriesItem) => {
       try {
         await api.seriesSetFavorite(s.id, !s.favorite);
+        if (!s.favorite) sound.play("confirm");
       } catch (e) {
         toast.error("Não foi possível atualizar os favoritos", errorMessage(e));
       }
@@ -488,7 +502,7 @@ export function ComicActionsProvider({ children }: { children: ReactNode }) {
         items.push({ label: readActionLabel({ status: s.readStatus }), icon: BookOpen, onSelect: () => readSeries(s) });
         items.push({ label: "Ver detalhes", icon: Info, onSelect: () => openSeries(s) });
         items.push({ kind: "separator" });
-        items.push({ label: s.favorite ? "Remover dos favoritos" : "Adicionar aos favoritos", icon: s.favorite ? StarOff : Star, onSelect: () => void toggleSeriesFavorite(s) });
+        items.push({ label: s.favorite ? "Remover dos favoritos" : "Favoritar", icon: s.favorite ? StarOff : Star, onSelect: () => void toggleSeriesFavorite(s) });
         items.push({ label: "Organizar em coleções…", icon: FolderPlus, onSelect: () => setCollecting({ kind: "series", id: s.id }) });
       }
       if (opts?.collectionId !== undefined) {

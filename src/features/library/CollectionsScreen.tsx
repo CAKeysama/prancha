@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 import { FolderHeart, FolderPlus, MoreHorizontal, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { Button, IconButton } from "../../components/Button";
 import { Cover } from "../../components/Cover";
@@ -8,13 +8,13 @@ import { EmptyState, ErrorState, Spinner } from "../../components/Feedback";
 import { Menu } from "../../components/Menu";
 import { PageHeader } from "../../components/PageHeader";
 import { useToast } from "../../components/Toast";
-import { foldText, isSeries, itemKey, type LibraryItem } from "../../domain/library-items";
-import { comicCountLabel } from "../../domain/progress";
+import { collectionCountLabel, foldText, isSeries, itemCountLabel, itemKey, mergeItems, type LibraryItem } from "../../domain/library-items";
 import type { CollectionInfo } from "../../domain/types";
 import { api, errorMessage } from "../../services/api";
 import { useLibraryData, useLibraryVersion } from "../../app/library-events";
 import { useNav } from "../../app/navigation";
 import { useScrollMemory } from "../../app/scroll-memory";
+import { useSettings } from "../../app/settings-context";
 import { OnlineCover } from "../online/parts";
 import { LibraryScreen } from "./LibraryScreen";
 import { useLibrarySeries } from "./use-library-series";
@@ -36,6 +36,7 @@ function NameDialog({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const submit = async () => {
+    if (!name.trim() || busy) return;
     setBusy(true);
     setError(null);
     try {
@@ -87,7 +88,7 @@ function useCollectionDialogs() {
         <NameDialog
           title="Nova coleção"
           initial=""
-          confirmLabel="Criar coleção"
+          confirmLabel="Criar"
           onClose={() => setCreating(false)}
           onSubmit={async (name) => {
             const id = await api.createCollection(name);
@@ -101,7 +102,7 @@ function useCollectionDialogs() {
         <NameDialog
           title="Renomear coleção"
           initial={renaming.name}
-          confirmLabel="Salvar nome"
+          confirmLabel="Renomear"
           onClose={() => setRenaming(null)}
           onSubmit={async (name) => {
             await api.renameCollection(renaming.id, name);
@@ -123,13 +124,13 @@ function useCollectionDialogs() {
             .deleteCollection(c.id)
             .then(() => {
               bump();
-              toast.success("Coleção excluída", "As HQs continuam na biblioteca.");
+              toast.success("Coleção excluída", c.name);
               if (nav.route.name === "collection") nav.navigate({ name: "collections" });
             })
             .catch((e) => toast.error("Não foi possível excluir a coleção", errorMessage(e)));
         }}
       >
-        Apenas o agrupamento será excluído. As HQs continuam na biblioteca e os arquivos originais não são alterados.
+        Só a coleção é excluída. Nada sai da biblioteca e os arquivos originais não mudam.
       </ConfirmDialog>
     </>
   );
@@ -138,6 +139,7 @@ function useCollectionDialogs() {
 
 export function CollectionsScreen() {
   const nav = useNav();
+  const { settings } = useSettings();
   const { data, error } = useLibraryData(() => api.collections(), [], "collections");
   const d = useCollectionDialogs();
   const scrollRef = useScrollMemory<HTMLDivElement>("collections");
@@ -145,11 +147,13 @@ export function CollectionsScreen() {
     <div ref={scrollRef} className="h-full overflow-y-auto">
       <PageHeader
         title="Coleções"
-        subtitle={data ? `${data.length} ${data.length === 1 ? "coleção" : "coleções"}` : undefined}
         actions={
-          <Button variant="primary" icon={FolderPlus} onClick={d.create}>
-            Nova coleção
-          </Button>
+          // Sem coleções, a ação fica só no estado vazio.
+          data?.length !== 0 ? (
+            <Button variant="primary" icon={FolderPlus} onClick={d.create}>
+              Nova coleção
+            </Button>
+          ) : undefined
         }
       />
       <div className="px-6 py-5">
@@ -161,11 +165,11 @@ export function CollectionsScreen() {
             title="Nenhuma coleção ainda"
             actions={
               <Button variant="primary" icon={FolderPlus} onClick={d.create}>
-                Criar a primeira coleção
+                Nova coleção
               </Button>
             }
           >
-            Coleções agrupam HQs da biblioteca, como “Mangás” ou “Lendo com a família”. Uma HQ pode estar em várias coleções.
+            Agrupe itens da biblioteca. Um mesmo item pode estar em várias coleções.
           </EmptyState>
         )}
         {data && data.length > 0 && (
@@ -185,7 +189,7 @@ export function CollectionsScreen() {
                     })}
                   </div>
                   <p className="mt-3 truncate pr-8 font-semibold">{c.name}</p>
-                  <p className="text-sm text-muted">{comicCountLabel(c.comicCount)}</p>
+                  <p className="text-sm text-muted">{collectionCountLabel(c.comicCount, settings["plugins.online"])}</p>
                 </button>
                 <div className="absolute right-2 bottom-3">
                   <Menu
@@ -211,27 +215,38 @@ export function CollectionsScreen() {
 function AddComicsToCollection({ collection, onClose }: { collection: CollectionInfo; onClose: () => void }) {
   const toast = useToast();
   const [text, setText] = useState("");
+  // Com milhares de HQs, filtrar a lista não atrasa a digitação.
+  const query = useDeferredValue(text);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const { data: all } = useLibraryData(() => api.listComics({ sort: "title" }), [], "comics-by-title");
   const { data: inside } = useLibraryData(() => api.listComics({ collectionId: collection.id }), [collection.id], "collection-comics");
   const series = useLibrarySeries();
   const insideIds = useMemo(() => new Set((inside ?? []).map((c) => c.id)), [inside]);
-  const everything = useMemo<LibraryItem[]>(() => [...(all ?? []).filter((c) => !insideIds.has(c.id)), ...series.filter((s) => !s.collections.includes(collection.id))], [all, insideIds, series, collection.id]);
+  // HQs e obras na mesma ordem por título.
+  const everything = useMemo<LibraryItem[]>(
+    () => mergeItems((all ?? []).filter((c) => !insideIds.has(c.id)), series.filter((s) => !s.collections.includes(collection.id)), "title"),
+    [all, insideIds, series, collection.id],
+  );
   const candidates = useMemo(() => {
-    const q = foldText(text.trim());
+    const q = foldText(query.trim());
     return everything.filter((item) => !q || foldText(isSeries(item) ? `${item.title} ${item.sourceName ?? ""}` : `${item.title} ${item.fileName} ${item.series ?? ""}`).includes(q));
-  }, [everything, text]);
+  }, [everything, query]);
   const save = async () => {
     setBusy(true);
     try {
       const chosen = everything.filter((item) => selected.has(itemKey(item)));
-      await api.addToCollection(collection.id, chosen.filter((item) => !isSeries(item)).map((item) => item.id));
-      await api.addSeriesToCollection(collection.id, chosen.filter(isSeries).map((item) => item.id));
-      toast.success(`${selected.size} ${selected.size === 1 ? "HQ adicionada" : "HQs adicionadas"} à coleção`);
+      const comicIds = chosen.filter((item) => !isSeries(item)).map((item) => item.id);
+      const seriesIds = chosen.filter(isSeries).map((item) => item.id);
+      if (comicIds.length) await api.addToCollection(collection.id, comicIds);
+      if (seriesIds.length) await api.addSeriesToCollection(collection.id, seriesIds);
+      const label = itemCountLabel(chosen);
+      const one = chosen.length === 1;
+      const added = seriesIds.length && comicIds.length ? (one ? "adicionado" : "adicionados") : one ? "adicionada" : "adicionadas";
+      toast.success(`${label} ${added} à coleção`);
       onClose();
     } catch (e) {
-      toast.error("Não foi possível adicionar", errorMessage(e));
+      toast.error("Não foi possível adicionar à coleção", errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -245,7 +260,7 @@ function AddComicsToCollection({ collection, onClose }: { collection: Collection
         <>
           <Button onClick={onClose}>Cancelar</Button>
           <Button variant="primary" onClick={save} loading={busy} disabled={selected.size === 0}>
-            Adicionar {selected.size > 0 ? selected.size : ""} à coleção
+            {selected.size > 0 ? `Adicionar ${selected.size}` : "Adicionar"}
           </Button>
         </>
       }
@@ -257,7 +272,9 @@ function AddComicsToCollection({ collection, onClose }: { collection: Collection
       {!all ? (
         <Spinner label="Carregando…" />
       ) : candidates.length === 0 ? (
-        <p className="text-sm text-muted">Nenhuma HQ disponível para adicionar.</p>
+        <p className="text-sm text-muted">
+          {everything.length > 0 ? "Nenhum resultado encontrado." : all.length > 0 || series.length > 0 ? "Tudo da biblioteca já está nesta coleção." : "Sua biblioteca está vazia."}
+        </p>
       ) : (
         <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
           {candidates.map((item) => (
@@ -296,36 +313,37 @@ export function CollectionDetailScreen({ id }: { id: number }) {
     );
   }
   if (!collection) return <Spinner label="Carregando coleção…" className="p-6" />;
+  const add = (
+    <Button variant="primary" icon={Plus} onClick={() => setAdding(true)}>
+      Adicionar à coleção
+    </Button>
+  );
   return (
     <>
       <LibraryScreen
         key={id}
         preset={{
           title: collection.name,
-          subtitle: `Coleção · ${comicCountLabel(collection.comicCount)}`,
           base: { collectionId: id },
           collectionId: id,
           onBack: () => nav.navigate({ name: "collections" }),
           backLabel: "Coleções",
           emptyIcon: FolderHeart,
           emptyTitle: "Esta coleção está vazia",
-          emptyText: "Adicione HQs da biblioteca a esta coleção. Elas continuam também na biblioteca principal.",
-          emptyActions: (
-            <Button variant="primary" icon={Plus} onClick={() => setAdding(true)}>
-              Adicionar à coleção
-            </Button>
-          ),
+          emptyActions: add,
+          // Vazia, o "Adicionar à coleção" fica só no estado vazio. Renomear e excluir, no menu, como nos cartões de Coleções.
           headerActions: (
             <>
-              <Button icon={Pencil} onClick={() => d.rename(collection)}>
-                Renomear
-              </Button>
-              <Button variant="danger" icon={Trash2} onClick={() => d.remove(collection)}>
-                Excluir coleção
-              </Button>
-              <Button variant="primary" icon={Plus} onClick={() => setAdding(true)}>
-                Adicionar à coleção
-              </Button>
+              {collection.comicCount > 0 && add}
+              <Menu
+                label={`Ações da coleção ${collection.name}`}
+                items={[
+                  { label: "Renomear…", icon: Pencil, onSelect: () => d.rename(collection) },
+                  { kind: "separator" },
+                  { label: "Excluir coleção…", icon: Trash2, danger: true, onSelect: () => d.remove(collection) },
+                ]}
+                trigger={(p) => <IconButton {...p} variant="secondary" icon={MoreHorizontal} label="Mais ações" />}
+              />
             </>
           ),
         }}

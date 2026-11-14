@@ -3,6 +3,36 @@
 Tudo o que mudou em cada versão do Prancha. O projeto segue o [versionamento semântico](https://semver.org/lang/pt-BR/),
 e as notas das releases e a [página de downloads](https://cakeysama.github.io/prancha/) são geradas a partir deste arquivo.
 
+## [0.12.0] - 2026-11-14
+
+Uma revisão inteira da interface: configuração inicial nova, sons próprios, fonte escolhível, textos mais curtos e um leitor mais leve.
+
+### Novidades
+
+- **Configuração inicial**: na primeira abertura, o Prancha ocupa a janela com seis etapas curtas (boas-vindas, aparência, fonte, sons, leitura e primeiros arquivos). Cada escolha aparece na hora numa prévia do app ou do leitor, fica salva a cada passo e continua de onde parou se o app fechar. Dá para voltar, pular a qualquer momento e refazer em Configurações › Geral › Configuração inicial, sem perder o que já foi escolhido. Quem já tinha concluído ou pulado o tutorial antigo não vê nada de novo.
+- **Sons**: sons curtos e discretos, criados no próprio app, sem arquivos nem internet, para adicionar e remover itens, favoritar, concluir uma leitura, trocar de capítulo, notificações novas e o fim da configuração inicial. Ficam em Configurações › Sons, com volume, exemplos para ouvir e "Restaurar padrão". Começam desligados para quem atualiza; durante a leitura, só os do leitor tocam, e nada toca com a janela minimizada.
+- **Fonte da interface**: Hanken Grotesk passa a ser a padrão, e Configurações › Aparência oferece também Atkinson Hyperlegible (letras bem distintas, para baixa visão), IBM Plex Sans (a de antes) e a do sistema. Todas vêm com o app, e as páginas das obras não mudam.
+
+### Melhorias
+
+- Trocar o tema faz uma transição suave, e tema e fonte são aplicados antes da primeira pintura, sem piscar.
+- Textos mais curtos e diretos na biblioteca, nas coleções, nas notificações, nas configurações e em Explorar; contagens dizem "HQs", "obras" ou "itens" conforme o que está na lista.
+- Ações que apareciam duas vezes (adicionar na biblioteca vazia, adicionar à coleção, mostrar na pasta, a ação principal das notificações) aparecem uma vez só.
+- Estados vazios mais leves, e "Tentar de novo" nos erros dos detalhes da HQ, das notificações, de Explorar e da página da obra.
+- Leitor: mover o mouse não redesenha mais a tela inteira, o pré-carregamento não recomeça a cada virada, o indicador de carregamento só aparece se a página demorar e a Leitura Guiada em PDF não reinicia o desenho.
+- Leitor: as barras não somem com o cursor em cima, o foco volta ao lugar certo ao fechar painéis e o Tab não cai em botões escondidos.
+- A primeira leitura depois da configuração mostra uma dica curta dos controles.
+- Extensões usam "Desinstalar"; confirmações destrutivas começam com o foco em Cancelar.
+
+### Correções
+
+- Na rolagem contínua, diminuir o zoom ou trocar o ajuste deixava espaços vazios até rolar.
+- Uma resposta atrasada de uma página que falhou podia mostrar erro sobre a nova tentativa.
+- O aviso do próximo capítulo ficava ilegível sobre a arte no modo paginado.
+- Criar uma coleção pelo diálogo não atualizava a tela Coleções, e o nome vazio chegava a ser enviado.
+- Remover notificações selecionadas limpava a seleção mesmo quando falhava.
+- O título de capas substitutas pequenas quebrava no meio da palavra.
+
 ## [0.11.3] - 2026-11-10
 
 O botão de baixar um capítulo vira o de cancelar no mesmo clique.

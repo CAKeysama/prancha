@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { BellRing, ChartColumn, ChartNoAxesColumn, ChevronRight, ExternalLink, FolderOpen, GraduationCap, HardDrive, ImageMinus, MessageSquarePlus, RefreshCw, RotateCcw, ScanSearch, Scale, Search, SearchX, Trash2, X } from "lucide-react";
+import { BellRing, ChartColumn, ChartNoAxesColumn, ChevronRight, ExternalLink, FolderOpen, HardDrive, ImageMinus, MessageSquarePlus, RefreshCw, RotateCcw, ScanSearch, Scale, Search, SearchX, Sparkles, Trash2, X } from "lucide-react";
 import { Button } from "../../components/Button";
 import { ConfirmDialog, Dialog } from "../../components/Dialog";
 import { EmptyState, Kbd, Spinner } from "../../components/Feedback";
@@ -11,7 +11,7 @@ import { formatBytes, formatDate } from "../../domain/progress";
 import { parseNotes, type ReleaseInfo, type UpdatesHistory } from "../../domain/updates";
 import { FIT_LABELS, MODE_LABELS } from "../../domain/reader";
 import { muteUntil, type MuteChoice } from "../../domain/notifications";
-import type { Settings } from "../../domain/settings";
+import { SOUND_DEFAULTS, type Settings } from "../../domain/settings";
 import { PLACE_LABELS, SETTINGS_CATEGORIES, searchSettings, type SettingEntry, type SettingsCategory } from "../../domain/settings-search";
 import {
   DEFAULT_SHORTCUTS,
@@ -35,6 +35,7 @@ import licenses from "../../generated/licenses.json";
 import { useTelemetry } from "../telemetry/telemetry-context";
 import { TelemetryDetails } from "../telemetry/TelemetryDetails";
 import { MalSettings } from "../mal/MalSettings";
+import { FontChoice, SoundControls } from "./PreferenceControls";
 
 /** A opção escolhida na pesquisa, destacada por um instante. */
 const Highlight = createContext<string | null>(null);
@@ -141,7 +142,7 @@ function ShortcutEditor() {
           <p className="text-sm text-muted">Valem dentro do leitor. Esc cancela a gravação.</p>
         </div>
         <Button size="sm" icon={RotateCcw} onClick={() => save("reader.shortcuts", DEFAULT_SHORTCUTS)}>
-          Restaurar atalhos padrão
+          Restaurar padrão
         </Button>
       </div>
       {warning && (
@@ -257,7 +258,7 @@ function StorageSection() {
     setBusy(what);
     try {
       const freed = what === "covers" ? await api.clearCoverCache() : await api.clearPageCache();
-      toast.success(what === "covers" ? "Miniaturas removidas" : "Cache de páginas limpo", `${formatBytes(freed)} liberados. ${what === "covers" ? "As capas estão sendo recriadas." : ""}`);
+      toast.success(what === "covers" ? "Miniaturas removidas" : "Cache de páginas limpo", `${formatBytes(freed)} liberados.${what === "covers" ? " As capas estão sendo recriadas." : ""}`);
       refresh();
     } catch (e) {
       toast.error("Não foi possível limpar o cache", errorMessage(e));
@@ -292,12 +293,12 @@ function StorageSection() {
         )}
       </Anchor>
       {covers && <Spinner label={`Recriando capas: ${covers.done} de ${covers.total}`} />}
-      <SettingRow id="limpar-miniaturas" label="Limpar miniaturas em cache" description="Remove as capas geradas. Elas são recriadas automaticamente a partir dos arquivos.">
+      <SettingRow id="limpar-miniaturas" label="Limpar miniaturas em cache" description="As capas são recriadas a partir dos arquivos.">
         <Button icon={ImageMinus} loading={busy === "covers"} onClick={() => setConfirm("covers")}>
           Limpar miniaturas
         </Button>
       </SettingRow>
-      <SettingRow id="limpar-paginas" label="Limpar cache de páginas" description="Remove as páginas extraídas de arquivos CBR e CB7. Elas são extraídas de novo ao abrir a HQ.">
+      <SettingRow id="limpar-paginas" label="Limpar cache de páginas" description="Páginas extraídas de CBR e CB7. São extraídas de novo ao abrir a HQ.">
         <Button icon={Trash2} loading={busy === "pages"} onClick={() => setConfirm("pages")}>
           Limpar cache de páginas
         </Button>
@@ -310,7 +311,7 @@ function StorageSection() {
         onConfirm={() => void clear(confirm!)}
       >
         {confirm === "covers"
-          ? "As capas serão recriadas em segundo plano. Suas HQs, favoritos, coleções e progresso não serão alterados."
+          ? "As capas são recriadas em segundo plano. HQs, favoritos, coleções e progresso não mudam."
           : "As próximas aberturas de arquivos CBR e CB7 podem demorar um pouco mais. Nada mais é alterado."}
       </ConfirmDialog>
     </Section>
@@ -458,8 +459,8 @@ function SearchResults({ query, results, onChoose, onClear }: { query: string; r
           ))}
         </ul>
       ) : (
-        <EmptyState icon={SearchX} title={`Nada encontrado para “${query.trim()}”`} actions={<Button onClick={onClear}>Limpar pesquisa</Button>}>
-          Tente outra palavra, como “tema”, “atalhos” ou “cache”.
+        <EmptyState icon={SearchX} title={`Nenhum resultado para “${query.trim()}”`} actions={<Button onClick={onClear}>Limpar pesquisa</Button>}>
+          Tente “tema”, “atalhos” ou “cache”.
         </EmptyState>
       )}
     </section>
@@ -588,14 +589,14 @@ function NotificationsSection() {
   return (
     <>
       <Section id="notificacoes" title="Notificações" description="O que entra na central de notificações. Desligar um tipo não apaga as que já estão lá.">
-        {row("notif-capitulos", "notifications.chapters", "Capítulos novos", "Quando uma obra que você acompanha recebe capítulos. Capítulos que chegam juntos viram uma notificação só.")}
+        {row("notif-capitulos", "notifications.chapters", "Capítulos novos", "De obras que você acompanha. Os que chegam juntos viram uma notificação só.")}
         {row("notif-atualizacoes", "notifications.updates", "Atualizações do aplicativo", "Nova versão disponível, atualização concluída ou que não terminou.")}
         {row("notif-downloads", "notifications.downloadsCompleted", "Downloads concluídos", "Capítulos baixados de uma mesma obra são agrupados.")}
         {row("notif-falhas", "notifications.downloadsFailed", "Falhas de download", "Capítulos que não puderam ser baixados.")}
-        {row("notif-sincronizacao", "notifications.sync", "Problemas de sincronização", "Obras acompanhadas cujas fontes não responderam ao procurar capítulos novos.")}
+        {row("notif-sincronizacao", "notifications.sync", "Problemas de sincronização", "Quando a fonte de uma obra acompanhada não responde.")}
         {row("notif-biblioteca", "notifications.library", "Avisos da biblioteca", "Importações com arquivos recusados e HQs cujo arquivo foi movido ou excluído.")}
       </Section>
-      <Section id="notificacoes-sistema" title="Notificações do sistema operacional" description="Avisos fora da janela, só para o que é importante e só com o Prancha em segundo plano. A central guarda tudo mesmo com elas desligadas.">
+      <Section id="notificacoes-sistema" title="Notificações do sistema operacional" description="Só com o Prancha em segundo plano. A central guarda tudo mesmo com elas desligadas.">
         <Anchor id="notif-nativas">
           <Switch
             label="Mostrar notificações do sistema"
@@ -607,7 +608,7 @@ function NotificationsSection() {
         <Anchor id="notif-nativas-downloads">
           <Switch
             label="Também para downloads concluídos"
-            description={native ? "Desligado por padrão: um lote de downloads já vira um aviso só na central." : "Ligue as notificações do sistema para usar esta opção."}
+            description={native ? "Um lote de downloads vira um aviso só." : "Ligue as notificações do sistema para usar esta opção."}
             checked={native && settings["notifications.nativeDownloads"]}
             onChange={(v) => native && save("notifications.nativeDownloads", v)}
           />
@@ -637,13 +638,44 @@ function NotificationsSection() {
             <option value="tomorrow">Até amanhã às 8h</option>
           </Select>
         </SettingRow>
-        <SettingRow id="notif-teste" label="Testar" description="Mostra um aviso agora, para conferir se o sistema permite notificações do Prancha.">
+        <SettingRow id="notif-teste" label="Testar" description="Confere se o sistema permite os avisos do Prancha.">
           <Button icon={BellRing} loading={testing} disabled={!native} onClick={() => void test()}>
             Enviar notificação de teste
           </Button>
         </SettingRow>
       </Section>
     </>
+  );
+}
+
+function SoundsSection() {
+  const { settings } = useSettings();
+  const save = useSave();
+  const enabled = settings["sound.enabled"];
+  const volume = settings["sound.volume"];
+  const isDefault = enabled === SOUND_DEFAULTS.enabled && volume === SOUND_DEFAULTS.volume;
+  return (
+    <Section id="sons" title="Sons" description="Curtos e discretos, só quando algo acontece de fato. Na leitura, só ao trocar de capítulo.">
+      <SoundControls
+        enabled={enabled}
+        volume={volume}
+        onEnabled={(v) => save("sound.enabled", v)}
+        onVolume={(v) => save("sound.volume", v)}
+        anchor={(id, children) => <Anchor id={id}>{children}</Anchor>}
+      />
+      {!isDefault && (
+        <Button
+          size="sm"
+          icon={RotateCcw}
+          onClick={() => {
+            save("sound.enabled", SOUND_DEFAULTS.enabled);
+            save("sound.volume", SOUND_DEFAULTS.volume);
+          }}
+        >
+          Restaurar padrão
+        </Button>
+      )}
+    </Section>
   );
 }
 
@@ -862,6 +894,13 @@ export function SettingsScreen({ section }: { section?: string } = {}) {
                       { value: "system", label: "Seguir o sistema" },
                     ]}
                   />
+                  <Anchor id="fonte">
+                    <p className="font-medium">Fonte da interface</p>
+                    <p className="text-sm text-muted">As páginas das obras não mudam.</p>
+                    <div className="mt-2 max-w-xl">
+                      <FontChoice value={settings["appearance.font"]} onChange={(v) => save("appearance.font", v)} />
+                    </div>
+                  </Anchor>
                   <SegmentedRow
                     id="densidade"
                     label="Densidade da biblioteca"
@@ -930,7 +969,7 @@ export function SettingsScreen({ section }: { section?: string } = {}) {
                   <Anchor id="capa-sozinha">
                     <Switch
                       label="Capa sozinha na página dupla"
-                      description="Mostra a primeira página isolada para que os pares fiquem alinhados como no impresso."
+                      description="Alinha os pares como no impresso."
                       checked={settings["reader.coverAlone"]}
                       onChange={(v) => save("reader.coverAlone", v)}
                     />
@@ -959,7 +998,7 @@ export function SettingsScreen({ section }: { section?: string } = {}) {
                   <SegmentedRow
                     id="controles"
                     label="Controles do leitor"
-                    description="Ocultos, reaparecem ao mover o mouse ou pelo botão “Mostrar controles”."
+                    description="Ocultos, voltam ao mover o mouse."
                     value={settings["reader.controls"]}
                     onChange={(v) => save("reader.controls", v)}
                     options={[
@@ -997,7 +1036,7 @@ export function SettingsScreen({ section }: { section?: string } = {}) {
                   </SettingRow>
                   <SettingRow id="verificar" label="Verificar arquivos" description="Procura HQs cujos arquivos foram movidos ou excluídos e marca-as como ausentes.">
                     <Button icon={ScanSearch} loading={verifying} onClick={() => void verify()}>
-                      Verificar arquivos agora
+                      Verificar agora
                     </Button>
                   </SettingRow>
                   <SettingRow id="capas" label="Atualizar capas" description="Recria todas as miniaturas a partir dos arquivos originais.">
@@ -1010,13 +1049,15 @@ export function SettingsScreen({ section }: { section?: string } = {}) {
                           .catch((e) => toast.error("Não foi possível recriar as capas", errorMessage(e)))
                       }
                     >
-                      Recriar todas as capas
+                      Recriar capas
                     </Button>
                   </SettingRow>
                 </Section>
               )}
 
               {category === "notificacoes" && <NotificationsSection />}
+
+              {category === "sons" && <SoundsSection />}
 
               {category === "armazenamento" && <StorageSection />}
 
@@ -1032,21 +1073,21 @@ export function SettingsScreen({ section }: { section?: string } = {}) {
 
               {category === "geral" && (
                 <Section id="geral" title="Geral">
-                  <SettingRow id="idioma" label="Idioma" description="No momento, a interface está disponível apenas em português do Brasil.">
+                  <SettingRow id="idioma" label="Idioma">
                     <span className="text-base">Português (Brasil)</span>
                   </SettingRow>
-                  <SettingRow id="tutorial" label="Tutorial de primeira execução" description="Mostra novamente o passo a passo para adicionar e ler uma HQ.">
+                  <SettingRow id="configuracao-inicial" label="Configuração inicial" description="Tema, fonte, sons e leitura, passo a passo. O que já está escolhido continua.">
                     <Button
-                      icon={GraduationCap}
+                      icon={Sparkles}
                       onClick={() => {
                         onboarding.restart();
                         nav.navigate({ name: "home" });
                       }}
                     >
-                      Abrir tutorial
+                      Refazer
                     </Button>
                   </SettingRow>
-                  <SettingRow id="sugerir" label="Sugerir uma melhoria" description="Escreva sua ideia aqui; ela abre no GitHub já preenchida para você enviar. É preciso ter uma conta, e a sugestão fica pública.">
+                  <SettingRow id="sugerir" label="Sugerir uma melhoria" description="Abre no GitHub já preenchida. Precisa de uma conta, e a sugestão fica pública.">
                     <Button icon={MessageSquarePlus} onClick={() => setSuggesting(true)}>
                       Escrever sugestão
                     </Button>
@@ -1054,7 +1095,7 @@ export function SettingsScreen({ section }: { section?: string } = {}) {
                   <SettingRow
                     id="visao-geral"
                     label="Visão geral do projeto"
-                    description="Versões publicadas, downloads dos instaladores e as verificações automáticas do Prancha, com dados públicos do GitHub. Abre no navegador; nada do seu uso é enviado."
+                    description="Versões, downloads e verificações do projeto, com dados públicos do GitHub. Abre no navegador; nada do seu uso é enviado."
                   >
                     <Button
                       icon={ChartColumn}
@@ -1074,7 +1115,7 @@ export function SettingsScreen({ section }: { section?: string } = {}) {
                         <HardDrive size={16} aria-hidden /> Sobre o {APP_NAME}
                       </p>
                       <p className="mt-1 text-sm text-muted">
-                        {APP_DESCRIPTION}. Funciona no seu computador, sem conta. A internet é usada para procurar atualizações, com o plugin Fontes de leitura para repositórios e fontes online e, só se você ligar, para a telemetria (Configurações › Privacidade) e para o MyAnimeList (Configurações › Integrações).
+                        {APP_DESCRIPTION}. Funciona no seu computador, sem conta. Usa a internet para procurar atualizações e, só se você ligar, para as Fontes de leitura, a telemetria e o MyAnimeList.
                       </p>
                       <dl className="mt-3 grid grid-cols-[160px_1fr] gap-y-1 text-sm">
                         <dt className="text-muted">Versão</dt>

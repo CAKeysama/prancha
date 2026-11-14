@@ -94,7 +94,7 @@ Usa o `tauri-plugin-updater` e as GitHub Releases, sem servidor próprio. Toda a
 
 **Estado (`updates.state`, tabela `settings`).** Sobrevive a um fechamento inesperado. `reconcile`, a cada início, é o único lugar que dá uma atualização por concluída, porque a prova é a versão nova estar rodando: compara a versão em execução com `installedVersion` e abre as novidades. Se `pendingVersion` ficou maior que a versão em execução, o instalador não terminou, e a próxima abertura avisa. As notas ficam em `updates.releases`, copiadas das releases: as da versão baixada são gravadas antes do download, para a janela de novidades funcionar sem internet.
 
-**Tela (`features/updates/`).** `updates-context.tsx` faz uma verificação por abertura, sem segurar a interface, e não abre nada sobre o leitor ou o tutorial. Recusar grava a versão: ela só fica no indicador do menu lateral até surgir outra mais nova. Erros de verificação automática ficam em `updates.log`, na pasta de dados, sem aparecer para a pessoa.
+**Tela (`features/updates/`).** `updates-context.tsx` faz uma verificação por abertura, sem segurar a interface, e não abre nada sobre o leitor ou a configuração inicial. Recusar grava a versão: ela só fica no indicador do menu lateral até surgir outra mais nova. Erros de verificação automática ficam em `updates.log`, na pasta de dados, sem aparecer para a pessoa.
 
 **Limites conhecidos.** Com o MSI, o Windows pede a confirmação depois que o aplicativo já fechou: se a pessoa recusar, ele não reabre sozinho, e o aviso aparece na próxima abertura. Falta de disco durante a escrita do instalador e falta de permissão têm mensagem própria, mas só foram testadas por mapeamento de erro.
 
@@ -175,7 +175,7 @@ NotificationsProvider     contagem global, cache do popup, ações → useNav
 
 ## Telemetria
 
-Opcional e desligada até a pessoa aceitar (Configurações › Privacidade, ou o convite único depois do tutorial). `telemetry.rs` soma contadores por dia em memória, só com consentimento, e uma thread própria envia lotes a cada 10 minutos para as funções da Vercel em `site/api/telemetry/`, que gravam num schema fechado do Supabase. A rede sai pelo backend, como nas atualizações: a CSP da interface não muda. Revogar para os envios na hora, descarta a fila e apaga o identificador. Nada disso bloqueia a abertura, a biblioteca ou o leitor. O painel dos administradores fica em `site/admin/`. Detalhes, tabelas, RLS e limites em [TELEMETRY.md](TELEMETRY.md).
+Opcional e desligada até a pessoa aceitar (Configurações › Privacidade, ou o convite único depois da configuração inicial). `telemetry.rs` soma contadores por dia em memória, só com consentimento, e uma thread própria envia lotes a cada 10 minutos para as funções da Vercel em `site/api/telemetry/`, que gravam num schema fechado do Supabase. A rede sai pelo backend, como nas atualizações: a CSP da interface não muda. Revogar para os envios na hora, descarta a fila e apaga o identificador. Nada disso bloqueia a abertura, a biblioteca ou o leitor. O painel dos administradores fica em `site/admin/`. Detalhes, tabelas, RLS e limites em [TELEMETRY.md](TELEMETRY.md).
 
 ## Limites de segurança (`formats/mod.rs`)
 
@@ -194,5 +194,26 @@ Tokens de cor em `src/styles/index.css` (variáveis CSS para claro/escuro, base 
 | Borda de campos / fundo | 4,1 : 1 (`#6E7681`) | 3,5 : 1 (`#818B98`) |
 
 `#2F81F7` (azul pedido) é usado para foco, seleção, ícones e barras de progresso; com texto branco ele dá 3,75 : 1, abaixo de 4,5 : 1, por isso os botões primários usam o tom `#1F6FEB`.
-Tipografia IBM Plex Sans/Mono local (`@fontsource`), escala de 12–24 px, espaçamento em múltiplos de 4 px.
+Escala de 12–24 px, espaçamento em múltiplos de 4 px.
+
+### Tipografia
+
+A interface usa uma família só, escolhida em Configurações › Aparência (`appearance.font`) e aplicada por `data-font` no `<html>` (`public/theme-boot.js` aplica a última escolha antes da primeira pintura). Todas vêm no instalador, como fontes variáveis em WOFF2 divididas por alfabeto (`@fontsource-variable`, licença OFL 1.1): o navegador baixa do próprio app só o arquivo do alfabeto e da família em uso, e nada sai para a internet.
+
+| Opção | Família | Por que está aqui |
+|---|---|---|
+| Padrão | Hanken Grotesk | Neutra, com desenho compacto que cabe títulos longos de obras em cartões estreitos sem parecer apertada; números e acentos claros. Foi comparada com Inter, Geist, Manrope e IBM Plex Sans em capturas da biblioteca, das configurações e do leitor. |
+| Legibilidade | Atkinson Hyperlegible Next | Feita para baixa visão: letras que não se confundem (I, l, 1; O, 0). |
+| Clássica | IBM Plex Sans | A fonte das versões até a 0.11, para quem prefere manter. |
+| Sistema | Segoe UI Variable | A do Windows, com a renderização nativa. |
+
+Títulos em japonês, coreano ou chinês caem, em qualquer opção, nas fontes de interface do Windows (`--p-font-cjk`). Códigos e números técnicos usam IBM Plex Mono. As páginas das obras são imagens: nenhuma fonte é aplicada a elas.
+
+### Sons
+
+`src/services/sound.ts` é o único lugar que toca som. Os seis sons (confirmar, adicionar, remover, concluir, notificação, trocar de capítulo) são sintetizados na hora pelo Web Audio: notas curtas em ré maior pentatônica com timbre de marimba e uma folha de papel para a troca de capítulo, sem arquivos nem rede. Regras: começam desligados para quem atualiza (a configuração inicial propõe ligar, com o controle à vista); repetições da mesma ação em poucos milissegundos viram um som; dois sons diferentes quase juntos tocam só o primeiro; no máximo três ao mesmo tempo; nada toca com a janela escondida; durante a leitura só tocam os sons do leitor; o contexto de áudio é criado no primeiro som e dorme depois de 4 s de silêncio. Os pontos que tocam: importação concluída, remoção e favorito na biblioteca, notificação nova, extensão e repositório adicionados ou removidos, obra acompanhada, capítulo ou HQ concluídos, troca de capítulo e o fim da configuração inicial.
+
+### Configuração inicial
+
+`features/onboarding/OnboardingWizard.tsx` ocupa a janela na primeira abertura: boas-vindas, aparência, fonte, sons, leitura e primeiros passos (adicionar HQs e ligar as Fontes de leitura). Cada escolha é salva e aplicada na hora; a etapa atual fica em `onboarding.step`, então fechar o app no meio retoma de onde parou. O estado tem versão (`flow: 2`): quem concluiu ou pulou o tutorial antigo não vê a configuração de novo, e quem estava no meio dele recomeça do início. "Pular configuração" fica sempre visível, e Configurações › Geral › Configuração inicial abre o fluxo de novo sem desfazer nada. Ao concluir, a primeira leitura mostra uma vez a dica dos controles do leitor (`ReaderTip`).
 A revisão de UX seguiu as diretrizes de design da Apple: revelação progressiva (filtros um nível abaixo), sem texto redundante, feedback só quando a mudança não é visível por si, controles do leitor que nunca cobrem a página.

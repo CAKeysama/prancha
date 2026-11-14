@@ -98,16 +98,12 @@ export function NotificationItem({
           {n.body && <span className={cn("mt-0.5 block text-sm break-words", unread ? "text-fg/80" : "text-muted", variant === "popup" && "line-clamp-2")}>{n.body}</span>}
           <span className="mt-1 block text-xs text-muted">
             {CATEGORY_LABELS[n.category]} · <time dateTime={new Date(n.createdAt).toISOString()}>{formatWhen(n.createdAt, now)}</time>
-            {primary && variant === "page" && <span className="sr-only">. Ação: {ACTION_LABELS[primary]}</span>}
+            {primary && <span className="sr-only">. Ação: {ACTION_LABELS[primary]}</span>}
           </span>
         </button>
-        {(variant === "page" && primary) || secondary.length > 0 ? (
+        {/* A ação principal é o clique na própria notificação; aqui ficam só as outras. */}
+        {secondary.length > 0 ? (
           <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
-            {variant === "page" && primary && (
-              <button type="button" onClick={() => onRun(n, primary)} className="text-sm font-medium text-accent-fg hover:underline">
-                {ACTION_LABELS[primary]}
-              </button>
-            )}
             {secondary.map((a) => (
               <button key={a} type="button" onClick={() => onRun(n, a)} className="text-sm font-medium text-accent-fg hover:underline">
                 {ACTION_LABELS[a]}

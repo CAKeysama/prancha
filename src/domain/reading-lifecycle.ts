@@ -27,6 +27,8 @@ export interface LifecycleHandlers {
   end: (id: number) => void;
   /** Chegou de fato ao fim. */
   complete: (id: number) => void;
+  /** A leitura passou de um capítulo para outro dentro da sequência (virando ou rolando). */
+  enter?: (id: number) => void;
 }
 
 export interface View {
@@ -94,8 +96,10 @@ export class ReadingLifecycle {
     this.checkCompletion();
 
     if (this.current !== chapter.id) {
-      if (this.current !== null) this.leave(this.current);
+      const from = this.current;
+      if (from !== null) this.leave(from);
       this.current = chapter.id;
+      if (from !== null) this.handlers.enter?.(chapter.id);
     }
     if (!this.acknowledged.has(chapter.id)) {
       this.acknowledged.add(chapter.id);

@@ -119,6 +119,8 @@ let store: AppNotification[];
 let settings: Record<string, unknown>;
 let calls: Array<{ cmd: string; args: Record<string, unknown> }>;
 let targets: Record<number, unknown>;
+/** Quantas consultas da lista ainda falham. */
+let failList: number;
 
 const unreadCount = () => store.filter((n) => !n.readAt).length;
 
@@ -160,6 +162,10 @@ function setup() {
         case "notifications_unread":
           return unreadCount();
         case "notifications_list":
+          if (failList > 0) {
+            failList--;
+            throw { code: "database", message: "O banco de dados está ocupado." };
+          }
           return list(args.query as NotificationQuery);
         case "notifications_set_read":
           store = store.map((n) => (ids.includes(n.id) ? { ...n, readAt: args.read ? (n.readAt ?? Date.now()) : null } : n));
@@ -191,6 +197,7 @@ function setup() {
 beforeEach(() => {
   store = [];
   targets = {};
+  failList = 0;
   settings = { onboarding: { status: "completed", step: 4, comicId: null }, "plugins.online": true };
   calls = [];
   localStorage.clear();
@@ -289,7 +296,20 @@ describe("popup", () => {
     render(<App />);
     const popup = await openPopup(user);
     expect(await within(popup).findByText("Nenhuma notificação")).toBeInTheDocument();
+    expect(within(popup).getByText("Capítulos novos, downloads e atualizações aparecem aqui.")).toBeInTheDocument();
     expect(within(popup).getByRole("button", { name: "Marcar todas como lidas" })).toBeDisabled();
+  });
+
+  it("falha ao carregar: diz o que falhou e tenta de novo", async () => {
+    store = [note(1)];
+    failList = 1;
+    const user = userEvent.setup();
+    render(<App />);
+    const popup = await openPopup(user);
+    expect(await within(popup).findByText("Não foi possível carregar as notificações")).toBeInTheDocument();
+    expect(within(popup).getByText("O banco de dados está ocupado.")).toBeInTheDocument();
+    await user.click(within(popup).getByRole("button", { name: "Tentar novamente" }));
+    expect(await within(popup).findByText("Notificação 1")).toBeInTheDocument();
   });
 
   it("abrir executa a ação, marca como lida e fecha", async () => {
@@ -341,7 +361,7 @@ describe("popup", () => {
     const user = userEvent.setup();
     render(<App />);
     const popup = await openPopup(user);
-    await user.click(within(popup).getByRole("button", { name: "Ver todas as notificações" }));
+    await user.click(within(popup).getByRole("button", { name: "Ver todas" }));
     expect(await screen.findByRole("heading", { name: "Notificações", level: 1 })).toBeInTheDocument();
   });
 });
@@ -349,7 +369,7 @@ describe("popup", () => {
 describe("tela Notificações", () => {
   async function openCenter(user: ReturnType<typeof userEvent.setup>) {
     const popup = await openPopup(user);
-    await user.click(within(popup).getByRole("button", { name: "Ver todas as notificações" }));
+    await user.click(within(popup).getByRole("button", { name: "Ver todas" }));
     return screen.findByRole("heading", { name: "Notificações", level: 1 });
   }
 
@@ -405,6 +425,28 @@ describe("tela Notificações", () => {
     expect(await screen.findByRole("heading", { name: "Nenhuma notificação" })).toBeInTheDocument();
   });
 
+  it("sem as fontes, o estado vazio não fala de capítulos nem downloads", async () => {
+    settings["plugins.online"] = false;
+    const user = userEvent.setup();
+    render(<App />);
+    await openCenter(user);
+    expect(await screen.findByRole("heading", { name: "Nenhuma notificação" })).toBeInTheDocument();
+    expect(screen.getByText("Atualizações do Prancha e avisos da biblioteca aparecem aqui.")).toBeInTheDocument();
+  });
+
+  it("falha ao carregar a central: tentar de novo traz a lista", async () => {
+    store = [note(1)];
+    const user = userEvent.setup();
+    render(<App />);
+    const popup = await openPopup(user);
+    await within(popup).findByText("Notificação 1");
+    failList = 1;
+    await user.click(within(popup).getByRole("button", { name: "Ver todas" }));
+    expect(await screen.findByText("Não foi possível carregar as notificações")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Tentar novamente" }));
+    expect(await screen.findByText("Notificação 1")).toBeInTheDocument();
+  });
+
   it("seleção múltipla: marca e remove as escolhidas; limpar lidas pede confirmação", async () => {
     store = [note(1), note(2), note(3)];
     const user = userEvent.setup();
@@ -434,7 +476,10 @@ describe("tela Notificações", () => {
     const user = userEvent.setup();
     render(<App />);
     await openCenter(user);
-    await user.click(await screen.findByRole("button", { name: "Abrir obra" }));
+    // A ação principal é o clique na notificação: não aparece de novo como link.
+    expect(await screen.findByRole("button", { name: "Abrir obra" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Abrir capítulo" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Abrir obra" }));
     expect(calls.find((c) => c.cmd === "notification_target")?.args).toEqual({ id: 1, action: "open_series" });
     expect(await screen.findByRole("heading", { name: "Minha biblioteca", level: 1 })).toBeInTheDocument();
   });
@@ -506,6 +551,16 @@ describe("preferências", () => {
     render(<App />);
     const popup = await openPopup(user);
     await user.click(within(popup).getByRole("button", { name: "Preferências de notificação" }));
+    expect(await screen.findByRole("switch", { name: "Capítulos novos" })).toBeInTheDocument();
+  });
+
+  it("a central tem o mesmo atalho no cabeçalho", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    const popup = await openPopup(user);
+    await user.click(within(popup).getByRole("button", { name: "Ver todas" }));
+    await screen.findByRole("heading", { name: "Notificações", level: 1 });
+    await user.click(screen.getByRole("button", { name: "Preferências de notificação" }));
     expect(await screen.findByRole("switch", { name: "Capítulos novos" })).toBeInTheDocument();
   });
 });

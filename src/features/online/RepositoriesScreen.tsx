@@ -12,6 +12,7 @@ import { groupedFingerprint, type RecommendedList, type RepositoryInfo, type Rep
 import { formatDate } from "../../domain/progress";
 import { api, errorMessage } from "../../services/api";
 import { Fact } from "./parts";
+import { sound } from "../../services/sound";
 
 function extensionCount(count: number): string {
   return `${count} ${count === 1 ? "extensão" : "extensões"}`;
@@ -56,6 +57,7 @@ function AddRepositoryDialog({ initialAddress = "", onClose, onAdded }: { initia
     setError(null);
     try {
       const added = await api.repositoryAdd(preview.url, preview.fingerprint);
+      sound.play("add");
       toast.success("Repositório adicionado", added.name);
       onAdded();
       onClose();
@@ -370,6 +372,7 @@ export function RepositoriesScreen() {
     if (!removing) return;
     try {
       await api.repositoryRemove(removing.id);
+      sound.play("remove");
       toast.success("Repositório removido", removing.name);
     } catch (e) {
       toast.error("Não foi possível remover o repositório", errorMessage(e));
@@ -400,7 +403,7 @@ export function RepositoriesScreen() {
         {!error && !repositories && <Spinner label="Carregando…" />}
         {repositories?.length === 0 && (
           <EmptyState icon={Boxes} title="Nenhum repositório">
-            Repositórios oferecem extensões de fontes de leitura. Use “Adicionar”, no topo, para colar um endereço, ou escolha um dos recomendados abaixo.
+            Repositórios oferecem extensões com fontes de leitura. Adicione pelo endereço ou escolha um recomendado abaixo.
           </EmptyState>
         )}
         <ul>

@@ -2,6 +2,8 @@ import type { SortKey } from "./types";
 import { DEFAULT_SHORTCUTS, type ShortcutMap, sanitizeShortcuts } from "./shortcuts";
 
 type ThemePreference = "dark" | "light" | "system";
+/** Família da interface. As páginas das obras nunca recebem fonte nenhuma. */
+export type InterfaceFont = "hanken" | "atkinson" | "plex" | "system";
 export type ReaderMode = "single" | "double" | "vertical" | "webtoon";
 export type ReadingDirection = "ltr" | "rtl";
 export type FitMode = "page" | "width" | "height";
@@ -13,15 +15,24 @@ type ThumbSize = "small" | "medium" | "large";
 type Density = "comfortable" | "compact";
 export type DuplicatePolicy = "skip" | "allow";
 
+/** Etapas da configuração inicial, na ordem em que aparecem. */
+export const ONBOARDING_STEPS = ["welcome", "appearance", "type", "sound", "reading", "start"] as const;
+export type OnboardingStep = (typeof ONBOARDING_STEPS)[number];
+
 export interface OnboardingState {
-  /** active: o tutorial ainda está em curso; completed/skipped: não reaparece sozinho. */
+  /** active: a configuração inicial ainda está aberta; completed/skipped: não reaparece sozinha, nem em atualizações. */
   status: "active" | "completed" | "skipped";
-  step: 1 | 2 | 3 | 4;
-  comicId: number | null;
+  /** Índice em `ONBOARDING_STEPS`: quem fecha o app no meio volta para a mesma etapa. */
+  step: number;
+  /** A dica dos controles aparece uma vez, na primeira leitura depois de concluir. */
+  readerTip: boolean;
+  /** Versão do fluxo. Sem ela, o estado é do tutorial antigo (0.11 e anteriores). */
+  flow: 2;
 }
 
 export interface Settings {
   "appearance.theme": ThemePreference;
+  "appearance.font": InterfaceFont;
   "appearance.density": Density;
   "appearance.thumbSize": ThumbSize;
   "library.view": LibraryView;
@@ -50,6 +61,10 @@ export interface Settings {
   "notifications.nativeDownloads": boolean;
   /** Silêncio temporário das notificações do sistema (ms desde a época), ou nada. */
   "notifications.nativeMutedUntil": number | null;
+  /** Sons da interface. Começam desligados: quem já usava o app não ouve nada sem escolher. */
+  "sound.enabled": boolean;
+  /** Volume dos sons, de 0 a 100. */
+  "sound.volume": number;
   onboarding: OnboardingState;
 }
 
@@ -57,6 +72,7 @@ export type SettingKey = keyof Settings;
 
 export const DEFAULT_SETTINGS: Settings = {
   "appearance.theme": "dark",
+  "appearance.font": "hanken",
   "appearance.density": "comfortable",
   "appearance.thumbSize": "medium",
   "library.view": "grid",
@@ -81,11 +97,17 @@ export const DEFAULT_SETTINGS: Settings = {
   "notifications.native": true,
   "notifications.nativeDownloads": false,
   "notifications.nativeMutedUntil": null,
-  onboarding: { status: "active", step: 1, comicId: null },
+  "sound.enabled": false,
+  "sound.volume": 60,
+  onboarding: { status: "active", step: 0, readerTip: false, flow: 2 },
 };
+
+/** O que "Restaurar padrão" dos sons devolve. */
+export const SOUND_DEFAULTS = { enabled: true, volume: 60 } as const;
 
 const ENUMS: Partial<Record<SettingKey, readonly string[]>> = {
   "appearance.theme": ["dark", "light", "system"],
+  "appearance.font": ["hanken", "atkinson", "plex", "system"],
   "appearance.density": ["comfortable", "compact"],
   "appearance.thumbSize": ["small", "medium", "large"],
   "library.view": ["grid", "list"],
@@ -104,9 +126,10 @@ function sanitizeOnboarding(v: unknown): OnboardingState {
   if (!v || typeof v !== "object") return d;
   const o = v as Record<string, unknown>;
   const status = o.status === "completed" || o.status === "skipped" || o.status === "active" ? o.status : d.status;
-  const step = o.step === 1 || o.step === 2 || o.step === 3 || o.step === 4 ? o.step : 1;
-  const comicId = typeof o.comicId === "number" ? o.comicId : null;
-  return { status, step, comicId };
+  // Estado do tutorial antigo: quem já concluiu ou pulou não vê nada de novo; quem estava no meio começa a configuração nova.
+  if (o.flow !== 2) return { ...d, status };
+  const step = typeof o.step === "number" && Number.isInteger(o.step) && o.step >= 0 && o.step < ONBOARDING_STEPS.length ? o.step : 0;
+  return { status, step, readerTip: o.readerTip === true, flow: 2 };
 }
 
 /** Mescla valores salvos com os padrões, descartando o que for inválido. */
@@ -122,6 +145,8 @@ export function sanitizeSettings(raw: Record<string, unknown>): Settings {
       out[key] = sanitizeShortcuts(value);
     } else if (key === "onboarding") {
       out[key] = sanitizeOnboarding(value);
+    } else if (key === "sound.volume") {
+      if (typeof value === "number" && Number.isFinite(value)) out[key] = Math.round(Math.min(100, Math.max(0, value)));
     } else if (key === "notifications.nativeMutedUntil") {
       out[key] = typeof value === "number" && Number.isFinite(value) ? value : null;
     } else if (typeof DEFAULT_SETTINGS[key] === "boolean") {

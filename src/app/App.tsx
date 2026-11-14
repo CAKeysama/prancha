@@ -34,6 +34,7 @@ import { SettingsProvider, useSettings } from "./settings-context";
 import { Sidebar } from "./Sidebar";
 import { SUPPORTED_FORMATS_TEXT } from "./config";
 import { disableContextMenu } from "./context-menu";
+import { sound } from "../services/sound";
 
 function Screen({ route }: { route: Route }) {
   switch (route.name) {
@@ -48,8 +49,8 @@ function Screen({ route }: { route: Route }) {
             base: {},
             persistSort: true,
             emptyIcon: Library,
-            emptyTitle: "Nenhum quadrinho na biblioteca",
-            emptyText: `Adicione arquivos ${SUPPORTED_FORMATS_TEXT}, ou arraste-os para esta janela.`,
+            emptyTitle: "Sua biblioteca está vazia",
+            emptyText: `${SUPPORTED_FORMATS_TEXT}, ou arraste para esta janela.`,
             emptyActions: <AddComicsButtons />,
           }}
         />
@@ -66,7 +67,7 @@ function Screen({ route }: { route: Route }) {
             allowStatusFilter: false,
             emptyIcon: BookOpen,
             emptyTitle: "Nenhuma leitura em andamento",
-            emptyText: "As HQs que você começar a ler aparecem aqui, prontas para retomar de onde parou.",
+            emptyText: "O que você começar a ler aparece aqui.",
           }}
         />
       );
@@ -76,13 +77,12 @@ function Screen({ route }: { route: Route }) {
           key="recent"
           preset={{
             title: "Recentes",
-            subtitle: "HQs abertas recentemente",
             base: { openedOnly: true },
             defaultSort: "opened",
             defaultDesc: true,
             emptyIcon: History,
             emptyTitle: "Nada aberto ainda",
-            emptyText: "As HQs que você abrir no leitor aparecem aqui, da mais recente para a mais antiga.",
+            emptyText: "O que você abrir aparece aqui.",
           }}
         />
       );
@@ -95,7 +95,7 @@ function Screen({ route }: { route: Route }) {
             base: { favoritesOnly: true },
             emptyIcon: Star,
             emptyTitle: "Nenhum favorito",
-            emptyText: "Use “Adicionar aos favoritos” no menu de uma HQ ou na tela de detalhes.",
+            emptyText: "Use “Favoritar” no menu de um item ou nos detalhes.",
           }}
         />
       );
@@ -131,6 +131,9 @@ function Screen({ route }: { route: Route }) {
 function Shell() {
   const { route, stack } = useNav();
   const { loaded, loadError } = useSettings();
+  // Durante a leitura, só o leitor faz som.
+  const reading = route.name === "reader" || route.name === "chapter";
+  useEffect(() => sound.setReading(reading), [reading]);
   if (!loaded) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -145,7 +148,7 @@ function Shell() {
       </div>
     );
   }
-  if (route.name === "reader" || route.name === "chapter") {
+  if (reading) {
     return (
       <main className="h-full">
         <Screen route={route} />

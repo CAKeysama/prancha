@@ -19,7 +19,7 @@ const CONTENT_TYPES: Record<string, string> = { ".json": "application/json", ".p
 const nav = (page: Page, name: string) => page.getByRole("navigation", { name: "Navegação principal" }).getByRole("button", { name, exact: true }).click();
 const chapterRow = (page: Page, title: string) => page.getByTestId("chapter").filter({ hasText: title });
 const downloadRow = (page: Page, title: string) => page.getByTestId("download").filter({ hasText: title });
-const indicator = (page: Page) => page.locator("header p[aria-live='polite']").first();
+const indicator = (page: Page) => page.getByTestId("reader-indicator");
 
 async function imageLoaded(page: Page, selector: string) {
   await expect.poll(() => page.locator(selector).first().evaluate((img: HTMLImageElement) => img.naturalWidth).catch(() => 0)).toBeGreaterThan(0);
@@ -97,7 +97,7 @@ test.describe.serial("extensões: da adição do repositório à leitura offline
     process.env.PRANCHA_E2E_ALLOW_LOOPBACK = "1";
     dir = freshDataDir("extensions");
     app = await launchApp(dir);
-    await app.page.getByRole("button", { name: "Pular tutorial" }).click();
+    await app.page.getByRole("button", { name: "Pular configuração" }).click();
     await expect(app.page.getByRole("button", { name: "Explorar", exact: true })).toBeHidden();
     await nav(app.page, "Plugins");
     await app.page.getByRole("button", { name: "Instalar", exact: true }).click();
@@ -475,8 +475,8 @@ test.describe.serial("extensões: da adição do repositório à leitura offline
     const page = app.page;
     await nav(page, "Extensões");
     await page.getByRole("button", { name: `Ações de ${EXTENSION}` }).click();
-    await page.getByRole("menuitem", { name: "Remover" }).click();
-    await page.getByRole("dialog", { name: `Remover ${EXTENSION}?` }).getByRole("button", { name: "Remover" }).click();
+    await page.getByRole("menuitem", { name: "Desinstalar" }).click();
+    await page.getByRole("dialog", { name: `Desinstalar ${EXTENSION}?` }).getByRole("button", { name: "Desinstalar" }).click();
     await expect(page.getByText("Nenhuma extensão instalada")).toBeVisible();
 
     await nav(page, "Repositórios");

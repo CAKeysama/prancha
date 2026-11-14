@@ -28,7 +28,7 @@ const placeholder = (source: SourceSummary): Section => ({ source, status: "load
 
 export function ExploreScreen() {
   const nav = useNav();
-  const { data: sources, error: sourcesError } = useLibraryData(() => api.sources(), [], "sources");
+  const { data: sources, error: sourcesError, reload: reloadSources } = useLibraryData(() => api.sources(), [], "sources");
   const [mode, setMode] = useState<Mode>(memory.mode);
   const [draft, setDraft] = useState(memory.query);
   const [query, setQuery] = useState(memory.query);
@@ -151,7 +151,7 @@ export function ExploreScreen() {
       <div className="h-full overflow-y-auto">
         <PageHeader title="Explorar" />
         <div className="p-6">
-          <ErrorState title="Não foi possível abrir as fontes" message={sourcesError} />
+          <ErrorState title="Não foi possível abrir as fontes" message={sourcesError} action={<Button onClick={reloadSources}>Tentar de novo</Button>} />
         </div>
       </div>
     );
@@ -284,7 +284,7 @@ export function ExploreScreen() {
             {followingError && <ErrorState title="Não foi possível abrir a lista" message={followingError} />}
             {following?.length === 0 && (
               <EmptyState icon={Bell} title="Nenhuma obra acompanhada">
-                Abra uma obra e escolha “Acompanhar” para encontrá-la aqui, mesmo sem baixar nada.
+                Use “Acompanhar” na página de uma obra para vê-la aqui, mesmo sem baixar nada.
               </EmptyState>
             )}
             {following && following.length > 0 && (
@@ -304,8 +304,8 @@ export function ExploreScreen() {
             {groups.length === 0 && searching > 0 && <TitlesSkeleton />}
             {searching > 0 && <p className="p-enter-late mt-3 text-sm text-muted">{CHECKING_NOTE}</p>}
             {groups.length === 0 && searching === 0 && uncheckedIn.length === 0 && (
-              <EmptyState icon={Search} title="Nada encontrado">
-                {failed.length > 0 ? "Nada com esse nome nas fontes que responderam. As outras podem ter." : "Nenhuma fonte encontrou esse nome."} A mesma obra pode ter outro título em cada fonte: vale tentar outro.
+              <EmptyState icon={Search} title="Nenhum resultado encontrado">
+                {failed.length > 0 ? "As fontes que não responderam podem ter. " : ""}A mesma obra pode ter outro título em cada fonte.
               </EmptyState>
             )}
             {groups.length > 0 && <TitleResults groups={groups.slice(0, shownGroups)} showLanguage={languages.length > 1} onOpen={openSeries} />}

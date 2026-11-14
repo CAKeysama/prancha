@@ -2,10 +2,11 @@ import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type 
 import { createPortal } from "react-dom";
 import { Bell, CheckCheck, Settings } from "lucide-react";
 import { useNav } from "../../app/navigation";
+import { useSettings } from "../../app/settings-context";
 import { Button, IconButton } from "../../components/Button";
 import { Spinner } from "../../components/Feedback";
 import { cn } from "../../components/cn";
-import { badgeLabel, unreadLabel, type AppNotification, type NotificationAction } from "../../domain/notifications";
+import { badgeLabel, emptyNotificationsHint, unreadLabel, type AppNotification, type NotificationAction } from "../../domain/notifications";
 import { NotificationItem } from "./NotificationItem";
 import { useNotifications } from "./notifications-context";
 
@@ -70,8 +71,11 @@ export function NotificationBell({ current }: { narrow?: boolean; current: boole
 function NotificationPopup({ id, anchor, onClose }: { id: string; anchor: RefObject<HTMLButtonElement | null>; onClose: (refocus: boolean) => void }) {
   const { unread, recent, recentError, loadRecent, markAllRead, setRead, remove, run } = useNotifications();
   const nav = useNav();
+  const { settings } = useSettings();
   const panel = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<ReturnType<typeof panelPosition> | null>(null);
+  const measure = () => (anchor.current ? panelPosition(anchor.current.getBoundingClientRect(), { width: window.innerWidth, height: window.innerHeight }) : null);
+  // Já nasce no lugar: sem o primeiro quadro escondido, o foco do efeito abaixo pega no painel.
+  const [pos, setPos] = useState(measure);
   // O popup monta a cada abertura: a hora das notificações é a do momento em que ele abriu.
   const [now] = useState(() => Date.now());
 
@@ -144,9 +148,13 @@ function NotificationPopup({ id, anchor, onClose }: { id: string; anchor: RefObj
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-1">
         {recentError ? (
-          <p role="alert" className="px-3 py-6 text-center text-sm text-danger">
-            {recentError}
-          </p>
+          <div role="alert" className="flex flex-col items-center gap-2 px-6 py-6 text-center">
+            <p className="text-sm font-medium text-danger">Não foi possível carregar as notificações</p>
+            <p className="text-sm text-muted">{recentError}</p>
+            <Button size="sm" onClick={loadRecent}>
+              Tentar novamente
+            </Button>
+          </div>
         ) : recent === null ? (
           <div className="flex justify-center py-8">
             <Spinner label="Carregando…" />
@@ -157,7 +165,7 @@ function NotificationPopup({ id, anchor, onClose }: { id: string; anchor: RefObj
               <Bell size={18} aria-hidden />
             </span>
             <p className="font-medium">Nenhuma notificação</p>
-            <p className="mt-0.5 text-sm text-muted">Capítulos novos, downloads e atualizações aparecem aqui.</p>
+            <p className="mt-0.5 text-sm text-muted">{emptyNotificationsHint(settings["plugins.online"])}</p>
           </div>
         ) : (
           <ul aria-label="Notificações recentes" className="flex flex-col">
@@ -185,7 +193,7 @@ function NotificationPopup({ id, anchor, onClose }: { id: string; anchor: RefObj
             nav.navigate({ name: "notifications" });
           }}
         >
-          Ver todas as notificações
+          Ver todas
         </Button>
       </div>
     </div>,

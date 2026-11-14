@@ -12,6 +12,7 @@ import { api, errorMessage } from "../../services/api";
 import { renderPdfPageImage } from "../../services/pdf";
 import { comicPageSrc, pageUrl } from "../../services/urls";
 import { PageView, usePreload } from "./PageView";
+import { useReturnFocus } from "./ReaderPanels";
 import { RegionEditor } from "./RegionEditor";
 import { useViewportSize } from "./Views";
 
@@ -20,8 +21,11 @@ const CONTROLS_SPACE = 72;
 const POP_MS = 320;
 const BACK_MS = 220;
 const SWIPE_PX = 48;
-/** Passa um pouco do tamanho final e assenta: é o que faz o balão "saltar". */
-const POP_EASING = "cubic-bezier(0.34, 1.36, 0.64, 1)";
+/**
+ * Sai rápido e desacelera até o tamanho final, sem passar dele: o texto do balão já chega parado para ser lido,
+ * sem o vaivém de crescer além e voltar.
+ */
+const POP_EASING = "cubic-bezier(0.16, 1, 0.3, 1)";
 const BACK_EASING = "cubic-bezier(0.32, 0.72, 0, 1)";
 const POP_SHADOW = "drop-shadow(0 0 1px rgb(0 0 0 / 0.7)) drop-shadow(0 14px 26px rgb(0 0 0 / 0.5))";
 const NO_SHADOW = "drop-shadow(0 0 0 rgb(0 0 0 / 0)) drop-shadow(0 0 0 rgb(0 0 0 / 0))";
@@ -122,6 +126,7 @@ export function GuidedReader(props: GuidedReaderProps) {
   const [leaving, setLeaving] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const { onExit } = props;
+  useReturnFocus();
   // Tira o foco do botão do leitor, que fica coberto: senão Espaço e Enter continuariam nele.
   useEffect(() => root.current?.focus(), []);
   const exit = useCallback(() => {

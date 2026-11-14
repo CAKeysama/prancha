@@ -20,12 +20,12 @@ async function waitPageLoaded(page: Page, index = 1) {
   if (await img.count()) {
     await expect.poll(() => img.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth > 0)).toBe(true);
   } else {
-    await expect(page.getByText(`Desenhando página ${index}…`)).toHaveCount(0);
+    await expect(canvas).not.toHaveAttribute("aria-busy", "true");
   }
 }
 
 async function indicator(page: Page) {
-  return page.locator("header p[aria-live='polite']").first();
+  return page.getByTestId("reader-indicator");
 }
 
 async function goLibrary(page: Page) {
@@ -40,7 +40,7 @@ async function openReader(page: Page, title: string) {
   await expect(page.getByRole("button", { name: "Biblioteca" })).toBeVisible();
 }
 
-test.describe.serial("primeira execução e tutorial", () => {
+test.describe.serial("primeira execução e configuração inicial", () => {
   let app: AppSession;
   let files: { lib: string; errors: string };
   const dir = freshDataDir("tutorial");
@@ -51,49 +51,62 @@ test.describe.serial("primeira execução e tutorial", () => {
   });
   test.afterAll(async () => app?.close());
 
-  test("biblioteca vazia e etapa 1", async () => {
+  test("percorre as etapas aplicando cada escolha na hora", async () => {
     const page = app.page;
-    await expect(page.getByRole("dialog", { name: "Bem-vindo ao Prancha" })).toBeVisible();
-    await shot(page, "01-primeira-abertura-tutorial");
+    await expect(page.getByRole("dialog", { name: "Boas-vindas ao Prancha" })).toBeVisible();
+    await shot(page, "01-primeira-abertura-boas-vindas");
     await page.getByRole("button", { name: "Começar" }).click();
-    await expect(page.getByRole("dialog", { name: "Vamos adicionar sua primeira HQ" })).toBeVisible();
-    await shot(page, "02-tutorial-adicionar-hq");
+    await expect(page.getByRole("dialog", { name: "Aparência" })).toBeVisible();
+    await page.getByRole("radiogroup", { name: "Tema" }).getByRole("radio", { name: /Claro/ }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+    await shot(page, "02-configuracao-aparencia");
+    await page.getByRole("button", { name: "Continuar", exact: true }).click();
+    await page.getByRole("radio", { name: /Atkinson Hyperlegible/ }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-font", "atkinson");
+    await page.getByRole("button", { name: "Continuar", exact: true }).click();
+    await expect(page.getByRole("switch", { name: "Sons da interface" })).toHaveAttribute("aria-checked", "true");
+    await shot(page, "03-configuracao-sons");
+    await page.getByRole("button", { name: "Continuar", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "Leitura" })).toBeVisible();
+    await shot(page, "04-configuracao-leitura");
+    await page.getByRole("button", { name: "Continuar", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "Tudo pronto" })).toBeVisible();
   });
 
-  test("cancelamento e arquivo inválido mantêm o tutorial compreensível", async () => {
+  test("cancelamento e arquivo inválido mantêm a última etapa compreensível", async () => {
     const page = app.page;
-    const dialog = page.getByRole("dialog", { name: "Vamos adicionar sua primeira HQ" });
+    const dialog = page.getByRole("dialog", { name: "Tudo pronto" });
     app.nextPick(null);
-    await dialog.getByRole("button", { name: "Selecionar arquivo" }).click();
-    await expect(dialog.getByText(/Nenhum arquivo foi selecionado/)).toBeVisible();
+    await dialog.getByRole("button", { name: "Escolher arquivos" }).click();
+    await expect(dialog.getByRole("button", { name: "Escolher arquivos" })).toBeEnabled();
     app.nextPick([join(files.errors, "arquivo-corrompido.cbz")]);
-    await dialog.getByRole("button", { name: "Selecionar arquivo" }).click();
-    await expect(dialog.getByRole("alert")).toContainText("Não foi possível adicionar");
-    await shot(page, "03-tutorial-arquivo-invalido");
+    await dialog.getByRole("button", { name: "Escolher arquivos" }).click();
+    await expect(dialog.getByRole("status")).toContainText("Não foi possível adicionar");
+    await shot(page, "05-configuracao-arquivo-invalido");
   });
 
-  test("importação real avança para a etapa 3", async () => {
+  test("importação real e entrada no app", async () => {
     const page = app.page;
-    const dialog = page.getByRole("dialog", { name: "Vamos adicionar sua primeira HQ" });
+    const dialog = page.getByRole("dialog", { name: "Tudo pronto" });
     app.nextPick([join(files.lib, "O Farol de Papel 01.cbz")]);
-    await dialog.getByRole("button", { name: "Selecionar arquivo" }).click();
-    const step3 = page.getByRole("dialog", { name: "Sua HQ está na biblioteca" });
-    await expect(step3).toBeVisible();
-    await expect(step3.getByText("O Farol de Papel", { exact: false }).first()).toBeVisible();
-    // O cartão de exemplo é decorativo (aria-hidden); confere a imagem real da capa.
-    const cover = step3.locator('img[alt="Capa de O Farol de Papel"]');
+    await dialog.getByRole("button", { name: "Escolher arquivos" }).click();
+    await expect(dialog.getByRole("status")).toContainText("1 HQ adicionada à biblioteca.");
+    await shot(page, "06-configuracao-hq-adicionada");
+    await page.getByRole("button", { name: "Entrar no Prancha" }).click();
+    await expect(page.getByRole("dialog", { name: "Tudo pronto" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Minha biblioteca", level: 1 })).toBeVisible();
+    const cover = page.locator('img[alt="Capa de O Farol de Papel"]').first();
     await expect(cover).toBeVisible();
     await expect.poll(() => cover.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBeGreaterThan(0);
-    await shot(page, "04-tutorial-hq-na-biblioteca");
   });
 
-  test("etapa 4 no leitor e conclusão", async () => {
+  test("dica dos controles na primeira leitura", async () => {
     const page = app.page;
-    await page.getByRole("button", { name: "Abrir HQ" }).click();
-    const tip = page.getByRole("dialog", { name: "Fazendo a primeira leitura" });
+    await openReader(page, "O Farol de Papel");
+    const tip = page.getByRole("dialog", { name: "Controles do leitor" });
     await expect(tip).toBeVisible();
     await waitPageLoaded(page);
-    await shot(page, "05-tutorial-primeira-leitura");
+    await shot(page, "07-primeira-leitura-dica");
     await tip.getByRole("button", { name: "Entendi" }).click();
     await expect(tip).toHaveCount(0);
     await page.locator("[data-reader-viewport]").click({ position: { x: 5, y: 5 } });
@@ -101,12 +114,14 @@ test.describe.serial("primeira execução e tutorial", () => {
     await expect(await indicator(page)).toHaveText("Página 4 de 14");
   });
 
-  test("progresso e conclusão do tutorial sobrevivem ao reinício", async () => {
+  test("progresso e escolhas da configuração inicial sobrevivem ao reinício", async () => {
     await app.close(true);
     app = await launchApp(dir);
     const page = app.page;
     await expect(page.getByRole("heading", { name: "Início", level: 1 })).toBeVisible();
-    await expect(page.getByRole("dialog", { name: /Bem-vindo/ })).toHaveCount(0);
+    await expect(page.getByRole("dialog", { name: /Boas-vindas/ })).toHaveCount(0);
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+    await expect(page.locator("html")).toHaveAttribute("data-font", "atkinson");
     await expect(page.getByText("Parou na página 4 de 14").first()).toBeVisible();
     await page.getByRole("button", { name: "Continuar leitura" }).first().click();
     await expect(await indicator(page)).toHaveText("Página 4 de 14");
@@ -133,18 +148,18 @@ test.describe.serial("biblioteca, formatos e leitor", () => {
   test.beforeAll(async () => {
     files = copyFixtures(dir);
     app = await launchApp(dir);
-    await app.page.getByRole("button", { name: "Pular tutorial" }).click();
+    await app.page.getByRole("button", { name: "Pular configuração" }).click();
   });
   test.afterAll(async () => app?.close());
 
   test("importa pastas com todos os formatos e relata falhas", async () => {
     const page = app.page;
     app.nextPick([files.lib, files.errors]);
-    await page.getByRole("button", { name: "Selecionar uma pasta" }).click();
+    await page.getByRole("button", { name: "Adicionar pasta" }).click();
     const panel = page.getByRole("region", { name: "Importação de quadrinhos" });
-    await expect(panel.getByText("Importação concluída")).toBeVisible({ timeout: 60_000 });
+    await expect(panel.getByText("Importação concluída", { exact: true })).toBeVisible({ timeout: 60_000 });
     await expect(panel).toContainText("7 adicionados");
-    await expect(panel).toContainText("3 com falhas");
+    await expect(panel).toContainText("3 com falha");
     await panel.getByRole("button", { name: "Ver detalhes" }).click();
     const dialog = page.getByRole("dialog", { name: "Resultado da importação" });
     await expect(dialog).toContainText("arquivo-corrompido.cbz");
@@ -278,7 +293,7 @@ test.describe.serial("biblioteca, formatos e leitor", () => {
     await shot(page, "06b-biblioteca-lista");
     await page.getByRole("radio", { name: /Grade/ }).click();
     await page.getByLabel(/Pesquisar por título/).fill("farol");
-    await expect(page.getByText("1 encontrado")).toBeVisible();
+    await expect(page.getByText("1 resultado")).toBeVisible();
     await page.getByRole("button", { name: "Limpar pesquisa" }).click();
     // Abrir cada formato no teste anterior deixou 5 HQs em andamento; a Farol foi concluída.
     await page.getByRole("button", { name: "Filtrar" }).click();
@@ -290,7 +305,7 @@ test.describe.serial("biblioteca, formatos e leitor", () => {
     await page.getByRole("button", { name: "Concluído", exact: true }).click();
     await page.getByLabel("Tipo de arquivo").selectOption("pdf");
     await expect(page.getByRole("button", { name: /^Ver detalhes de/ })).toHaveCount(1);
-    await expect(page.getByRole("button", { name: "Remover filtro PDF" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Limpar filtro PDF" })).toBeVisible();
     await page.getByLabel("Tipo de arquivo").selectOption("");
     await page.keyboard.press("Escape");
     await expect(page.getByRole("dialog", { name: "Filtros" })).toHaveCount(0);
@@ -307,12 +322,12 @@ test.describe.serial("biblioteca, formatos e leitor", () => {
     const edit = page.getByRole("dialog", { name: "Editar informações" });
     await edit.getByLabel("Título").fill("O Farol de Papel (edição revisada)");
     await edit.getByLabel("Editora").fill("Editora Teste");
-    await edit.getByRole("button", { name: "Salvar alterações" }).click();
+    await edit.getByRole("button", { name: "Salvar", exact: true }).click();
     await expect(page.getByRole("heading", { name: "O Farol de Papel (edição revisada)", level: 1 })).toBeVisible();
     await expect(page.getByText("editado").first()).toBeVisible();
-    await page.getByRole("button", { name: "Favoritar" }).click();
-    await expect(page.getByRole("button", { name: "Remover dos favoritos" })).toBeVisible();
-    await page.getByRole("button", { name: "Organizar em coleções" }).click();
+    await page.getByRole("button", { name: "Favoritar", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Favorito", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await page.getByRole("button", { name: "Organizar em coleções…" }).click();
     const col = page.getByRole("dialog", { name: "Coleções" });
     await col.getByLabel("Nova coleção").fill("Clássicos de teste");
     await col.getByRole("button", { name: "Criar coleção" }).click();
@@ -475,12 +490,12 @@ test.describe.serial("Leitura Guiada em páginas reais", () => {
 
   test.beforeAll(async () => {
     app = await launchApp(dir);
-    await app.page.getByRole("button", { name: "Pular tutorial" }).click();
+    await app.page.getByRole("button", { name: "Pular configuração" }).click();
     // A importação só lê os originais; banco e cache ficam numa pasta de dados descartável.
     app.nextPick([comic.path, join(ROOT, manifest.pdf.path)]);
-    await app.page.getByRole("button", { name: "Selecionar uma pasta" }).click();
+    await app.page.getByRole("button", { name: "Adicionar pasta" }).click();
     const panel = app.page.getByRole("region", { name: "Importação de quadrinhos" });
-    await expect(panel.getByText("Importação concluída")).toBeVisible({ timeout: 120_000 });
+    await expect(panel.getByText("Importação concluída", { exact: true })).toBeVisible({ timeout: 120_000 });
     await panel.getByRole("button", { name: "Fechar resumo da importação" }).click();
   });
   test.afterAll(async () => app?.close());

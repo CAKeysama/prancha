@@ -55,6 +55,12 @@ describe("Leitura Guiada: estados", () => {
     expect(await screen.findByTestId("guided-spot-doubtful")).toBeInTheDocument();
   });
 
+  it("o balão cresce até o tamanho final sem passar dele", async () => {
+    open(() => ({ pageIndex: 0, source: "auto", regions: [region("a", 0.1, 0.9)], panels: [], needsReview: false }));
+    const spot = await screen.findByTestId("guided-spot");
+    expect(spot.style.transition).toContain("cubic-bezier(0.16, 1, 0.3, 1)");
+  });
+
   it("Esc sai enquanto a análise ainda está em andamento", async () => {
     const user = userEvent.setup();
     const onExit = open(() => new Promise(() => undefined));

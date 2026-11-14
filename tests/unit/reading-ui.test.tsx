@@ -1,7 +1,7 @@
 // Estados de leitura na tela: tooltips dos ícones, lista de capítulos da obra, favoritar/acompanhar e a biblioteca.
 // O backend é simulado como em online.test.tsx.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { clearMocks, mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { Download } from "lucide-react";
@@ -9,6 +9,7 @@ import { App } from "../../src/app/App";
 import { IconButton } from "../../src/components/Button";
 import { TOOLTIP_DELAY_MS } from "../../src/components/Tooltip";
 import type { ChapterReadInfo, ChapterView, LibrarySeries, SeriesCard, SourceSummary } from "../../src/domain/online";
+import { usePreload } from "../../src/features/reader/PageView";
 
 describe("Tooltip dos botões só com ícone", () => {
   beforeEach(() => {
@@ -453,5 +454,165 @@ describe("Obras na biblioteca", () => {
     expect(resume).toHaveTextContent("Capítulo 3 · Em andamento");
     await userEvent.click(resume);
     await waitFor(() => expect(calls.find((c) => c.cmd === "chapter_open")?.args.id).toBe(33));
+  });
+});
+
+describe("Leitor", () => {
+  const comic = { id: 7, title: "Teste", fileName: "t.cbz", format: "cbz", pageCount: 5, coverKind: "placeholder", coverRev: 1, favorite: false, status: "reading", missing: false, addedAt: 1, lastOpenedAt: 2, progress: { pageIndex: 0, pageCount: 5, scrollRatio: 0, updatedAt: 3 } };
+
+  async function openReader() {
+    handlers.get_home = () => ({ total: 1, continueReading: [comic], recentlyAdded: [comic], favorites: [], recentlyOpened: [comic] });
+    handlers.open_comic = () => ({ comic, path: "t.cbz", pageCount: 5, start: { pageIndex: 0, pageCount: 5, scrollRatio: 0, updatedAt: 3 } });
+    render(<App />);
+    await userEvent.click(await screen.findByRole("button", { name: "Continuar leitura" }));
+    await screen.findByRole("region", { name: "Leitor: Teste" });
+  }
+  const header = () => screen.getByRole("region", { name: "Leitor: Teste" }).querySelector("header")!;
+  const hidden = () => header().className.includes("-translate-y-full");
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("página que falha mostra o motivo e Tentar de novo pede a imagem outra vez, sem travar as vizinhas", async () => {
+    vi.stubGlobal("fetch", () => Promise.resolve(new Response("O arquivo da página está corrompido.", { status: 500 })));
+    await openReader();
+    fireEvent.error(screen.getByRole("img", { name: "Página 1" }));
+    expect(await screen.findByText("O arquivo da página está corrompido.")).toBeInTheDocument();
+    expect(screen.getByText("Página 1 indisponível")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Tentar de novo" }));
+    const retried = await screen.findByRole("img", { name: "Página 1" });
+    expect(retried.getAttribute("src")).toMatch(/\?r=\d+$/);
+    expect(screen.queryByText("Página 1 indisponível")).toBeNull();
+    // A falha de uma página não impede a próxima.
+    await userEvent.keyboard("{ArrowRight}");
+    expect(await screen.findByRole("img", { name: "Página 2" })).toBeInTheDocument();
+  });
+
+  it("enquanto carrega, a página não anuncia nada; pronta, deixa de estar ocupada", async () => {
+    await openReader();
+    const img = screen.getByRole("img", { name: "Página 1" });
+    expect(img).toHaveAttribute("aria-busy", "true");
+    expect(screen.queryByText(/Carregando página/)).toBeNull();
+    fireEvent.load(img);
+    expect(img).not.toHaveAttribute("aria-busy");
+  });
+
+  it("o indicador anuncia a página virada, mas fica quieto na rolagem contínua", async () => {
+    await openReader();
+    const indicator = screen.getByTestId("reader-indicator");
+    expect(indicator).toHaveTextContent("Página 1 de 5");
+    expect(indicator).toHaveAttribute("aria-live", "polite");
+    await userEvent.keyboard("m"); // página dupla
+    await userEvent.keyboard("m"); // rolagem vertical
+    expect(screen.getByRole("button", { name: /atual: Rolagem vertical/ })).toBeInTheDocument();
+    expect(screen.getByTestId("reader-indicator")).not.toHaveAttribute("aria-live");
+  });
+
+  it("os controles somem sem atividade, mas não com o cursor sobre a barra, e o botão de mostrar só aparece quando foram ocultados de propósito", async () => {
+    await openReader();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const reader = screen.getByRole("region", { name: "Leitor: Teste" });
+    fireEvent.mouseMove(reader);
+    act(() => vi.advanceTimersByTime(2800));
+    expect(hidden()).toBe(true);
+    // Ocultos pelo tempo, mover o mouse traz de volta: nenhum botão fica por cima da página.
+    expect(screen.queryByRole("button", { name: /Mostrar controles/ })).toBeNull();
+
+    fireEvent.mouseMove(reader);
+    expect(hidden()).toBe(false);
+    fireEvent.mouseEnter(header());
+    fireEvent.mouseMove(header());
+    act(() => vi.advanceTimersByTime(10_000));
+    expect(hidden()).toBe(false);
+    fireEvent.mouseLeave(header());
+    act(() => vi.advanceTimersByTime(2800));
+    expect(hidden()).toBe(true);
+
+    fireEvent.keyDown(window, { key: "h", code: "KeyH" });
+    expect(screen.getByRole("button", { name: /Mostrar controles/ })).toBeInTheDocument();
+    expect(header()).toHaveAttribute("inert");
+  });
+
+  it("fechar um painel aberto com o mouse devolve o foco à área de leitura", async () => {
+    await openReader();
+    await userEvent.click(screen.getByRole("button", { name: "Índice de páginas" }));
+    const panel = screen.getByRole("complementary", { name: "Índice de páginas" });
+    await userEvent.click(within(panel).getByRole("button", { name: "Fechar índice de páginas" }));
+    expect(screen.queryByRole("complementary", { name: "Índice de páginas" })).toBeNull();
+    expect(document.activeElement).toHaveAttribute("data-reader-viewport");
+  });
+
+  it("fechar um painel aberto pelo teclado devolve o foco ao botão que o abriu", async () => {
+    const user = userEvent.setup();
+    await openReader();
+    const toggle = screen.getByRole("button", { name: "Índice de páginas" });
+    for (let i = 0; i < 30 && document.activeElement !== toggle; i++) await user.tab();
+    expect(toggle).toHaveFocus();
+    // Pelo atalho: no jsdom, o clique que o Enter gera tira o :focus-visible, o que não acontece no navegador.
+    await user.keyboard("i");
+    const panel = screen.getByRole("complementary", { name: "Índice de páginas" });
+    expect(panel).toContainElement(document.activeElement as HTMLElement);
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("complementary", { name: "Índice de páginas" })).toBeNull();
+    expect(toggle).toHaveFocus();
+  });
+
+  it("escolher uma página no índice leva a ela e põe o foco na leitura", async () => {
+    await openReader();
+    await userEvent.keyboard("i");
+    const panel = screen.getByRole("complementary", { name: "Índice de páginas" });
+    await userEvent.click(within(panel).getByRole("button", { name: "Ir para a página 4" }));
+    expect(screen.getByTestId("reader-indicator")).toHaveTextContent("Página 4 de 5");
+    expect(document.activeElement).toHaveAttribute("data-reader-viewport");
+  });
+
+  it("sem atalho para a ação, a dica do botão não mostra parênteses vazios", async () => {
+    handlers.get_settings = () => ({ "plugins.online": true, onboarding: { status: "completed", step: 4, comicId: null }, "reader.shortcuts": { back: [] } });
+    await openReader();
+    expect(screen.getByRole("button", { name: "Biblioteca" })).toHaveAttribute("title", "Voltar à biblioteca");
+  });
+});
+
+describe("Pré-carregamento das páginas vizinhas", () => {
+  class FakeImage {
+    static all: FakeImage[] = [];
+    src = "";
+    decoding = "auto";
+    fetchPriority = "auto";
+    onload: (() => void) | null = null;
+    constructor() {
+      FakeImage.all.push(this);
+    }
+  }
+  beforeEach(() => {
+    FakeImage.all = [];
+    vi.stubGlobal("Image", FakeImage);
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  const src = (index: number) => `pagina/${index}`;
+
+  it("ao virar a página, só cancela quem deixou de ser vizinha; as demais seguem baixando", () => {
+    const { rerender, unmount } = renderHook(({ pages }) => usePreload(src, pages, true), { initialProps: { pages: [1, 2, 0] } });
+    expect(FakeImage.all.map((img) => img.src)).toEqual(["pagina/1", "pagina/2", "pagina/0"]);
+    expect(FakeImage.all.every((img) => img.fetchPriority === "low")).toBe(true);
+    const [one, two, zero] = FakeImage.all;
+    rerender({ pages: [2, 3, 1] });
+    expect(FakeImage.all).toHaveLength(4);
+    expect(FakeImage.all[3]!.src).toBe("pagina/3");
+    expect(zero!.src).toBe("");
+    expect(one!.src).toBe("pagina/1");
+    expect(two!.src).toBe("pagina/2");
+    unmount();
+    expect(FakeImage.all.every((img) => img.src === "")).toBe(true);
+  });
+
+  it("uma nova função de endereço com as mesmas páginas não pede nada de novo", () => {
+    const { rerender } = renderHook(({ from }) => usePreload(from, [4, 5], true), { initialProps: { from: (index: number) => `pagina/${index}` } });
+    rerender({ from: (index: number) => `pagina/${index}` });
+    expect(FakeImage.all).toHaveLength(2);
+    expect(FakeImage.all.map((img) => img.src)).toEqual(["pagina/4", "pagina/5"]);
   });
 });

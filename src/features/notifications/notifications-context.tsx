@@ -5,6 +5,7 @@ import { useToast } from "../../components/Toast";
 import { withRead, type AppNotification, type NotificationAction, type NotificationTarget } from "../../domain/notifications";
 import { api, errorMessage } from "../../services/api";
 import { onNotificationActivated, onNotificationsChanged } from "../../services/events";
+import { sound } from "../../services/sound";
 
 /** Quantas aparecem no popup. O histórico completo fica na tela Notificações. */
 export const POPUP_LIMIT = 8;
@@ -60,7 +61,8 @@ export { applyChange as applyNotificationChange };
 
 export function NotificationsProvider({ children }: { children: ReactNode }) {
   const { loaded } = useSettings();
-  const nav = useNav();
+  // Só `navigate`, que não muda: com `nav` inteiro, o valor do contexto mudaria a cada rota.
+  const { navigate } = useNav();
   const toast = useToast();
   const [unread, setUnread] = useState(0);
   const [createdVersion, setCreatedVersion] = useState(0);
@@ -86,7 +88,10 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     () =>
       onNotificationsChanged((e) => {
         if (typeof e.unread === "number") setUnread(e.unread);
-        if (e.created !== undefined) setCreatedVersion((v) => v + 1);
+        if (e.created !== undefined) {
+          setCreatedVersion((v) => v + 1);
+          sound.play("notify");
+        }
       }),
     [],
   );
@@ -150,7 +155,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
         // O popup completa a lista com as próximas na próxima abertura.
         fetchedVersion.current = null;
       } catch (e) {
-        toast.error("Não foi possível remover", errorMessage(e));
+        toast.error(ids.length > 1 ? "Não foi possível remover as notificações" : "Não foi possível remover a notificação", errorMessage(e));
       }
     },
     [broadcast, toast],
@@ -170,31 +175,31 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     (target: NotificationTarget) => {
       switch (target.kind) {
         case "series":
-          nav.navigate({ name: "series", id: target.id });
+          navigate({ name: "series", id: target.id });
           return;
         case "chapter":
-          nav.navigate({ name: "chapter", id: target.id });
+          navigate({ name: "chapter", id: target.id });
           return;
         case "comic":
-          nav.navigate({ name: "comic", id: target.id });
+          navigate({ name: "comic", id: target.id });
           return;
         case "downloads":
-          nav.navigate({ name: "downloads" });
+          navigate({ name: "downloads" });
           return;
         case "updates":
-          nav.navigate({ name: "settings", section: "atualizacoes" });
+          navigate({ name: "settings", section: "atualizacoes" });
           return;
         case "library":
-          nav.navigate({ name: "library" });
+          navigate({ name: "library" });
           return;
         case "retrySync":
           // Repete a mesma verificação de Explorar. O resultado chega pelas notificações de sempre.
-          toast.info("Verificando as obras acompanhadas", "Capítulos novos e falhas aparecem aqui quando terminar.");
-          void api.seriesRefreshFollowing(`following-${Date.now()}`).catch((e) => toast.error("Não foi possível verificar", errorMessage(e)));
+          toast.info("Verificando as obras acompanhadas", "O resultado chega nas notificações.");
+          void api.seriesRefreshFollowing(`following-${Date.now()}`).catch((e) => toast.error("Não foi possível verificar as obras", errorMessage(e)));
           return;
       }
     },
-    [nav, toast],
+    [navigate, toast],
   );
 
   const run = useCallback(

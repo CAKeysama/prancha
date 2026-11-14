@@ -58,9 +58,7 @@ export function EmptyState({
 }) {
   return (
     <div className={cn("mx-auto flex max-w-md flex-col items-center px-6 py-16 text-center", className)}>
-      <div className="mb-4 flex size-12 items-center justify-center rounded-full border border-border bg-surface text-muted">
-        <Icon size={22} aria-hidden />
-      </div>
+      <Icon size={28} className="mb-3 text-muted" aria-hidden />
       <h2 className="text-lg font-semibold">{title}</h2>
       {children && <div className="mt-1.5 text-base text-muted">{children}</div>}
       {actions && <div className="mt-5 flex flex-wrap items-center justify-center gap-2">{actions}</div>}

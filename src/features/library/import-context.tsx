@@ -4,6 +4,7 @@ import type { ImportCounts, ImportEvent, ImportItem } from "../../domain/types";
 import { api, errorMessage } from "../../services/api";
 import { cancellable, onImportProgress } from "../../services/events";
 import { useToast } from "../../components/Toast";
+import { sound } from "../../services/sound";
 
 export interface ImportJob {
   id: number;
@@ -66,6 +67,7 @@ export function ImportProvider({ children }: { children: ReactNode }) {
           }
           return existing ? list.map((j) => (j.id === job.id ? job : j)) : [...list, job];
         });
+        if (e.phase === "done" && e.counts.added > 0) sound.play("add");
       }),
     [],
   );
