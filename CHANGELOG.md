@@ -3,6 +3,14 @@
 Tudo o que mudou em cada versão do Prancha. O projeto segue o [versionamento semântico](https://semver.org/lang/pt-BR/),
 e as notas das releases e a [página de downloads](https://cakeysama.github.io/prancha/) são geradas a partir deste arquivo.
 
+## [0.12.1] - 2026-11-14
+
+O site oficial volta a mostrar a versão mais recente. O app não muda.
+
+### Correções
+
+- O site oficial não era atualizado na 0.12.0: a montagem do site ainda procurava a fonte antiga da interface, que saiu do app nessa versão. As fontes do site já estão no repositório e passam a ser usadas direto.
+
 ## [0.12.0] - 2026-11-14
 
 Uma revisão inteira da interface: configuração inicial nova, sons próprios, fonte escolhível, textos mais curtos e um leitor mais leve.

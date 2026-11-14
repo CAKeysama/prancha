@@ -97,10 +97,6 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 22
-          cache: npm
-
-      # Só para as fontes de node_modules que o build-site.mjs copia.
-      - run: npm ci --ignore-scripts
 
       # As imagens mostram obras de terceiros e ficam fora do git: vêm do próprio site no ar.
       # Uma imagem nova precisa de um deploy à mão, uma vez, da pasta site. Ver docs/RELEASING.md.
