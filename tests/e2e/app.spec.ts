@@ -157,7 +157,7 @@ test.describe.serial("biblioteca, formatos e leitor", () => {
     app.nextPick([files.lib, files.errors]);
     await page.getByRole("button", { name: "Adicionar pasta" }).click();
     const panel = page.getByRole("region", { name: "Importação de quadrinhos" });
-    await expect(panel.getByText("Importação concluída")).toBeVisible({ timeout: 60_000 });
+    await expect(panel.getByText("Importação concluída", { exact: true })).toBeVisible({ timeout: 60_000 });
     await expect(panel).toContainText("7 adicionados");
     await expect(panel).toContainText("3 com falha");
     await panel.getByRole("button", { name: "Ver detalhes" }).click();
@@ -495,7 +495,7 @@ test.describe.serial("Leitura Guiada em páginas reais", () => {
     app.nextPick([comic.path, join(ROOT, manifest.pdf.path)]);
     await app.page.getByRole("button", { name: "Adicionar pasta" }).click();
     const panel = app.page.getByRole("region", { name: "Importação de quadrinhos" });
-    await expect(panel.getByText("Importação concluída")).toBeVisible({ timeout: 120_000 });
+    await expect(panel.getByText("Importação concluída", { exact: true })).toBeVisible({ timeout: 120_000 });
     await panel.getByRole("button", { name: "Fechar resumo da importação" }).click();
   });
   test.afterAll(async () => app?.close());
