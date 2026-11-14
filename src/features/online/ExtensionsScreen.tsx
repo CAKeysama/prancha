@@ -14,6 +14,7 @@ import { formatBytes, formatDate } from "../../domain/progress";
 import { api, errorMessage } from "../../services/api";
 import { onComponentProgress } from "../../services/events";
 import { Fact } from "./parts";
+import { sound } from "../../services/sound";
 
 const CATALOG_PAGE = 100;
 
@@ -62,6 +63,7 @@ function CatalogDialog({ item, onClose, onChanged }: { item: CatalogItem; onClos
     try {
       if (action === "update") await api.extensionUpdate(item.id);
       else await api.extensionInstall(item.repositoryId, item.id);
+      if (action !== "update") sound.play("add");
       toast.success(action === "update" ? "Extensão atualizada" : "Extensão instalada", item.name);
       onChanged();
       onClose();
@@ -274,9 +276,10 @@ function Installed({ version, onChanged, onBrowse }: { version: number; onChange
     if (!removing) return;
     try {
       await api.extensionRemove(removing.id);
-      toast.success("Extensão removida", removing.name);
+      sound.play("remove");
+      toast.success("Extensão desinstalada", removing.name);
     } catch (e) {
-      toast.error("Não foi possível remover a extensão", errorMessage(e));
+      toast.error("Não foi possível desinstalar a extensão", errorMessage(e));
     }
     setRemoving(null);
     reload();
@@ -320,7 +323,7 @@ function Installed({ version, onChanged, onBrowse }: { version: number; onChange
                 { label: "Detalhes e permissões", onSelect: () => setDetails(extension) },
                 { label: extension.enabled ? "Desabilitar" : "Habilitar", onSelect: () => void setEnabled(extension, !extension.enabled) },
                 { kind: "separator" },
-                { label: "Remover", danger: true, onSelect: () => setRemoving(extension) },
+                { label: "Desinstalar", danger: true, onSelect: () => setRemoving(extension) },
               ]}
               trigger={(p) => <IconButton {...p} variant="ghost" icon={MoreHorizontal} label={`Ações de ${extension.name}`} />}
             />
@@ -338,7 +341,7 @@ function Installed({ version, onChanged, onBrowse }: { version: number; onChange
           }}
         />
       )}
-      <ConfirmDialog open={removing !== null} title={`Remover ${removing?.name ?? ""}?`} confirmLabel="Remover" destructive onCancel={() => setRemoving(null)} onConfirm={() => void remove()}>
+      <ConfirmDialog open={removing !== null} title={`Desinstalar ${removing?.name ?? ""}?`} confirmLabel="Desinstalar" destructive onCancel={() => setRemoving(null)} onConfirm={() => void remove()}>
         As fontes dela saem de Explorar. Os capítulos baixados continuam na biblioteca e abrem normalmente.
       </ConfirmDialog>
     </>

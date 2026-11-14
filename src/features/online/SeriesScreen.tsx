@@ -34,6 +34,7 @@ import { useComicActions } from "../library/comic-actions";
 import { searchAcrossSources } from "./ExploreScreen";
 import { Fact, OnlineCover, SourceTrouble, siteAnswered } from "./parts";
 import { MalSeriesFact } from "../mal/MalSeries";
+import { sound } from "../../services/sound";
 
 let requestCounter = 0;
 
@@ -334,6 +335,7 @@ export function SeriesScreen({ id }: { id: number }) {
     setView((current) => current && { ...current, following });
     try {
       const after = await api.seriesSetFollowing(id, following);
+      if (after.following) sound.play("confirm");
       setView((current) => current && { ...current, following: after.following });
     } catch (e) {
       setView((current) => current && { ...current, following: !following });
@@ -412,7 +414,21 @@ export function SeriesScreen({ id }: { id: number }) {
       <div className="h-full overflow-y-auto">
         <PageHeader title={view?.title ?? "Obra"} onBack={nav.back} />
         <div className="p-6">
-          <ErrorState title="Não foi possível abrir esta obra" message={fatal} />
+          <ErrorState
+            title="Não foi possível abrir esta obra"
+            message={fatal}
+            action={
+              <Button
+                onClick={() => {
+                  setFatal(null);
+                  setRefreshing(true);
+                  setAttempt((n) => n + 1);
+                }}
+              >
+                Tentar de novo
+              </Button>
+            }
+          />
         </div>
       </div>
     );

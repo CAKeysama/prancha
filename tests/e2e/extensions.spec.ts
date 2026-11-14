@@ -475,8 +475,8 @@ test.describe.serial("extensões: da adição do repositório à leitura offline
     const page = app.page;
     await nav(page, "Extensões");
     await page.getByRole("button", { name: `Ações de ${EXTENSION}` }).click();
-    await page.getByRole("menuitem", { name: "Remover" }).click();
-    await page.getByRole("dialog", { name: `Remover ${EXTENSION}?` }).getByRole("button", { name: "Remover" }).click();
+    await page.getByRole("menuitem", { name: "Desinstalar" }).click();
+    await page.getByRole("dialog", { name: `Desinstalar ${EXTENSION}?` }).getByRole("button", { name: "Desinstalar" }).click();
     await expect(page.getByText("Nenhuma extensão instalada")).toBeVisible();
 
     await nav(page, "Repositórios");

@@ -507,7 +507,7 @@ describe("Explorar", () => {
     handlers.source_search = (args) => (args.sourceId === "a" ? reject("source_failed", "Fora do ar.") : { results: [], hasMore: false });
     await open("Explorar");
     await searchFor("vazio");
-    expect(await screen.findByText(/As outras podem ter/)).toBeTruthy();
+    expect(await screen.findByText(/As fontes que não responderam podem ter/)).toBeTruthy();
   });
 
   it("mostra o que passou e oferece conferir de novo só a fonte que ficou sem resposta", async () => {
