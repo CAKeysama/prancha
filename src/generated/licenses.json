@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-11-03T03:25:20.515Z",
+ "generatedAt": "2026-11-10T06:23:37.286Z",
  "rust": [
   {
    "name": "adler2",
@@ -1899,12 +1899,22 @@
  ],
  "js": [
   {
-   "name": "@fontsource/ibm-plex-mono",
+   "name": "@fontsource-variable/atkinson-hyperlegible-next",
    "version": "5.3.0",
    "license": "OFL-1.1"
   },
   {
-   "name": "@fontsource/ibm-plex-sans",
+   "name": "@fontsource-variable/hanken-grotesk",
+   "version": "5.3.0",
+   "license": "OFL-1.1"
+  },
+  {
+   "name": "@fontsource-variable/ibm-plex-sans",
+   "version": "5.3.0",
+   "license": "OFL-1.1"
+  },
+  {
+   "name": "@fontsource/ibm-plex-mono",
    "version": "5.3.0",
    "license": "OFL-1.1"
   },
@@ -1914,7 +1924,12 @@
    "license": "MIT"
   },
   {
-   "name": "@napi-rs/canvas-win32-x64-msvc",
+   "name": "@napi-rs/canvas-linux-x64-gnu",
+   "version": "1.0.12",
+   "license": "MIT"
+  },
+  {
+   "name": "@napi-rs/canvas-linux-x64-musl",
    "version": "1.0.12",
    "license": "MIT"
   },

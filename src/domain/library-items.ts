@@ -24,6 +24,21 @@ export function seriesMatches(series: LibrarySeries, query: LibraryQuery): boole
     .every((word) => haystack.includes(word));
 }
 
+/** Quantos itens, com o nome do que há na lista: HQs, obras ou, misturados, itens. */
+export function itemCountLabel(items: readonly LibraryItem[]): string {
+  const n = items.length;
+  const series = items.filter(isSeries).length;
+  if (series === 0) return `${n} ${n === 1 ? "HQ" : "HQs"}`;
+  if (series === n) return `${n} ${n === 1 ? "obra" : "obras"}`;
+  return `${n} ${n === 1 ? "item" : "itens"}`;
+}
+
+/** O total de uma coleção. Com as fontes ligadas ele junta HQs e obras, sem dizer quantas de cada. */
+export function collectionCountLabel(count: number, online: boolean): string {
+  if (online) return `${count} ${count === 1 ? "item" : "itens"}`;
+  return `${count} ${count === 1 ? "HQ" : "HQs"}`;
+}
+
 /** Fração lida, contada em capítulos. */
 export function seriesRatio(series: LibrarySeries): number | null {
   if (series.readStatus === "completed") return 1;

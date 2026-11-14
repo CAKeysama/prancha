@@ -6,7 +6,7 @@ import { EmptyState, ErrorState, Spinner } from "../../components/Feedback";
 import { Checkbox, Segmented, Select } from "../../components/Form";
 import { PageHeader } from "../../components/PageHeader";
 import { cn } from "../../components/cn";
-import { mergeItems, seriesMatches } from "../../domain/library-items";
+import { itemCountLabel, mergeItems, seriesMatches } from "../../domain/library-items";
 import { STATUS_LABELS } from "../../domain/progress";
 import { FORMAT_LABELS, type ComicFormat, type LibraryQuery, type ReadStatus, type SortKey } from "../../domain/types";
 import { api } from "../../services/api";
@@ -28,7 +28,7 @@ interface LibraryPreset {
   allowStatusFilter?: boolean;
   emptyIcon: LucideIcon;
   emptyTitle: string;
-  emptyText: ReactNode;
+  emptyText?: ReactNode;
   emptyActions?: ReactNode;
   headerActions?: ReactNode;
   onBack?: () => void;
@@ -51,7 +51,7 @@ function ActiveChip({ label, onRemove }: { label: string; onRemove: () => void }
   return (
     <span className="inline-flex h-6 items-center gap-1 rounded-full border border-accent/50 bg-accent-subtle pr-1 pl-2.5 text-sm text-accent-fg">
       {label}
-      <button type="button" onClick={onRemove} aria-label={`Remover filtro ${label}`} className="inline-flex size-5 items-center justify-center rounded-full hover:bg-hover">
+      <button type="button" onClick={onRemove} aria-label={`Limpar filtro ${label}`} className="inline-flex size-6 items-center justify-center rounded-full hover:bg-hover">
         <X size={12} aria-hidden />
       </button>
     </span>
@@ -73,6 +73,7 @@ function FilterButton(props: {
 }) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
@@ -89,10 +90,12 @@ function FilterButton(props: {
         if (e.key === "Escape" && open) {
           e.stopPropagation();
           setOpen(false);
+          // O foco estava num controle do painel, que sai da tela: volta para o botão.
+          trigger.current?.focus();
         }
       }}
     >
-      <Button icon={SlidersHorizontal} aria-expanded={open} aria-haspopup="dialog" onClick={() => setOpen((o) => !o)}>
+      <Button ref={trigger} icon={SlidersHorizontal} aria-expanded={open} aria-haspopup="dialog" onClick={() => setOpen((o) => !o)}>
         Filtrar
         {props.count > 0 && (
           <span className="ml-0.5 inline-flex min-w-5 items-center justify-center rounded-full bg-accent-emphasis px-1.5 text-xs text-on-emphasis">
@@ -244,11 +247,11 @@ export function LibraryScreen({ preset }: { preset: LibraryPreset }) {
     clearChips();
   };
 
-  const countText = data
-    ? filtering
-      ? `${data.length} ${data.length === 1 ? "encontrado" : "encontrados"}`
-      : `${data.length} ${data.length === 1 ? "quadrinho" : "quadrinhos"}`
-    : undefined;
+  const countText = data ? (filtering ? `${data.length} ${data.length === 1 ? "resultado" : "resultados"}` : itemCountLabel(data)) : undefined;
+  // Com a biblioteca vazia, as ações de adicionar ficam só no estado vazio, sem repetir no cabeçalho.
+  const showEmpty = data !== null && data.length === 0 && !filtering;
+  const searching = Boolean(search.trim());
+  const filtered = Boolean(statuses.length || format || favoritesOnly);
 
   return (
     <div ref={attachScroll} className="h-full overflow-y-auto">
@@ -257,7 +260,7 @@ export function LibraryScreen({ preset }: { preset: LibraryPreset }) {
         subtitle={preset.subtitle ?? countText}
         onBack={preset.onBack}
         backLabel={preset.backLabel}
-        actions={preset.headerActions ?? <AddComicsButtons />}
+        actions={preset.headerActions ?? (showEmpty && preset.emptyActions ? undefined : <AddComicsButtons />)}
       >
         <div className="flex items-center gap-2">
           <div className="relative min-w-40 flex-1 sm:max-w-sm">
@@ -324,7 +327,7 @@ export function LibraryScreen({ preset }: { preset: LibraryPreset }) {
           </div>
         </div>
         {(statuses.length > 0 || format || favoritesOnly) && (
-          <div className="mt-2 flex flex-wrap items-center gap-1.5" aria-label="Filtros ativos">
+          <div role="group" className="mt-2 flex flex-wrap items-center gap-1.5" aria-label="Filtros ativos">
             {statuses.map((s) => (
               <ActiveChip key={s} label={STATUS_LABELS[s]} onRemove={() => toggleStatus(s)} />
             ))}
@@ -334,9 +337,19 @@ export function LibraryScreen({ preset }: { preset: LibraryPreset }) {
         )}
       </PageHeader>
       <div className="px-6 py-5">
-        {error && <ErrorState title="Não foi possível carregar a biblioteca" message={error} action={<button className="text-sm font-medium text-accent-fg hover:underline" onClick={reload}>Tentar novamente</button>} />}
-        {!data && loading && <Spinner label="Carregando quadrinhos…" />}
-        {data && data.length === 0 && !filtering && (
+        {error && (
+          <ErrorState
+            title="Não foi possível carregar a biblioteca"
+            message={error}
+            action={
+              <Button size="sm" onClick={reload}>
+                Tentar novamente
+              </Button>
+            }
+          />
+        )}
+        {!data && loading && <Spinner label="Carregando…" />}
+        {showEmpty && (
           <EmptyState icon={preset.emptyIcon} title={preset.emptyTitle} actions={preset.emptyActions}>
             {preset.emptyText}
           </EmptyState>
@@ -344,15 +357,9 @@ export function LibraryScreen({ preset }: { preset: LibraryPreset }) {
         {data && data.length === 0 && filtering && (
           <EmptyState
             icon={SearchX}
-            title="Nenhum quadrinho corresponde aos filtros"
-            actions={
-              <button type="button" onClick={clearFilters} className="text-sm font-medium text-accent-fg hover:underline">
-                Limpar pesquisa e filtros
-              </button>
-            }
-          >
-            Tente outro termo ou remova algum filtro.
-          </EmptyState>
+            title="Nenhum resultado encontrado"
+            actions={<Button onClick={clearFilters}>{searching && filtered ? "Limpar pesquisa e filtros" : searching ? "Limpar pesquisa" : "Limpar filtros"}</Button>}
+          />
         )}
         {data && data.length > 0 && <ComicCollectionView items={data} view={view} scrollRef={scrollRef} collectionId={preset.collectionId} />}
       </div>

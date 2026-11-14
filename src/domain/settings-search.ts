@@ -1,7 +1,7 @@
 // Índice da pesquisa das configurações: cada opção com as palavras que alguém usaria para procurá-la,
 // não só o título que aparece na tela. Os `id`s são as âncoras `setting-<id>` da tela.
 
-export type SettingsCategory = "aparencia" | "leitura" | "biblioteca" | "notificacoes" | "armazenamento" | "atualizacoes" | "integracoes" | "privacidade" | "geral";
+export type SettingsCategory = "aparencia" | "leitura" | "biblioteca" | "notificacoes" | "sons" | "armazenamento" | "atualizacoes" | "integracoes" | "privacidade" | "geral";
 /** `plugins` aponta para a tela Plugins, onde moram as opções de leitura online. */
 export type SettingPlace = SettingsCategory | "plugins";
 
@@ -10,6 +10,7 @@ export const SETTINGS_CATEGORIES: ReadonlyArray<{ id: SettingsCategory; label: s
   { id: "leitura", label: "Leitura" },
   { id: "biblioteca", label: "Biblioteca" },
   { id: "notificacoes", label: "Notificações" },
+  { id: "sons", label: "Sons" },
   { id: "armazenamento", label: "Armazenamento" },
   { id: "atualizacoes", label: "Atualizações" },
   { id: "integracoes", label: "Integrações" },
@@ -32,6 +33,7 @@ export interface SettingEntry {
 
 export const SETTINGS_INDEX: readonly SettingEntry[] = [
   { id: "tema", place: "aparencia", title: "Tema", description: "Escuro, claro ou seguindo o sistema.", keywords: ["modo escuro", "modo claro", "noturno", "dark", "light", "cores", "visual"] },
+  { id: "fonte", place: "aparencia", title: "Fonte da interface", description: "Hanken Grotesk, Atkinson Hyperlegible, IBM Plex Sans ou a do sistema.", keywords: ["fonte", "tipografia", "letra", "texto", "legibilidade", "leitura difícil", "dislexia", "baixa visão"] },
   { id: "densidade", place: "aparencia", title: "Densidade da biblioteca", description: "Confortável ou compacta.", keywords: ["espaçamento", "compacta", "confortável"] },
   { id: "visualizacao", place: "aparencia", title: "Visualização da biblioteca", description: "Grade ou lista.", keywords: ["grade", "lista", "exibição", "layout"] },
   { id: "miniaturas", place: "aparencia", title: "Tamanho das miniaturas", description: "Pequeno, médio ou grande.", keywords: ["capas", "thumbnail", "imagem"] },
@@ -58,6 +60,9 @@ export const SETTINGS_INDEX: readonly SettingEntry[] = [
   { id: "notif-biblioteca", place: "notificacoes", title: "Avisos da biblioteca", description: "Importações com problemas e arquivos que sumiram.", keywords: ["notificação", "importação", "arquivo ausente", "biblioteca"] },
   { id: "notif-nativas", place: "notificacoes", title: "Notificações do sistema operacional", description: "Avisos fora da janela do Prancha.", keywords: ["notificação nativa", "windows", "desktop", "área de trabalho", "pop-up", "silenciar", "não perturbe"] },
 
+  { id: "sons", place: "sons", title: "Sons da interface", description: "Sons curtos ao adicionar, concluir e receber avisos.", keywords: ["som", "áudio", "efeito sonoro", "silenciar", "mudo", "barulho", "aviso sonoro"] },
+  { id: "volume", place: "sons", title: "Volume dos sons", description: "De 0 a 100%, com exemplos para ouvir.", keywords: ["volume", "alto", "baixo", "som", "ouvir", "exemplo"] },
+
   { id: "pasta", place: "armazenamento", title: "Pasta de dados do aplicativo", description: "Onde ficam o catálogo, as capas e o cache.", keywords: ["pasta", "diretório", "dados", "backup", "local"] },
   { id: "uso", place: "armazenamento", title: "Espaço usado", description: "Tamanho do catálogo, das miniaturas e do cache de páginas.", keywords: ["espaço", "disco", "tamanho", "uso"] },
   { id: "limpar-miniaturas", place: "armazenamento", title: "Limpar miniaturas em cache", description: "Remove as capas geradas; elas são recriadas.", keywords: ["cache", "limpar", "liberar espaço", "capas"] },
@@ -75,7 +80,7 @@ export const SETTINGS_INDEX: readonly SettingEntry[] = [
   { id: "telemetria-apagar", place: "privacidade", title: "Apagar os dados enviados", description: "Desliga a telemetria e pede ao servidor que apague o que esta instalação enviou.", keywords: ["apagar", "excluir", "remover", "dados", "lgpd", "privacidade", "telemetria"] },
 
   { id: "idioma", place: "geral", title: "Idioma", description: "Português do Brasil.", keywords: ["língua", "language", "português", "tradução"] },
-  { id: "tutorial", place: "geral", title: "Tutorial de primeira execução", description: "Mostra de novo o passo a passo para adicionar e ler uma HQ.", keywords: ["ajuda", "passo a passo", "guia", "introdução", "começar"] },
+  { id: "configuracao-inicial", place: "geral", title: "Configuração inicial", description: "Refaz o passo a passo de aparência, fonte, sons e leitura.", keywords: ["tutorial", "boas-vindas", "onboarding", "ajuda", "passo a passo", "guia", "introdução", "começar"] },
   { id: "sugerir", place: "geral", title: "Sugerir uma melhoria", description: "Escreva sua ideia e envie pelo GitHub.", keywords: ["sugestão", "ideia", "feedback", "pedido", "issue", "bug", "problema"] },
   { id: "visao-geral", place: "geral", title: "Visão geral do projeto", description: "Versões, downloads e verificações do Prancha no GitHub.", keywords: ["overview", "métricas", "estatísticas", "downloads", "releases", "ci", "github", "projeto"] },
   { id: "licencas", place: "geral", title: "Licenças de terceiros", description: "Componentes de código aberto usados pelo Prancha.", keywords: ["licença", "código aberto", "open source", "créditos"] },

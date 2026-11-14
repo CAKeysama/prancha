@@ -2,12 +2,15 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { DEFAULT_SETTINGS, resolveTheme, sanitizeSettings, type SettingKey, type Settings } from "../domain/settings";
 import { api, errorMessage } from "../services/api";
+import { sound } from "../services/sound";
 
 interface SettingsApi {
   settings: Settings;
   loaded: boolean;
   loadError: string | null;
   update: <K extends SettingKey>(key: K, value: Settings[K]) => Promise<void>;
+  /** A pessoa já escolheu este valor alguma vez (está salvo), em vez de usar o padrão. */
+  isSaved: (key: SettingKey) => boolean;
   effectiveTheme: "dark" | "light";
 }
 
@@ -23,11 +26,25 @@ function systemPrefersDark(): boolean {
   return typeof window.matchMedia === "function" ? window.matchMedia("(prefers-color-scheme: dark)").matches : true;
 }
 
+function prefersReducedMotion(): boolean {
+  return typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+/** Guarda a preferência para o `theme-boot.js` aplicar antes da primeira pintura. */
+function remember(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* armazenamento indisponível */
+  }
+}
+
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [systemDark, setSystemDark] = useState(systemPrefersDark);
+  const [saved, setSaved] = useState<ReadonlySet<string>>(() => new Set());
   const latest = useRef(settings);
 
   useEffect(() => {
@@ -41,6 +58,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       .then((raw) => {
         if (!alive) return;
         setSettings(sanitizeSettings(raw));
+        setSaved(new Set(Object.keys(raw)));
         setLoaded(true);
       })
       .catch((e) => {
@@ -65,13 +83,20 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const effectiveTheme = resolveTheme(pref, systemDark);
 
   // Aplica o tema imediatamente e espelha a preferência para o próximo início (sem flash).
+  // Depois do primeiro desenho, a troca vira um esmaecimento curto da janela inteira, sem nada pulando de cor em tempos diferentes.
+  // Antes de carregar, vale o que o `theme-boot.js` aplicou: os padrões não podem piscar por cima.
+  const firstTheme = useRef(true);
   useEffect(() => {
-    document.documentElement.dataset.theme = effectiveTheme;
-    try {
-      localStorage.setItem("prancha.theme", pref);
-    } catch {
-      /* armazenamento indisponível */
-    }
+    if (!loaded) return;
+    const root = document.documentElement;
+    const apply = () => {
+      root.dataset.theme = effectiveTheme;
+    };
+    const animate = !firstTheme.current && root.dataset.theme !== effectiveTheme && typeof document.startViewTransition === "function" && !prefersReducedMotion();
+    firstTheme.current = false;
+    if (animate) document.startViewTransition(apply);
+    else apply();
+    remember("prancha.theme", pref);
     try {
       void getCurrentWindow()
         .setTheme(pref === "system" ? null : pref)
@@ -79,11 +104,26 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     } catch {
       /* fora do Tauri */
     }
-  }, [effectiveTheme, pref]);
+  }, [loaded, effectiveTheme, pref]);
+
+  const font = settings["appearance.font"];
+  useEffect(() => {
+    if (!loaded) return;
+    document.documentElement.dataset.font = font;
+    remember("prancha.font", font);
+  }, [loaded, font]);
+
+  // O serviço de som só toca o que as preferências deixam.
+  const soundOn = settings["sound.enabled"];
+  const volume = settings["sound.volume"];
+  useEffect(() => {
+    sound.configure({ enabled: loaded && soundOn, volume: volume / 100 });
+  }, [loaded, soundOn, volume]);
 
   const update = useCallback(async <K extends SettingKey>(key: K, value: Settings[K]) => {
     const previous = latest.current[key];
     setSettings((s) => ({ ...s, [key]: value }));
+    setSaved((s) => (s.has(key) ? s : new Set(s).add(key)));
     try {
       await api.setSetting(key, value);
     } catch (e) {
@@ -92,9 +132,10 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const isSaved = useCallback((key: SettingKey) => saved.has(key), [saved]);
   const value = useMemo(
-    () => ({ settings, loaded, loadError, update, effectiveTheme }),
-    [settings, loaded, loadError, update, effectiveTheme],
+    () => ({ settings, loaded, loadError, update, isSaved, effectiveTheme }),
+    [settings, loaded, loadError, update, isSaved, effectiveTheme],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

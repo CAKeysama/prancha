@@ -5,7 +5,8 @@
  * Todas as cores da interface vêm daqui. Contrastes verificados em docs/ARCHITECTURE.md.
  */
 :root,
-:root[data-theme="dark"] {
+:root[data-theme="dark"],
+[data-theme-preview="dark"] {
   color-scheme: dark;
   --p-bg: #0d1117;
   --p-surface: #161b22;
@@ -33,7 +34,33 @@
   --p-reader-bg: #05070a;
 }
 
-:root[data-theme="light"] {
+/*
+ * Fonte da interface, escolhida em Configurações › Aparência (ver docs/ARCHITECTURE.md, "Tipografia").
+ * Todas vêm com o app: nada é baixado. Títulos em japonês, coreano ou chinês caem nas fontes do Windows feitas para
+ * interface, na mesma ordem em qualquer tema.
+ */
+:root {
+  --p-font-cjk: "Yu Gothic UI", "Meiryo UI", "Malgun Gothic", "Microsoft JhengHei UI", "Microsoft YaHei UI", "Noto Sans CJK JP", sans-serif;
+  --p-font-sans: "Hanken Grotesk Variable", "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, var(--p-font-cjk);
+}
+[data-font-preview="hanken"] {
+  --p-font-sans: "Hanken Grotesk Variable", "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, var(--p-font-cjk);
+}
+:root[data-font="atkinson"],
+[data-font-preview="atkinson"] {
+  --p-font-sans: "Atkinson Hyperlegible Next Variable", "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, var(--p-font-cjk);
+}
+:root[data-font="plex"],
+[data-font-preview="plex"] {
+  --p-font-sans: "IBM Plex Sans Variable", "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, var(--p-font-cjk);
+}
+:root[data-font="system"],
+[data-font-preview="system"] {
+  --p-font-sans: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, var(--p-font-cjk);
+}
+
+:root[data-theme="light"],
+[data-theme-preview="light"] {
   color-scheme: light;
   --p-bg: #ffffff;
   --p-surface: #f6f8fa;
@@ -86,7 +113,7 @@
   --color-overlay: var(--p-overlay);
   --color-reader: var(--p-reader-bg);
   --shadow-overlay: var(--p-shadow);
-  --font-sans: "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-sans: var(--p-font-sans);
   --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
   /* Escala tipográfica pequena e consistente. */
   --text-xs: 0.75rem;
@@ -153,8 +180,28 @@
   ::selection {
     background: var(--color-accent-subtle);
   }
+  input,
+  textarea {
+    caret-color: var(--color-accent);
+  }
+  /* Títulos sem palavra solitária na última linha; parágrafos com quebra mais equilibrada. */
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+  p {
+    text-wrap: pretty;
+  }
   * {
     scrollbar-color: var(--color-border-control) transparent;
+  }
+  /* Amostras de tema e de fonte (configuração inicial e Aparência): a variável vale só dentro delas. */
+  [data-theme-preview] {
+    color: var(--p-text);
+  }
+  [data-font-preview] {
+    font-family: var(--p-font-sans);
   }
 }
 
@@ -273,5 +320,118 @@
   .p-pop,
   .p-ring {
     animation: none;
+  }
+}
+
+/* Troca de tema: a janela inteira esmaece de uma vez (View Transitions), em vez de cada cor mudar no seu tempo. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 180ms;
+  animation-timing-function: ease-out;
+}
+
+/* Controle deslizante (volume): trilho fino com a parte preenchida na cor de destaque. */
+.p-range {
+  appearance: none;
+  height: 20px;
+  background: transparent;
+  --p-fill: 50%;
+}
+.p-range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 9999px;
+  background: linear-gradient(to right, var(--color-accent-emphasis) var(--p-fill), var(--color-border) var(--p-fill));
+}
+.p-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border-radius: 9999px;
+  background: var(--color-on-emphasis);
+  border: 1px solid var(--color-border-control);
+  box-shadow: 0 1px 3px rgb(1 4 9 / 0.3);
+  transition: transform 120ms ease-out;
+}
+.p-range:active::-webkit-slider-thumb {
+  transform: scale(1.12);
+}
+.p-range:disabled {
+  opacity: 0.5;
+}
+.p-range:focus-visible {
+  outline: none;
+}
+.p-range:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* Configuração inicial: cada etapa entra deslizando um pouco no sentido em que a pessoa andou. */
+@keyframes p-step-forward {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes p-step-back {
+  from {
+    opacity: 0;
+    transform: translateX(-16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.p-step-forward {
+  animation: p-step-forward 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.p-step-back {
+  animation: p-step-back 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* O logotipo se monta quadro a quadro, uma vez, na abertura. */
+@keyframes p-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(10%) scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.p-panel-in {
+  animation: p-panel-in 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* Saída da configuração inicial: o painel se afasta e revela o app já com as escolhas aplicadas. */
+@keyframes p-onboarding-out {
+  to {
+    opacity: 0;
+    transform: scale(1.02);
+  }
+}
+.p-onboarding-out {
+  animation: p-onboarding-out 280ms cubic-bezier(0.7, 0, 0.84, 0) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .p-step-forward,
+  .p-step-back,
+  .p-panel-in {
+    animation: p-fade 160ms ease-out both;
+  }
+}
+@keyframes p-fade {
+  from {
+    opacity: 0;
   }
 }

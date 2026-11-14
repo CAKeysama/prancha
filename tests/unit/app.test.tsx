@@ -1,8 +1,9 @@
 // Testes de interface com o backend simulado por `mockIPC` (API oficial de testes do Tauri).
 // O backend real é coberto pelos testes Rust e pelos testes E2E no aplicativo compilado.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { emit } from "@tauri-apps/api/event";
 import { clearMocks, mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { App } from "../../src/app/App";
 import { Cover } from "../../src/components/Cover";
@@ -92,12 +93,14 @@ afterEach(() => {
 });
 
 describe("primeira execução", () => {
-  it("mostra o tutorial e permite pular", async () => {
+  const wizard = () => screen.getByRole("dialog", { name: /Boas-vindas|Aparência|Fonte da interface|Sons|Leitura|Tudo pronto/ });
+
+  it("mostra a configuração inicial e permite pular", async () => {
     const user = userEvent.setup();
     render(<App />);
-    expect(await screen.findByRole("dialog", { name: "Bem-vindo ao Prancha" })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Pular tutorial" }));
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Bem-vindo ao Prancha" })).not.toBeInTheDocument());
+    expect(await screen.findByRole("dialog", { name: "Boas-vindas ao Prancha" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Pular configuração" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Boas-vindas ao Prancha" })).not.toBeInTheDocument());
     expect((settings.onboarding as { status: string }).status).toBe("skipped");
     // Depois de pular, a tela inicial continua ensinando a adicionar quadrinhos.
     expect(await screen.findByText("Sua biblioteca está vazia")).toBeInTheDocument();
@@ -105,37 +108,92 @@ describe("primeira execução", () => {
     expect(screen.getByText(/CBZ, CBR, CB7, CBT, PDF/)).toBeInTheDocument();
   });
 
-  it("não reaparece quando já foi concluído", async () => {
+  it("não reaparece para quem concluiu o tutorial antigo", async () => {
     settings.onboarding = { status: "completed", step: 4, comicId: 1 };
     render(<App />);
     expect(await screen.findByText("Sua biblioteca está vazia")).toBeInTheDocument();
-    expect(screen.queryByRole("dialog", { name: /Bem-vindo/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: /Boas-vindas/ })).not.toBeInTheDocument();
   });
 
-  it("retoma na etapa salva e trata o cancelamento do seletor", async () => {
-    settings.onboarding = { status: "active", step: 2, comicId: null };
-    overrides.pick_import_paths = () => null;
+  it("percorre as etapas aplicando cada escolha na hora e salvando o progresso", async () => {
     const user = userEvent.setup();
     render(<App />);
-    const dialog = await screen.findByRole("dialog", { name: "Vamos adicionar sua primeira HQ" });
-    await user.click(within(dialog).getByRole("button", { name: "Selecionar arquivo" }));
-    expect(await within(dialog).findByText(/Nenhum arquivo foi selecionado/)).toBeInTheDocument();
-    expect(calls.some((c) => c.cmd === "start_import")).toBe(false);
-    // Continua possível sair do tutorial.
-    await user.click(within(dialog).getByRole("button", { name: "Fazer depois" }));
-    await waitFor(() => expect((settings.onboarding as { status: string }).status).toBe("skipped"));
+    await user.click(await screen.findByRole("button", { name: "Começar" }));
+
+    expect(wizard()).toHaveAccessibleName("Aparência");
+    await user.click(within(screen.getByRole("radiogroup", { name: "Tema" })).getByRole("radio", { name: /Claro/ }));
+    await waitFor(() => expect(document.documentElement.dataset.theme).toBe("light"));
+    expect(settings.onboarding).toMatchObject({ status: "active", step: 1 });
+    await user.click(screen.getByRole("button", { name: "Continuar" }));
+
+    expect(wizard()).toHaveAccessibleName("Fonte da interface");
+    await user.click(screen.getByRole("radio", { name: /Atkinson Hyperlegible/ }));
+    await waitFor(() => expect(document.documentElement.dataset.font).toBe("atkinson"));
+    expect(settings["appearance.font"]).toBe("atkinson");
+    expect(localStorage.getItem("prancha.font")).toBe("atkinson");
+    await user.click(screen.getByRole("button", { name: "Continuar" }));
+
+    // Quem nunca escolheu encontra os sons ligados, com o controle à vista.
+    expect(wizard()).toHaveAccessibleName("Sons");
+    await waitFor(() => expect(screen.getByRole("switch", { name: "Sons da interface" })).toHaveAttribute("aria-checked", "true"));
+    expect(settings["sound.enabled"]).toBe(true);
+    await user.click(screen.getByRole("button", { name: "Continuar" }));
+
+    expect(wizard()).toHaveAccessibleName("Leitura");
+    expect(screen.getByRole("radiogroup", { name: "Direção de leitura" })).toBeInTheDocument();
+    await user.click(screen.getByRole("radio", { name: /Webtoon/ }));
+    await waitFor(() => expect(settings["reader.mode"]).toBe("webtoon"));
+    // Na rolagem contínua, a direção não muda nada e sai da tela.
+    expect(screen.queryByRole("radiogroup", { name: "Direção de leitura" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Continuar" }));
+
+    expect(wizard()).toHaveAccessibleName("Tudo pronto");
+    expect(settings.onboarding).toMatchObject({ status: "active", step: 5 });
+    await user.click(screen.getByRole("button", { name: "Entrar no Prancha" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Tudo pronto" })).not.toBeInTheDocument());
+    expect(settings.onboarding).toEqual({ status: "completed", step: 5, readerTip: true, flow: 2 });
   });
 
-  it("reabre o tutorial pelas configurações", async () => {
-    settings.onboarding = { status: "skipped", step: 1, comicId: null };
+  it("retoma na etapa salva, volta e não muda os sons de quem já escolheu", async () => {
+    settings.onboarding = { status: "active", step: 4, readerTip: false, flow: 2 };
+    settings["sound.enabled"] = false;
+    const user = userEvent.setup();
+    render(<App />);
+    expect(await screen.findByRole("dialog", { name: "Leitura" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Voltar" }));
+    expect(await screen.findByRole("dialog", { name: "Sons" })).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Sons da interface" })).toHaveAttribute("aria-checked", "false");
+    expect(settings["sound.enabled"]).toBe(false);
+    expect(settings.onboarding).toMatchObject({ step: 3 });
+  });
+
+  it("adiciona HQs pela última etapa e mostra o resultado", async () => {
+    settings.onboarding = { status: "active", step: 5, readerTip: false, flow: 2 };
+    overrides.pick_import_paths = () => ["C:/HQs/um.cbz", "C:/HQs/dois.cbz"];
+    overrides.start_import = () => 41;
+    const user = userEvent.setup();
+    render(<App />);
+    const dialog = await screen.findByRole("dialog", { name: "Tudo pronto" });
+    await user.click(within(dialog).getByRole("button", { name: "Escolher arquivos" }));
+    await waitFor(() => expect(calls.some((c) => c.cmd === "start_import")).toBe(true));
+    const counts = { total: 2, processed: 2, added: 1, skipped: 0, failed: 1 };
+    await act(() => emit("import:progress", { jobId: 41, phase: "processing", counts, current: null, item: { path: "C:/HQs/um.cbz", name: "um.cbz", status: "added", message: null, comicId: 3 } }));
+    await act(() => emit("import:progress", { jobId: 41, phase: "processing", counts, current: null, item: { path: "C:/HQs/dois.cbz", name: "dois.cbz", status: "failed", message: "arquivo corrompido", comicId: null } }));
+    await act(() => emit("import:progress", { jobId: 41, phase: "done", counts, current: null, item: null }));
+    expect(await within(dialog).findByText("1 HQ adicionada à biblioteca. 1 não pôde ser adicionado.")).toBeInTheDocument();
+  });
+
+  it("reabre a configuração inicial pelas configurações sem desfazer as escolhas", async () => {
+    settings.onboarding = { status: "skipped", step: 0, readerTip: false, flow: 2 };
+    settings["appearance.theme"] = "light";
     const user = userEvent.setup();
     render(<App />);
     await user.click(await screen.findByRole("button", { name: "Configurações" }));
-    // As opções ficam por categoria; o tutorial está em Geral.
     await user.click(await screen.findByRole("button", { name: "Geral" }));
-    await user.click(await screen.findByRole("button", { name: "Abrir tutorial" }));
-    expect(await screen.findByRole("dialog", { name: "Bem-vindo ao Prancha" })).toBeInTheDocument();
-    expect(settings.onboarding).toEqual({ status: "active", step: 1, comicId: null });
+    await user.click(await screen.findByRole("button", { name: "Refazer" }));
+    expect(await screen.findByRole("dialog", { name: "Boas-vindas ao Prancha" })).toBeInTheDocument();
+    expect(settings.onboarding).toEqual({ status: "active", step: 0, readerTip: false, flow: 2 });
+    expect(settings["appearance.theme"]).toBe("light");
   });
 
   it("escreve a sugestão no app, valida e só avisa sucesso quando o navegador abre", async () => {
@@ -204,6 +262,38 @@ describe("configurações", () => {
     await waitFor(() => expect(document.documentElement.dataset.theme).toBe("dark"));
   });
 
+  it("troca a fonte da interface na hora, sem mexer nas páginas", async () => {
+    settings.onboarding = { status: "completed", step: 4, comicId: null };
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Configurações" }));
+    const group = await screen.findByRole("radiogroup", { name: "Fonte da interface" });
+    expect(within(group).getByRole("radio", { name: /Hanken Grotesk/ })).toHaveAttribute("aria-checked", "true");
+    await user.click(within(group).getByRole("radio", { name: /IBM Plex Sans/ }));
+    await waitFor(() => expect(document.documentElement.dataset.font).toBe("plex"));
+    expect(settings["appearance.font"]).toBe("plex");
+    expect(localStorage.getItem("prancha.font")).toBe("plex");
+  });
+
+  it("sons: começam desligados para quem já usava o app e voltam ao padrão", async () => {
+    settings.onboarding = { status: "completed", step: 4, comicId: null };
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Configurações" }));
+    await user.click(within(await screen.findByRole("navigation", { name: "Categorias das configurações" })).getByRole("button", { name: "Sons" }));
+    const toggle = screen.getByRole("switch", { name: "Sons da interface" });
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+    expect(screen.getByRole("slider", { name: "Volume" })).toBeDisabled();
+    // Ouvir um exemplo funciona mesmo desligado e não muda a preferência.
+    await user.click(screen.getByRole("button", { name: "Notificação" }));
+    expect(settings["sound.enabled"]).toBeUndefined();
+    await user.click(screen.getByRole("button", { name: "Restaurar padrão" }));
+    await waitFor(() => expect(settings["sound.enabled"]).toBe(true));
+    expect(settings["sound.volume"]).toBe(60);
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+    expect(screen.queryByRole("button", { name: "Restaurar padrão" })).not.toBeInTheDocument();
+  });
+
   it("mostra só as opções da categoria escolhida", async () => {
     settings.onboarding = { status: "completed", step: 4, comicId: null };
     const user = userEvent.setup();
@@ -211,11 +301,11 @@ describe("configurações", () => {
     await user.click(await screen.findByRole("button", { name: "Configurações" }));
     const nav = await screen.findByRole("navigation", { name: "Categorias das configurações" });
     expect(await screen.findByRole("radiogroup", { name: "Tema" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Abrir tutorial" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Refazer" })).not.toBeInTheDocument();
     expect(within(nav).getByRole("button", { name: "Aparência" })).toHaveAttribute("aria-current", "true");
 
     await user.click(within(nav).getByRole("button", { name: "Geral" }));
-    expect(screen.getByRole("button", { name: "Abrir tutorial" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Refazer" })).toBeInTheDocument();
     expect(screen.queryByRole("radiogroup", { name: "Tema" })).not.toBeInTheDocument();
     expect(within(nav).getByRole("button", { name: "Geral" })).toHaveAttribute("aria-current", "true");
     expect(within(nav).getByRole("button", { name: "Aparência" })).not.toHaveAttribute("aria-current");
@@ -271,7 +361,7 @@ describe("configurações", () => {
     await user.click(await screen.findByRole("button", { name: "Configurações" }));
     const search = await screen.findByRole("searchbox", { name: "Pesquisar nas configurações" });
     await user.type(search, "xyzzy");
-    expect(screen.getByText("Nada encontrado para “xyzzy”")).toBeInTheDocument();
+    expect(screen.getByText("Nenhum resultado para “xyzzy”")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("Nenhuma opção encontrada");
     await user.click(screen.getByRole("button", { name: "Limpar pesquisa" }));
     expect(search).toHaveValue("");
@@ -316,6 +406,73 @@ describe("biblioteca", () => {
     await user.click(within(dialog).getByRole("checkbox"));
     await user.click(within(dialog).getByRole("button", { name: "Remover da biblioteca" }));
     await waitFor(() => expect(calls.find((c) => c.cmd === "remove_comic")?.args).toEqual({ id: 7, deleteOriginal: false }));
+  });
+
+  it("pesquisa sem resultado diz isso e oferece limpar", async () => {
+    settings.onboarding = { status: "completed", step: 4, comicId: null };
+    comics = [comic];
+    overrides.list_comics = (args) => ((args.query as { text?: string }).text ? [] : comics);
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Minha biblioteca" }));
+    expect(await screen.findByText("1 HQ")).toBeInTheDocument();
+    await user.type(screen.getByLabelText(/Pesquisar por título/), "zzz");
+    const empty = (await screen.findByRole("heading", { name: "Nenhum resultado encontrado" })).parentElement!;
+    expect(screen.getByText("0 resultados")).toBeInTheDocument();
+    await user.click(within(empty).getByRole("button", { name: "Limpar pesquisa" }));
+    expect(screen.getByLabelText(/Pesquisar por título/)).toHaveValue("");
+    expect(await screen.findByRole("button", { name: "Ver detalhes de Teste em Quadrinhos" })).toBeInTheDocument();
+  });
+
+  it("biblioteca vazia mostra as ações de adicionar uma vez só", async () => {
+    settings.onboarding = { status: "completed", step: 4, comicId: null };
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Minha biblioteca" }));
+    await screen.findByRole("heading", { name: "Minha biblioteca", level: 1 });
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "Adicionar pasta" })).toHaveLength(1));
+    expect(screen.getAllByRole("button", { name: "Adicionar quadrinhos" })).toHaveLength(1);
+  });
+
+  it("detalhes: favorito com botão de estado, menu sem ação repetida e reinício com foco em Cancelar", async () => {
+    settings.onboarding = { status: "completed", step: 4, comicId: null };
+    comics = [comic];
+    overrides.get_comic = () => ({ ...comic, path: "C:/HQs/teste.cbz", fileSize: 2048, year: null, artist: null, publisher: null, summaryText: null, coverPage: null, tags: [], collections: [], fieldSources: {} });
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Minha biblioteca" }));
+    await user.click(await screen.findByRole("button", { name: "Ver detalhes de Teste em Quadrinhos" }));
+    expect(await screen.findByRole("heading", { name: "Teste em Quadrinhos", level: 1 })).toBeInTheDocument();
+    const favorite = screen.getByRole("button", { name: "Favoritar" });
+    expect(favorite).toHaveAttribute("aria-pressed", "false");
+    await user.click(favorite);
+    await waitFor(() => expect(calls.find((c) => c.cmd === "set_favorite")?.args).toEqual({ id: 7, favorite: true }));
+    // "Mostrar na pasta" já está ao lado da localização: não se repete no menu.
+    expect(screen.getByRole("button", { name: "Mostrar na pasta" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Mais ações" }));
+    const menu = await screen.findByRole("menu");
+    expect(within(menu).queryByRole("menuitem", { name: "Mostrar na pasta" })).not.toBeInTheDocument();
+    await user.click(within(menu).getByRole("menuitem", { name: "Reiniciar progresso" }));
+    const dialog = await screen.findByRole("dialog", { name: "Reiniciar o progresso?" });
+    await waitFor(() => expect(within(dialog).getByRole("button", { name: "Cancelar" })).toHaveFocus());
+  });
+
+  it("coleção vazia: uma ação de adicionar, e renomear e excluir no menu", async () => {
+    settings.onboarding = { status: "completed", step: 4, comicId: null };
+    overrides.list_collections = () => [{ id: 3, name: "Lendo agora", comicCount: 0, preview: [], createdAt: 1, updatedAt: 1 }];
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Coleções" }));
+    await user.click(await screen.findByRole("button", { name: "Abrir coleção Lendo agora" }));
+    expect(await screen.findByRole("heading", { name: "Esta coleção está vazia" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Adicionar à coleção" })).toHaveLength(1);
+    await user.click(screen.getByRole("button", { name: "Mais ações" }));
+    const menu = await screen.findByRole("menu");
+    expect(within(menu).getByRole("menuitem", { name: "Renomear…" })).toBeInTheDocument();
+    await user.click(within(menu).getByRole("menuitem", { name: "Excluir coleção…" }));
+    const dialog = await screen.findByRole("dialog", { name: "Excluir a coleção “Lendo agora”?" });
+    expect(within(dialog).getByText(/Nada sai da biblioteca/)).toBeInTheDocument();
+    await waitFor(() => expect(within(dialog).getByRole("button", { name: "Cancelar" })).toHaveFocus());
   });
 
   it("pesquisa envia o texto ao banco", async () => {

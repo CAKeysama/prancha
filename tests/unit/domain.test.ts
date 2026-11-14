@@ -184,7 +184,25 @@ describe("configurações", () => {
     expect(s["appearance.theme"]).toBe("dark");
     expect(s["reader.mode"]).toBe("double");
     expect(s["reader.coverAlone"]).toBe(true);
-    expect(s.onboarding).toEqual({ status: "completed", step: 1, comicId: null });
+    // Estado do tutorial antigo (sem `flow`): quem concluiu continua concluído, sem a dica do leitor.
+    expect(s.onboarding).toEqual({ status: "completed", step: 0, readerTip: false, flow: 2 });
+  });
+  it("a configuração inicial não volta para quem já passou por ela", () => {
+    expect(sanitizeSettings({ onboarding: { status: "skipped", step: 2, comicId: 4 } }).onboarding).toEqual({ status: "skipped", step: 0, readerTip: false, flow: 2 });
+    // Quem estava no meio do tutorial antigo recomeça a configuração nova do início.
+    expect(sanitizeSettings({ onboarding: { status: "active", step: 3, comicId: 4 } }).onboarding).toEqual({ status: "active", step: 0, readerTip: false, flow: 2 });
+    expect(sanitizeSettings({ onboarding: { status: "active", step: 4, readerTip: false, flow: 2 } }).onboarding.step).toBe(4);
+    expect(sanitizeSettings({ onboarding: { status: "active", step: 99, readerTip: false, flow: 2 } }).onboarding.step).toBe(0);
+    expect(sanitizeSettings({ onboarding: { status: "completed", step: 5, readerTip: true, flow: 2 } }).onboarding.readerTip).toBe(true);
+  });
+  it("sons começam desligados e o volume fica entre 0 e 100", () => {
+    expect(DEFAULT_SETTINGS["sound.enabled"]).toBe(false);
+    expect(sanitizeSettings({ "sound.volume": 140 })["sound.volume"]).toBe(100);
+    expect(sanitizeSettings({ "sound.volume": -3 })["sound.volume"]).toBe(0);
+    expect(sanitizeSettings({ "sound.volume": 33.6 })["sound.volume"]).toBe(34);
+    expect(sanitizeSettings({ "sound.volume": "alto" })["sound.volume"]).toBe(60);
+    expect(sanitizeSettings({ "appearance.font": "comic-sans" })["appearance.font"]).toBe("hanken");
+    expect(sanitizeSettings({ "appearance.font": "atkinson" })["appearance.font"]).toBe("atkinson");
   });
   it("padrões iniciais", () => {
     expect(DEFAULT_SETTINGS["appearance.theme"]).toBe("dark");

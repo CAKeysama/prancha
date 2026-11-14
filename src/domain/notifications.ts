@@ -142,6 +142,11 @@ export const CATEGORY_LABELS: Record<NotificationCategory, string> = {
   system: "Sistema",
 };
 
+/** A linha do estado vazio: só o que pode chegar com as fontes ligadas ou desligadas. */
+export function emptyNotificationsHint(online: boolean): string {
+  return online ? "Capítulos novos, downloads e atualizações aparecem aqui." : "Atualizações do Prancha e avisos da biblioteca aparecem aqui.";
+}
+
 /** Categorias que dependem das fontes de leitura: sem o plugin, não há eventos delas. */
 export const ONLINE_CATEGORIES: ReadonlySet<NotificationCategory> = new Set(["chapters", "downloads", "system"]);
 

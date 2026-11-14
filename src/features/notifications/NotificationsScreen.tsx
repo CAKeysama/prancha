@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bell, CheckCheck, Mail, Trash2, X } from "lucide-react";
+import { Bell, CheckCheck, Mail, Settings, Trash2, X } from "lucide-react";
 import { useNav } from "../../app/navigation";
 import { useSettings } from "../../app/settings-context";
 import { useScrollMemory } from "../../app/scroll-memory";
-import { Button } from "../../components/Button";
+import { Button, IconButton } from "../../components/Button";
 import { ConfirmDialog } from "../../components/Dialog";
 import { EmptyState, ErrorState, Spinner } from "../../components/Feedback";
 import { Checkbox, Segmented } from "../../components/Form";
@@ -12,6 +12,7 @@ import { cn } from "../../components/cn";
 import {
   CATEGORY_LABELS,
   PERIOD_LABELS,
+  emptyNotificationsHint,
   groupByPeriod,
   mergeNewest,
   unreadLabel,
@@ -33,11 +34,11 @@ const STATE_OPTIONS: Array<{ value: NotificationStateFilter; label: string }> = 
   { value: "read", label: "Lidas" },
 ];
 
-function emptyText(state: NotificationStateFilter, category: NotificationCategory | null): { title: string; text: string } {
+function emptyText(state: NotificationStateFilter, category: NotificationCategory | null): { title: string; text?: string } {
   const where = category ? ` em ${CATEGORY_LABELS[category]}` : "";
   if (state === "unread") return { title: `Nenhuma notificação não lida${where}`, text: "Você está em dia." };
-  if (state === "read") return { title: `Nenhuma notificação lida${where}`, text: "As notificações que você abrir ou marcar como lidas aparecem aqui." };
-  return { title: `Nenhuma notificação${where}`, text: "Quando houver algo dessa categoria, aparece aqui." };
+  if (state === "read") return { title: `Nenhuma notificação lida${where}` };
+  return { title: `Nenhuma notificação${where}` };
 }
 
 /** O máximo que o backend devolve numa página. */
@@ -66,6 +67,7 @@ export function NotificationsScreen() {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [confirmClear, setConfirmClear] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  const [attempt, setAttempt] = useState(0);
   const filterKey = `${state}|${category ?? ""}`;
   const loadedKey = useRef<string | null>(null);
   const categories = visibleCategories(settings["plugins.online"]);
@@ -108,7 +110,7 @@ export function NotificationsScreen() {
     return () => {
       alive = false;
     };
-  }, [query, filterKey, createdVersion]);
+  }, [query, filterKey, createdVersion, attempt]);
 
   // Mudanças feitas pelo popup também valem aqui.
   useEffect(
@@ -127,6 +129,7 @@ export function NotificationsScreen() {
       const page = await query(cursor);
       setItems((current) => [...(current ?? []), ...page.items.filter((n) => !(current ?? []).some((c) => c.id === n.id))]);
       setCursor(page.nextCursor);
+      setError(null);
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -160,6 +163,8 @@ export function NotificationsScreen() {
               Limpar lidas
             </Button>
           )}
+          {/* O mesmo atalho do popup do sino. */}
+          <IconButton variant="secondary" icon={Settings} label="Preferências de notificação" onClick={() => nav.navigate({ name: "settings", section: "notificacoes" })} />
         </>
       }
     >
@@ -179,7 +184,15 @@ export function NotificationsScreen() {
   if (error && !items) {
     body = (
       <div className="p-6">
-        <ErrorState title="Não foi possível carregar as notificações" message={error} />
+        <ErrorState
+          title="Não foi possível carregar as notificações"
+          message={error}
+          action={
+            <Button size="sm" onClick={() => setAttempt((n) => n + 1)}>
+              Tentar novamente
+            </Button>
+          }
+        />
       </div>
     );
   } else if (!items) {
@@ -192,7 +205,7 @@ export function NotificationsScreen() {
     const empty = emptyText(state, category);
     body = unfiltered ? (
       <EmptyState icon={Bell} title="Nenhuma notificação">
-        Avisos sobre capítulos novos das obras que você acompanha, downloads e atualizações do Prancha aparecem aqui.
+        {emptyNotificationsHint(settings["plugins.online"])}
       </EmptyState>
     ) : (
       <EmptyState
@@ -229,7 +242,8 @@ export function NotificationsScreen() {
               <Button size="sm" icon={Mail} onClick={() => void setRead(ids, false)}>
                 Marcar como não lidas
               </Button>
-              <Button size="sm" variant="danger" icon={Trash2} onClick={() => void remove(ids).then(() => setSelected(new Set()))}>
+              {/* A seleção perde as removidas pelo aviso de mudança; se falhar, continua como estava. */}
+              <Button size="sm" variant="danger" icon={Trash2} onClick={() => void remove(ids)}>
                 Remover
               </Button>
               <Button size="sm" variant="ghost" icon={X} onClick={() => setSelected(new Set())}>
@@ -287,14 +301,8 @@ export function NotificationsScreen() {
           void clearRead();
         }}
       >
-        As notificações já lidas saem da central. As não lidas continuam, e nada muda nas obras, nos capítulos ou no progresso.
+        As notificações lidas saem da central. As não lidas continuam.
       </ConfirmDialog>
-      {/* Atalho para as preferências, como nas outras telas com opções próprias. */}
-      <p className="pb-6 text-center text-sm text-muted">
-        <button type="button" className="font-medium text-accent-fg hover:underline" onClick={() => nav.navigate({ name: "settings", section: "notificacoes" })}>
-          Escolher o que aparece aqui
-        </button>
-      </p>
     </div>
   );
 }
