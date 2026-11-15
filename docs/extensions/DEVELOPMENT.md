@@ -100,14 +100,14 @@ Se a variável `CARGO_TARGET_DIR` estiver definida, os arquivos ficam nessa past
 
 A forma mais fiel é rodar a extensão no Source Engine, como os testes do Prancha fazem:
 
-1. Em `src-tauri/tests/extensions.rs`, veja como `tests/common/wasm.rs` compila um pacote e como `tests/common/http.rs` sobe um servidor local que imita o site.
+1. Em `crates/prancha-core/tests/extensions.rs`, veja como `tests/common/wasm.rs` compila um pacote e como `tests/common/http.rs` sobe um servidor local que imita o site.
 2. Use o mesmo caminho na sua extensão, com respostas gravadas do site. Assim os testes não dependem da internet.
 
 ```bash
-cargo test --manifest-path src-tauri/Cargo.toml --test extensions
+cargo test -p prancha-core --test extensions
 ```
 
-Para ver no aplicativo, publique em uma pasta (próximo passo) e sirva em HTTPS. Um build de depuração do Prancha, iniciado com `PRANCHA_E2E_ALLOW_LOOPBACK=1`, também aceita um servidor em `http://127.0.0.1`. Nesse caso, publique com `baseUrl` e `allowedHosts` apontando para esse endereço. `tests/e2e/extensions.spec.ts` faz exatamente isso.
+Para ver no aplicativo, publique em uma pasta (próximo passo) e sirva em HTTPS. Um build de depuração do Prancha, iniciado com `PRANCHA_E2E_ALLOW_LOOPBACK=1`, também aceita um servidor em `http://127.0.0.1`. Nesse caso, publique com `baseUrl` e `allowedHosts` apontando para esse endereço. `apps/desktop/tests/e2e/extensions.spec.ts` faz exatamente isso.
 
 ## 5. Publicar
 

@@ -87,7 +87,7 @@ jobs:
       # Guarda só as dependências compiladas em release, separadas das dos testes. O código do Prancha sempre é compilado do zero.
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri -> target
+          workspaces: . -> target
           shared-key: release
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
@@ -120,7 +120,7 @@ jobs:
         env:
           MAL_CLIENT_ID: ${{ vars.MAL_CLIENT_ID }}
         run: |
-          if ! grep -qaF -- "$MAL_CLIENT_ID" src-tauri/target/release/prancha.exe; then
+          if ! grep -qaF -- "$MAL_CLIENT_ID" target/release/prancha.exe; then
             echo "::error::O executável foi compilado sem o Client ID do MyAnimeList."
             exit 1
           fi
@@ -131,7 +131,7 @@ jobs:
         run: |
           version="$(node -p "require('./package.json').version")"
           mkdir installers
-          for file in "src-tauri/target/release/bundle/nsis/Prancha_${version}_x64-setup.exe" "src-tauri/target/release/bundle/msi/Prancha_${version}_x64_pt-BR.msi"; do
+          for file in "target/release/bundle/nsis/Prancha_${version}_x64-setup.exe" "target/release/bundle/msi/Prancha_${version}_x64_pt-BR.msi"; do
             cp "$file" "$file.sig" installers/
           done
           node scripts/updater-manifest.mjs "$version" installers

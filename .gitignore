@@ -1,8 +1,8 @@
 node_modules/
 dist/
-src-tauri/target/
+/target/
 extensions/target/
-src-tauri/gen/schemas/
+apps/desktop/src-tauri/gen/schemas/
 test-results/
 playwright-report/
 tests/.tmp/
@@ -10,7 +10,7 @@ tests/real/
 *.log
 .DS_Store
 .vscode/
-public/pdfjs/
+apps/desktop/public/pdfjs/
 artifacts/installer/
 site/downloads.html
 site/releases.json

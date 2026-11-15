@@ -37,8 +37,8 @@ Legenda: ✅ concluída · 🟡 parcial · ⛔ bloqueada · ⬜ pendente
 
 ## 2. Arquitetura (resumo — detalhes em `ARCHITECTURE.md`)
 
-- **Rust (`src-tauri/src`)**: `db` (conexão, migrações versionadas por `PRAGMA user_version`), `library` (repositório de HQs, coleções, tags, progresso, configurações), `formats` (um adaptador por formato + ordenação natural + ComicInfo.xml), `covers` (miniaturas e cache), `import` (fila em thread dedicada com eventos de progresso), `pages` (servir páginas; cache de extração para RAR/7z/TAR), `protocol` (esquema `prancha://` que só serve itens do catálogo por id), `commands` (API Tauri).
-- **Frontend (`src`)**: `app` (layout, navegação, provedores), `features/*` (library, reader, onboarding, settings), `components` (UI compartilhada), `services` (chamadas `invoke`/eventos/URLs), `domain` (tipos e regras puras testáveis).
+- **Rust (`crates/prancha-core/src`, com os comandos em `crates/prancha-app/src`)**: `db` (conexão, migrações versionadas por `PRAGMA user_version`), `library` (repositório de HQs, coleções, tags, progresso, configurações), `formats` (um adaptador por formato + ordenação natural + ComicInfo.xml), `covers` (miniaturas e cache), `import` (fila em thread dedicada com eventos de progresso), `pages` (servir páginas; cache de extração para RAR/7z/TAR), `protocol` (esquema `prancha://` que só serve itens do catálogo por id), `commands` (API Tauri).
+- **Frontend (`apps/desktop/src`, com `domain` e `services` em `packages/shared/src`)**: `app` (layout, navegação, provedores), `features/*` (library, reader, onboarding, settings), `components` (UI compartilhada), `services` (chamadas `invoke`/eventos/URLs), `domain` (tipos e regras puras testáveis).
 
 ## 3. Etapas
 

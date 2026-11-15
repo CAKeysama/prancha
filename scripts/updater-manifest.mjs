@@ -48,7 +48,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const [version, dir] = process.argv.slice(2);
   const entry = readChangelog().find((e) => e.version === version);
   if (!entry) throw new Error(`A versão ${version} não está no CHANGELOG.md.`);
-  const config = JSON.parse(readFileSync(join(ROOT, "src-tauri", "tauri.conf.json"), "utf8"));
+  const config = JSON.parse(readFileSync(join(ROOT, "apps", "desktop", "src-tauri", "tauri.conf.json"), "utf8"));
   const manifest = buildManifest({
     version,
     notes: releaseNotes(entry),

@@ -1,6 +1,6 @@
 # Integração com o MyAnimeList
 
-Com a conta conectada, o Prancha associa cada obra das fontes de leitura à obra correspondente no [MyAnimeList](https://myanimelist.net) (MAL) e atualiza os capítulos lidos na lista da pessoa quando ela termina um capítulo. Sem conta, nada muda: o MAL não é consultado e o app funciona como antes. O código fica em `src-tauri/src/mal/` e a interface em `src/features/mal/`.
+Com a conta conectada, o Prancha associa cada obra das fontes de leitura à obra correspondente no [MyAnimeList](https://myanimelist.net) (MAL) e atualiza os capítulos lidos na lista da pessoa quando ela termina um capítulo. Sem conta, nada muda: o MAL não é consultado e o app funciona como antes. O código fica em `crates/prancha-core/src/mal/` e a interface em `apps/desktop/src/features/mal/`.
 
 ## Configuração feita uma vez
 
@@ -13,7 +13,7 @@ O MAL só aceita aplicativos cadastrados. O do Prancha já está cadastrado em <
 | Homepage URL | `https://github.com/CAKeysama/prancha` |
 | Commercial / Non-Commercial | Non-Commercial |
 
-O endereço de retorno é fixo no código (`REDIRECT_PORT` e `REDIRECT_PATH` em `src-tauri/src/mal/oauth.rs`, com um teste que confere o valor): mudar um exige mudar o outro. O **Client ID** do cadastro fica na variável do repositório (não segredo, porque ele aparece no endereço de autorização):
+O endereço de retorno é fixo no código (`REDIRECT_PORT` e `REDIRECT_PATH` em `crates/prancha-core/src/mal/oauth.rs`, com um teste que confere o valor): mudar um exige mudar o outro. O **Client ID** do cadastro fica na variável do repositório (não segredo, porque ele aparece no endereço de autorização):
 
 ```bash
 gh variable set MAL_CLIENT_ID --repo CAKeysama/prancha
@@ -23,7 +23,7 @@ O Client ID é público (aparece no endereço de autorização), não é segredo
 
 Como ele chega ao app:
 
-1. No job **Gerar os instaladores** do `release.yml`, `vars.MAL_CLIENT_ID` vira a variável de ambiente `PRANCHA_MAL_CLIENT_ID` do `npm run tauri build`, e o Rust a embute no executável com `option_env!` (`client_id_from_env` em `src-tauri/src/mal/mod.rs`). Ela não existe em arquivo nenhum do repositório.
+1. No job **Gerar os instaladores** do `release.yml`, `vars.MAL_CLIENT_ID` vira a variável de ambiente `PRANCHA_MAL_CLIENT_ID` do `npm run tauri build`, e o Rust a embute no executável com `option_env!` (`client_id_from_env` em `crates/prancha-core/src/mal/mod.rs`). Ela não existe em arquivo nenhum do repositório.
 2. Antes de compilar, o mesmo job confere que a variável existe e tem formato de Client ID; depois, que o valor está dentro do `prancha.exe`. Por ser uma variável, e não um segredo, o GitHub mostra o valor no registro dessas etapas: ele é público de qualquer forma. Sem ela, nenhuma versão sai.
 3. O job **Client ID do MyAnimeList** do `ci.yml` pesquisa na API real (`GET /v2/manga?q=berserk&limit=1` com `X-MAL-CLIENT-ID`) a cada PR e push na main: uma recusa (401/403) mostra que a variável não corresponde ao cadastro. Ele fica fora da proteção da main, porque depende de um serviço de fora.
 

@@ -59,8 +59,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
-            src-tauri -> target
-            extensions -> ../src-tauri/target/extensions-wasm
+            . -> target
+            extensions -> ../target/extensions-wasm
           # Muda junto com o opt-level das dependências abaixo, para não reaproveitar dependências compiladas de outro jeito.
           key: deps-opt2
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -71,11 +71,42 @@ jobs:
       - run: npm run build
 
       # Os testes de detecção (--test guided) e o E2E usam páginas reais, que não vão para o git: rodam localmente, antes de cada versão.
+      # --workspace testa o núcleo (crates/prancha-core) e os comandos (crates/prancha-app) e compila o aplicativo de desktop.
       # As dependências saem otimizadas (o código do Prancha não): em modo debug, o Cranelift do wasmtime compila cada extensão
       # dos testes muito devagar. Só muda a velocidade, não o que é testado; elas ficam no cache e só recompilam quando mudam.
       - name: Testes do backend
         shell: bash
-        run: cargo test --manifest-path src-tauri/Cargo.toml --lib --test backend --test extensions --config 'profile.dev.package."*".opt-level=2'
+        run: cargo test --workspace --lib --test backend --test extensions --config 'profile.dev.package."*".opt-level=2'
+
+  # O Android usa o mesmo núcleo e os mesmos comandos: confere que eles compilam para aarch64-linux-android com o NDK
+  # que já vem no Ubuntu do GitHub, inclusive o código em C e C++ (UnRAR, SQLite, ring). O APK ainda é gerado à mão.
+  android:
+    name: Núcleo para Android
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CARGO_PROFILE_DEV_DEBUG: 0
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Prepara o Rust
+        run: rustup toolchain install stable --profile minimal --target aarch64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+          key: android
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # API 24 é o mínimo do Tauri para Android; os compiladores do NDK já vêm com o nível da API no nome.
+      - name: Compila o núcleo e os comandos para Android
+        run: |
+          bin="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          export CC_aarch64_linux_android="$bin/aarch64-linux-android24-clang"
+          export CXX_aarch64_linux_android="$bin/aarch64-linux-android24-clang++"
+          export AR_aarch64_linux_android="$bin/llvm-ar"
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$CC_aarch64_linux_android"
+          cargo check -p prancha-app --target aarch64-linux-android
 
   # Confere o Client ID do MyAnimeList (variável do repositório MAL_CLIENT_ID) contra a API real: uma pesquisa pública só com
   # ele, sem conta. Fica fora da proteção da main porque depende de um serviço de fora; o build da versão confere de novo.
@@ -121,7 +152,7 @@ jobs:
   # Um nome só para a proteção da main: passa apenas quando todas as verificações passam.
   checks:
     name: Tipos, lint, testes e backend
-    needs: [frontend, backend]
+    needs: [frontend, backend, android]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

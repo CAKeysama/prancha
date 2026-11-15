@@ -51,16 +51,26 @@ export function newestReleased(released) {
   return released.filter((v) => /^\d+\.\d+\.\d+$/.test(v)).reduce((best, v) => (best === null || compareVersions(v, best) > 0 ? v : best), null);
 }
 
-/** As cinco cópias da versão, lidas de um conteúdo por arquivo. */
+/** Os pacotes Rust do repositório: todos herdam a versão do `[workspace.package]` do Cargo.toml. */
+export const CRATES = ["prancha", "prancha-app", "prancha-core"];
+const CRATES_PATTERN = `(?:${CRATES.join("|")})`;
+
+/** A versão de cada pacote do repositório no Cargo.lock. */
+function lockedCrates(lock) {
+  const text = lock.replace(/\r\n/g, "\n");
+  return Object.fromEntries(CRATES.map((name) => [`Cargo.lock (${name})`, new RegExp(`\\[\\[package\\]\\]\\nname = "${name}"\\nversion = "(.+)"`).exec(text)?.[1]]));
+}
+
+/** As cópias da versão, lidas de um conteúdo por arquivo. */
 export function versionsIn(files) {
   const lock = JSON.parse(files["package-lock.json"]);
   return {
     "package.json": JSON.parse(files["package.json"]).version,
     "package-lock.json": lock.version,
     "package-lock.json (packages)": lock.packages?.[""]?.version,
-    "src-tauri/tauri.conf.json": JSON.parse(files["src-tauri/tauri.conf.json"]).version,
-    "src-tauri/Cargo.toml": /^version = "(.+)"/m.exec(files["src-tauri/Cargo.toml"])?.[1],
-    "src-tauri/Cargo.lock": /\[\[package\]\]\nname = "prancha"\nversion = "(.+)"/.exec(files["src-tauri/Cargo.lock"].replace(/\r\n/g, "\n"))?.[1],
+    "apps/desktop/src-tauri/tauri.conf.json": JSON.parse(files["apps/desktop/src-tauri/tauri.conf.json"]).version,
+    "Cargo.toml": /^version = "(.+)"/m.exec(files["Cargo.toml"])?.[1],
+    ...lockedCrates(files["Cargo.lock"]),
   };
 }
 
@@ -75,9 +85,9 @@ export function withVersion(files, raw, to) {
   return {
     "package.json": swap(files["package.json"], new RegExp(`"version": "${from}"`)),
     "package-lock.json": swap(swap(files["package-lock.json"], new RegExp(`"version": "${from}"`)), new RegExp(`("packages": \\{\\s*"": \\{[^}]*?)"version": "${from}"`)),
-    "src-tauri/tauri.conf.json": swap(files["src-tauri/tauri.conf.json"], new RegExp(`"version": "${from}"`)),
-    "src-tauri/Cargo.toml": swap(files["src-tauri/Cargo.toml"], new RegExp(`^version = "${from}"`, "m")),
-    "src-tauri/Cargo.lock": swap(files["src-tauri/Cargo.lock"], new RegExp(`name = "prancha"\\r?\\nversion = "${from}"`)),
+    "apps/desktop/src-tauri/tauri.conf.json": swap(files["apps/desktop/src-tauri/tauri.conf.json"], new RegExp(`"version": "${from}"`)),
+    "Cargo.toml": swap(files["Cargo.toml"], new RegExp(`^version = "${from}"`, "m")),
+    "Cargo.lock": swap(files["Cargo.lock"], new RegExp(`name = "${CRATES_PATTERN}"\\r?\\nversion = "${from}"`, "g")),
   };
 }
 
@@ -118,7 +128,7 @@ export function review({ commits, baseVersion, headVersions, changelog, released
   return { problems, level, expected };
 }
 
-const FILES = ["package.json", "package-lock.json", "src-tauri/tauri.conf.json", "src-tauri/Cargo.toml", "src-tauri/Cargo.lock"];
+const FILES = ["package.json", "package-lock.json", "apps/desktop/src-tauri/tauri.conf.json", "Cargo.toml", "Cargo.lock"];
 const git = (...args) => execFileSync("git", args, { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
 
 /** Commits do branch que não estão na base, sem os merges. */
@@ -134,7 +144,8 @@ function commitsSince(base) {
     });
 }
 
-const readAt = (ref) => Object.fromEntries(FILES.map((file) => [file, git("show", `${ref}:${file}`)]));
+// De outra ref só interessa a versão do package.json: os outros arquivos podem estar em outro lugar nela (antes do monorepo).
+const versionAt = (ref) => JSON.parse(git("show", `${ref}:package.json`)).version;
 const readHere = () => Object.fromEntries(FILES.map((file) => [file, readFileSync(join(ROOT, file), "utf8")]));
 const released = () =>
   git("tag", "--list", "v*")
@@ -153,8 +164,8 @@ function main([command, arg]) {
     return;
   }
   if (command === "released") {
-    const before = versionsIn(readAt(`${arg}^1`))["package.json"];
-    const after = versionsIn(readAt(arg))["package.json"];
+    const before = versionAt(`${arg}^1`);
+    const after = versionAt(arg);
     if (before === after) {
       console.error(`::error::Esta mudança entrou na main sem versão nova (continua ${after}), então não vai ser publicada. Abra um PR com \`npm run version:bump\` e as notas no CHANGELOG.md.`);
       process.exit(1);
@@ -167,7 +178,7 @@ function main([command, arg]) {
     return;
   }
   const base = arg ?? "origin/main";
-  const baseVersion = versionsIn(readAt(base))["package.json"];
+  const baseVersion = versionAt(base);
   const commits = commitsSince(base);
   if (command === "bump") {
     const parsed = commits.map((c) => parseCommit(c.message)).filter(Boolean);

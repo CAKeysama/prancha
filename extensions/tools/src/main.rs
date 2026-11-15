@@ -64,7 +64,7 @@ fn sha256(bytes: &[u8]) -> String {
 }
 
 // As mensagens assinadas têm prefixo próprio: a assinatura de um índice nunca vale como a de um pacote.
-// O app monta as mesmas mensagens em `src-tauri/src/extensions/signing.rs`.
+// O app monta as mesmas mensagens em `crates/prancha-core/src/extensions/signing.rs`.
 
 fn index_message(index: &[u8]) -> Vec<u8> {
     [b"prancha-index-v1\0".as_slice(), index].concat()

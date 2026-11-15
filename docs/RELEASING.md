@@ -32,14 +32,14 @@ O workflow `versao.yml` confere tudo isso em cada PR e não deixa uma `MINOR` sa
 
 Todo PR traz a própria versão. Com os commits já feitos e a `main` trazida para o branch:
 
-1. **Suba a versão** com `npm run version:bump`. O script lê os commits desde a `main`, calcula a versão e a troca nos cinco arquivos que a guardam (`package.json`, `package-lock.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` e `src-tauri/Cargo.lock`), e abre a entrada no `CHANGELOG.md`. Faça o commit como `chore(release): versão X.Y.Z`. Se as dependências mudaram, rode `npm run licenses`, porque a tela de licenças do app sai desse arquivo.
+1. **Suba a versão** com `npm run version:bump`. O script lê os commits desde a `main`, calcula a versão e a troca nos cinco arquivos que a guardam (`package.json`, `package-lock.json`, `apps/desktop/src-tauri/tauri.conf.json`, `Cargo.toml` e `Cargo.lock`), e abre a entrada no `CHANGELOG.md`. Faça o commit como `chore(release): versão X.Y.Z`. Se as dependências mudaram, rode `npm run licenses`, porque a tela de licenças do app sai desse arquivo.
 2. **Escreva as notas** na entrada aberta no topo do `CHANGELOG.md`, no formato `## [X.Y.Z] - AAAA-MM-DD`, com um resumo e as seções `Novidades`, `Melhorias`, `Correções` e `Observações` (só as que tiverem conteúdo, apague as vazias). Cada item ocupa uma linha. `npm run version:check` confere tudo antes do push.
 3. **Rode localmente** o que precisa de páginas reais e da janela do app:
 
    ```bash
    npm run e2e:build
    npm run test:e2e
-   cargo test --release --manifest-path src-tauri/Cargo.toml --test guided -- --test-threads=1
+   cargo test --release -p prancha-core --test guided -- --test-threads=1
    npm run test:update -- --build
    ```
 
@@ -97,7 +97,7 @@ Para cadastrar um segredo, rode `gh secret set NOME --repo CAKeysama/prancha` e 
 
 ## Chave de assinatura das atualizações
 
-O aplicativo só instala um pacote assinado com esta chave. A parte pública está em `src-tauri/tauri.conf.json`. A parte privada e a senha ficam fora do repositório, em `%USERPROFILE%\.tauri\`, e no GitHub como os segredos `TAURI_SIGNING_PRIVATE_KEY` e `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
+O aplicativo só instala um pacote assinado com esta chave. A parte pública está em `apps/desktop/src-tauri/tauri.conf.json`. A parte privada e a senha ficam fora do repositório, em `%USERPROFILE%\.tauri\`, e no GitHub como os segredos `TAURI_SIGNING_PRIVATE_KEY` e `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
 
 Guarde uma cópia da chave e da senha em lugar seguro. **Sem elas, quem já instalou o Prancha nunca mais recebe atualizações** e precisa instalar a versão nova à mão, porque o aplicativo recusa qualquer outra chave.
 

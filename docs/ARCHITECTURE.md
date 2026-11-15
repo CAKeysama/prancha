@@ -24,9 +24,25 @@
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+### Onde cada parte fica
+
+O repositório é um monorepo com workspaces do npm (`package.json` da raiz) e do Cargo (`Cargo.toml` da raiz), com uma
+versão só para tudo:
+
+| Pasta | O que tem | Depende de |
+|---|---|---|
+| `apps/desktop/` | `app/`, `features/` e `components/` do desenho acima, o projeto Tauri (`src-tauri/`) e os testes de interface | `@prancha/shared`, `prancha-app` |
+| `packages/shared/` | `domain/` e `services/` do desenho acima, sem tela | `@tauri-apps/api`, `pdfjs-dist` |
+| `crates/prancha-app/` | `commands.rs`, `protocol.rs`, `updates.rs` e a montagem do aplicativo (`run`) | `prancha-core`, Tauri |
+| `crates/prancha-core/` | O resto do backend do desenho acima, sem Tauri: biblioteca, formatos, páginas, leitura guiada, extensões, MyAnimeList, telemetria | — |
+
+O núcleo não depende do Tauri: os testes dele compilam sem a WebView, e o mesmo código compila para o Android
+(`cargo check -p prancha-app --target aarch64-linux-android`, conferido no CI). As extensões em `extensions/` ficam num
+workspace do Cargo à parte, porque compilam para `wasm32-unknown-unknown`.
+
 A interface nunca recebe acesso a caminhos arbitrários: arquivos são escolhidos pelo diálogo
 nativo **no backend** e, depois de importados, são referenciados apenas por `id`. As permissões
-do Tauri (`src-tauri/capabilities/default.json`) liberam só o necessário para a janela
+do Tauri (`apps/desktop/src-tauri/capabilities/default.json`) liberam só o necessário para a janela
 (tela cheia, tema, título, fechar) — nenhum plugin de sistema de arquivos é exposto ao JavaScript.
 A CSP restringe imagens/conexões a `self`, `ipc` e `prancha.localhost`.
 
@@ -72,7 +88,7 @@ Ordem: `ComicInfo.xml` (`Page Type="FrontCover"`) → imagem nomeada como capa (
 
 Roda inteira no computador, sem OCR, rede ou dependência nova. Fica dentro do leitor: ao sair, a página e o estado de leitura continuam como estavam.
 
-**Detecção (`src-tauri/src/guided/`).** A página é reduzida a 1600 px no lado maior. `panels` encontra os quadros pelas calhas (XY-cut, mais ilhas). `balloons` procura áreas de cor contínua cujas letras aparecem como buracos alinhados, o que vale para qualquer idioma e para papel branco, colorido ou escuro. Dois balões colados são separados no pescoço entre eles; texto solto sobre um fundo vira uma região em volta das letras. `classify` escolhe o tipo pela forma e pela cor. Letras muito maiores que as da página são onomatopeias e ficam de fora, a não ser que estejam num balão de verdade ("RAHHH!").
+**Detecção (`crates/prancha-core/src/guided/`).** A página é reduzida a 1600 px no lado maior. `panels` encontra os quadros pelas calhas (XY-cut, mais ilhas). `balloons` procura áreas de cor contínua cujas letras aparecem como buracos alinhados, o que vale para qualquer idioma e para papel branco, colorido ou escuro. Dois balões colados são separados no pescoço entre eles; texto solto sobre um fundo vira uma região em volta das letras. `classify` escolhe o tipo pela forma e pela cor. Letras muito maiores que as da página são onomatopeias e ficam de fora, a não ser que estejam num balão de verdade ("RAHHH!").
 
 **Ordem (`order.rs`).** XY-cut recursivo sobre quadros e balões, invertendo os dois em direita→esquerda. A direção só entra na leitura do resultado, então a mesma análise vale para os dois sentidos.
 
@@ -123,7 +139,7 @@ extensions/downloads.rs         fila persistente → CBZ → import::process_one
 
 **Obras na biblioteca.** Uma obra guardada não vira HQ: fica em `online_series`, com `favorite` e `series_collections` (migração 0005), e `series_library` devolve as favoritadas, acompanhadas, em coleção ou com progresso online. `domain/library-items.ts` mistura essa lista com a das HQs no Início, na biblioteca e nas coleções, na ordem que a tela pediu. `reading_of` calcula onde a leitura continua. Uma obra guardada nunca é podada, e `remote_id` é o identificador interno do Suwayomi, por isso a pasta `dados` dele não pode ser apagada enquanto houver obras.
 
-**Estado de leitura e capítulos novos.** Cada capítulo de obra tem quatro estados (Não lido, Lendo, Em andamento, Lido) e, à parte, a marca de novo. O estado que dura fica em `online_chapters` (migração 0007: `first_seen_at`, `acknowledged_at`, `reading_started_at`, `last_read_at`, `completed_at`, `manual_unread`); a sessão do leitor fica em `reading_sessions` e é fechada na abertura do app se uma queda a deixou aberta. `extensions/reading.rs` grava as transições, e `src/domain/reading-lifecycle.ts` decide, no leitor, o que é início efetivo e o que é chegar ao fim. Só obras acompanhadas geram capítulos novos, e a primeira sincronização é o ponto de referência. Detalhes em [ADR 0003](adr/0003-progresso-de-leitura.md).
+**Estado de leitura e capítulos novos.** Cada capítulo de obra tem quatro estados (Não lido, Lendo, Em andamento, Lido) e, à parte, a marca de novo. O estado que dura fica em `online_chapters` (migração 0007: `first_seen_at`, `acknowledged_at`, `reading_started_at`, `last_read_at`, `completed_at`, `manual_unread`); a sessão do leitor fica em `reading_sessions` e é fechada na abertura do app se uma queda a deixou aberta. `extensions/reading.rs` grava as transições, e `packages/shared/src/domain/reading-lifecycle.ts` decide, no leitor, o que é início efetivo e o que é chegar ao fim. Só obras acompanhadas geram capítulos novos, e a primeira sincronização é o ponto de referência. Detalhes em [ADR 0003](adr/0003-progresso-de-leitura.md).
 
 **Sem filtro +18.** O Prancha não esconde conteúdo adulto: a classificação que repositórios e fontes declaram (`contentRating`, `extension_sources.rating`) fica só como informação. A migração 0010 apagou a classificação por evidências, a marca `adult` e as preferências `content.adult` e `content.suspect`. Como a lista do Mihon pode vir sem gêneros, `classification` em `online_series` diz se os detalhes já foram conferidos: `pending` ninguém consultou, `unknown` a fonte não informa, `known` há gêneros. `sources::store_page` consulta os detalhes do que está `pending` antes de responder, com até 4 consultas ao mesmo tempo por fonte, para o bloqueio abaixo ver os gêneros antes de a obra aparecer.
 
@@ -183,7 +199,7 @@ Até 20 000 entradas por arquivo, 150 MB por página, 2 MB para `ComicInfo.xml`,
 
 ## Design
 
-Tokens de cor em `src/styles/index.css` (variáveis CSS para claro/escuro, base Primer). Contrastes verificados (WCAG):
+Tokens de cor em `apps/desktop/src/styles/index.css` (variáveis CSS para claro/escuro, base Primer). Contrastes verificados (WCAG):
 
 | Par | Escuro | Claro |
 |---|---|---|
@@ -198,7 +214,7 @@ Escala de 12–24 px, espaçamento em múltiplos de 4 px.
 
 ### Tipografia
 
-A interface usa uma família só, escolhida em Configurações › Aparência (`appearance.font`) e aplicada por `data-font` no `<html>` (`public/theme-boot.js` aplica a última escolha antes da primeira pintura). Todas vêm no instalador, como fontes variáveis em WOFF2 divididas por alfabeto (`@fontsource-variable`, licença OFL 1.1): o navegador baixa do próprio app só o arquivo do alfabeto e da família em uso, e nada sai para a internet.
+A interface usa uma família só, escolhida em Configurações › Aparência (`appearance.font`) e aplicada por `data-font` no `<html>` (`apps/desktop/public/theme-boot.js` aplica a última escolha antes da primeira pintura). Todas vêm no instalador, como fontes variáveis em WOFF2 divididas por alfabeto (`@fontsource-variable`, licença OFL 1.1): o navegador baixa do próprio app só o arquivo do alfabeto e da família em uso, e nada sai para a internet.
 
 | Opção | Família | Por que está aqui |
 |---|---|---|
@@ -211,7 +227,7 @@ Títulos em japonês, coreano ou chinês caem, em qualquer opção, nas fontes d
 
 ### Sons
 
-`src/services/sound.ts` é o único lugar que toca som. Os seis sons (confirmar, adicionar, remover, concluir, notificação, trocar de capítulo) são sintetizados na hora pelo Web Audio: notas curtas em ré maior pentatônica com timbre de marimba e uma folha de papel para a troca de capítulo, sem arquivos nem rede. Regras: começam desligados para quem atualiza (a configuração inicial propõe ligar, com o controle à vista); repetições da mesma ação em poucos milissegundos viram um som; dois sons diferentes quase juntos tocam só o primeiro; no máximo três ao mesmo tempo; nada toca com a janela escondida; durante a leitura só tocam os sons do leitor; o contexto de áudio é criado no primeiro som e dorme depois de 4 s de silêncio. Os pontos que tocam: importação concluída, remoção e favorito na biblioteca, notificação nova, extensão e repositório adicionados ou removidos, obra acompanhada, capítulo ou HQ concluídos, troca de capítulo e o fim da configuração inicial.
+`packages/shared/src/services/sound.ts` é o único lugar que toca som. Os seis sons (confirmar, adicionar, remover, concluir, notificação, trocar de capítulo) são sintetizados na hora pelo Web Audio: notas curtas em ré maior pentatônica com timbre de marimba e uma folha de papel para a troca de capítulo, sem arquivos nem rede. Regras: começam desligados para quem atualiza (a configuração inicial propõe ligar, com o controle à vista); repetições da mesma ação em poucos milissegundos viram um som; dois sons diferentes quase juntos tocam só o primeiro; no máximo três ao mesmo tempo; nada toca com a janela escondida; durante a leitura só tocam os sons do leitor; o contexto de áudio é criado no primeiro som e dorme depois de 4 s de silêncio. Os pontos que tocam: importação concluída, remoção e favorito na biblioteca, notificação nova, extensão e repositório adicionados ou removidos, obra acompanhada, capítulo ou HQ concluídos, troca de capítulo e o fim da configuração inicial.
 
 ### Configuração inicial
 

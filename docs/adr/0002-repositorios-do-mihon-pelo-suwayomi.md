@@ -43,4 +43,4 @@ Sem o KCEF, extensões que dependem de um navegador embutido falham com um erro.
 
 - Atualizar o Suwayomi é trocar três constantes em `suwayomi.rs`, conferir `USER_AGENT` com o `NetworkHelper.kt` da versão nova e rodar o teste `a_real_keiyoushi_extension_goes_from_the_link_to_an_image`.
 - Só o formato com `repo.json` e `index.json` é entendido. Repositórios só com `index.min.json` continuam recebendo a mensagem do Mihon.
-- O código do Suwayomi não vem no pacote do Prancha: é baixado depois, do projeto original, e por isso não entra em `src/generated/licenses.json`.
+- O código do Suwayomi não vem no pacote do Prancha: é baixado depois, do projeto original, e por isso não entra em `apps/desktop/src/generated/licenses.json`.

@@ -1,0 +1,30 @@
+{
+  "name": "@prancha/desktop",
+  "private": true,
+  "type": "module",
+  "description": "Prancha para Windows: a interface em React e o aplicativo Tauri (src-tauri).",
+  "scripts": {
+    "predev": "node scripts/copy-pdfjs-assets.mjs",
+    "dev": "vite",
+    "prebuild": "node scripts/copy-pdfjs-assets.mjs",
+    "build": "tsc -b && vite build",
+    "e2e:build": "node scripts/build-e2e.mjs",
+    "test:e2e": "playwright test",
+    "test:update": "node tests/update/run.mjs",
+    "licenses": "node scripts/generate-licenses.mjs",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@fontsource-variable/atkinson-hyperlegible-next": "^5.3.0",
+    "@fontsource-variable/hanken-grotesk": "^5.3.0",
+    "@fontsource-variable/ibm-plex-sans": "^5.3.0",
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@prancha/shared": "*",
+    "@tanstack/react-virtual": "^3.14.21",
+    "@tauri-apps/api": "^2.12.4",
+    "lucide-react": "^1.60.0",
+    "pdfjs-dist": "^6.4.299",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  }
+}
