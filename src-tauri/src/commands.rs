@@ -12,6 +12,7 @@ use tauri::webview::NewWindowResponse;
 use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
+#[cfg(desktop)]
 use tauri_plugin_updater::{Error as UpdaterError, Update, UpdaterExt};
 
 use crate::core::Core;
@@ -163,20 +164,30 @@ pub struct RemoveResult {
     trashed: bool,
 }
 
+#[cfg(desktop)]
+fn move_to_trash(path: &str) -> AppResult<()> {
+    trash::delete(path).map_err(|e| {
+        AppError::user(
+            "trash_failed",
+            format!("Não foi possível mover o arquivo original para a Lixeira ({e}). Nada foi removido."),
+        )
+    })
+}
+
+/// O Android não tem Lixeira para arquivos de outras pastas; apagar o original chega com o acesso a pastas.
+#[cfg(mobile)]
+fn move_to_trash(_path: &str) -> AppResult<()> {
+    Err(AppError::user("trash_failed", "No Android ainda não dá para apagar o arquivo original. Nada foi removido."))
+}
+
 /// Remove do catálogo. Com `delete_original`, o arquivo vai para a Lixeira do sistema (reversível).
 #[tauri::command]
 pub async fn remove_comic(state: S<'_>, id: i64, delete_original: bool) -> AppResult<RemoveResult> {
     changing(&state, move |c| {
         let info = library::file_info(&c.db(), id)?;
-        let mut trashed = false;
-        if delete_original && Path::new(&info.path).exists() {
-            trash::delete(&info.path).map_err(|e| {
-                AppError::user(
-                    "trash_failed",
-                    format!("Não foi possível mover o arquivo original para a Lixeira ({e}). Nada foi removido."),
-                )
-            })?;
-            trashed = true;
+        let trashed = delete_original && Path::new(&info.path).exists();
+        if trashed {
+            move_to_trash(&info.path)?;
         }
         library::delete_comic(&c.db(), id)?;
         if let Some(file) = info.cover_file {
@@ -302,6 +313,13 @@ async fn pick_paths(app: AppHandle, mode: PickMode, title: &str) -> AppResult<Op
     if let Some(result) = e2e_pick() {
         return Ok(result);
     }
+    // Provisório até o acesso a pastas do Android: "Adicionar pasta" importa a pasta Documents do próprio
+    // app (Android/data/app.prancha/files/Documents), onde os arquivos de teste são copiados pelo adb.
+    #[cfg(mobile)]
+    if matches!(mode, PickMode::Folder) {
+        let dir = app.path().document_dir().map_err(|e| AppError::user("internal", e.to_string()))?;
+        return Ok(Some(vec![dir]));
+    }
     let title = title.to_string();
     tauri::async_runtime::spawn_blocking(move || {
         let dialog = app.dialog().file().set_title(&title);
@@ -310,7 +328,10 @@ async fn pick_paths(app: AppHandle, mode: PickMode, title: &str) -> AppResult<Op
                 .add_filter("Quadrinhos (CBZ, CBR, CB7, CBT, PDF)", COMIC_EXTENSIONS)
                 .blocking_pick_files()
                 .map(|v| v.into_iter().filter_map(|f| f.into_path().ok()).collect::<Vec<_>>()),
+            #[cfg(desktop)]
             PickMode::Folder => dialog.blocking_pick_folder().and_then(|f| f.into_path().ok()).map(|p| vec![p]),
+            #[cfg(mobile)]
+            PickMode::Folder => None,
         };
         Ok(picked)
     })
@@ -649,8 +670,10 @@ pub async fn verify_library(state: S<'_>) -> AppResult<VerifyResult> {
 type Updates<'a> = State<'a, updates::Session>;
 
 /// A cada quanto o download avisa a interface.
+#[cfg(desktop)]
 const PROGRESS_STEP: u64 = 128 * 1024;
 /// Tempo para o aviso aparecer: quando o instalador abre, o aplicativo fecha na hora.
+#[cfg(desktop)]
 const INSTALL_NOTICE: std::time::Duration = std::time::Duration::from_millis(800);
 
 /// A origem oficial é a que veio configurada no próprio aplicativo.
@@ -667,6 +690,7 @@ async fn update_snapshot(app: &AppHandle, core: &Arc<Core>) -> AppResult<updates
 }
 
 /// Procura a versão estável mais recente e descarta o que não vier das releases oficiais.
+#[cfg(desktop)]
 async fn find_update(app: &AppHandle, core: &Core) -> AppResult<Option<Update>> {
     let builder = app
         .updater_builder()
@@ -695,6 +719,7 @@ async fn find_update(app: &AppHandle, core: &Core) -> AppResult<Option<Update>> 
     }))
 }
 
+#[cfg(desktop)]
 async fn record_check(app: &AppHandle, core: &Arc<Core>, found: Option<updates::ReleaseInfo>) -> AppResult<()> {
     let current = app.package_info().version.clone();
     blocking(core, move |c| {
@@ -716,6 +741,9 @@ pub async fn updates_snapshot(app: AppHandle, state: S<'_>) -> AppResult<updates
 
 #[tauri::command]
 pub async fn updates_check(app: AppHandle, state: S<'_>, session: Updates<'_>) -> AppResult<updates::Snapshot> {
+    #[cfg(mobile)]
+    let _ = session;
+    #[cfg(desktop)]
     if updates::ENABLED {
         let update = find_update(&app, &state).await?;
         let found = update.as_ref().map(|u| updates::release_from_update(u, &release_endpoint(&app)));
@@ -737,6 +765,7 @@ pub async fn updates_notes_shown(state: S<'_>, version: String) -> AppResult<()>
 
 /// Baixa, confere e abre o instalador. Se der certo, o instalador fecha o aplicativo e o abre de
 /// novo; só a próxima execução confirma a atualização, em `updates::reconcile`.
+#[cfg(desktop)]
 async fn download_and_install(app: &AppHandle, core: &Arc<Core>, session: &updates::Session, on_progress: &Channel<updates::Progress>) -> AppResult<()> {
     let data_dir = core.paths.data_dir.clone();
     if core.importer.is_busy() {
@@ -817,14 +846,22 @@ pub async fn updates_install(app: AppHandle, state: S<'_>, session: Updates<'_>,
     if !updates::ENABLED {
         return Err(AppError::user("unavailable", "Atualizações não estão disponíveis nesta compilação."));
     }
-    let outcome = download_and_install(&app, &state, &session, &on_progress).await;
-    if let Err(error) = &outcome {
-        let version = session.update.lock().unwrap().as_ref().map(|u| u.version.clone());
-        if let Some(version) = version.filter(|_| !matches!(error.code(), "cancelled" | "up_to_date" | "busy")) {
-            blocking(&state, move |c| Ok(notifications::publish(c, &updates::update_notice(notifications::Kind::UpdateFailed, &version)))).await?;
-        }
+    #[cfg(mobile)]
+    {
+        let _ = (app, state, session, on_progress);
+        Err(AppError::user("unavailable", "Atualizações não estão disponíveis nesta compilação."))
     }
-    outcome
+    #[cfg(desktop)]
+    {
+        let outcome = download_and_install(&app, &state, &session, &on_progress).await;
+        if let Err(error) = &outcome {
+            let version = session.update.lock().unwrap().as_ref().map(|u| u.version.clone());
+            if let Some(version) = version.filter(|_| !matches!(error.code(), "cancelled" | "up_to_date" | "busy")) {
+                blocking(&state, move |c| Ok(notifications::publish(c, &updates::update_notice(notifications::Kind::UpdateFailed, &version)))).await?;
+            }
+        }
+        outcome
+    }
 }
 
 #[tauri::command]
@@ -1577,6 +1614,7 @@ pub async fn mal_connect(app: AppHandle, state: S<'_>) -> AppResult<crate::mal::
     .await?;
     // A pessoa estava no navegador: traz o Prancha de volta para mostrar a conta conectada.
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+        #[cfg(desktop)]
         let _ = window.unminimize();
         let _ = window.set_focus();
     }

@@ -68,6 +68,7 @@ fn connect_native_notifications(app: &tauri::AppHandle, core: &Core) {
             return;
         }
         if let Some(window) = handle.get_webview_window("main") {
+            #[cfg(desktop)]
             let _ = window.unminimize();
             let _ = window.show();
             let _ = window.set_focus();
@@ -97,13 +98,31 @@ fn start_telemetry(app: &tauri::App, core: &Arc<Core>) {
     core.telemetry.spawn();
 }
 
+/// No Android o reqwest confere certificados pela JVM: o verificador precisa do contexto do app antes da
+/// primeira conexão HTTPS.
+#[cfg(target_os = "android")]
+fn init_android_tls() {
+    let ctx = ndk_context::android_context();
+    // SAFETY: os ponteiros da JVM e da Activity vêm do tao e valem enquanto o processo existir.
+    let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) };
+    let result = vm.attach_current_thread(|env| -> Result<(), jni::errors::Error> {
+        let context = unsafe { jni::objects::JObject::from_raw(env, ctx.context().cast()) };
+        rustls_platform_verifier::android::init_with_env(env, context)
+    });
+    if let Err(e) = result {
+        log::warn!("verificador de certificados do Android: {e}");
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+    builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(updates::Session::default())
         .register_asynchronous_uri_scheme_protocol("prancha", |ctx, request, responder| {
             // A janela de verificação mostra um site de terceiros, que não pode ler nada da biblioteca.
@@ -118,6 +137,8 @@ pub fn run() {
             });
         })
         .setup(|app| {
+            #[cfg(target_os = "android")]
+            init_android_tls();
             let data_dir = resolve_data_dir(app)?;
             let handle = app.handle().clone();
             let emit: Emit = Arc::new(move |event: &str, payload| {

@@ -32,10 +32,8 @@ lopdf = { version = "0.45.0", default-features = false }
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp", "gif", "bmp"] }
 roxmltree = "0.21.1"
 blake3 = "1.8.7"
-trash = "5.2.9"
 unicode-normalization = "0.1.26"
 walkdir = "2.5.0"
-tauri-plugin-updater = "2.14.1"
 semver = "1.0.28"
 sha2 = "0.10.9"
 reqwest = { version = "0.13.5", default-features = false }
@@ -45,6 +43,17 @@ url = "2.5.8"
 ed25519-dalek = { version = "3.0.0", default-features = false, features = ["fast"] }
 base64 = "0.23.1"
 getrandom = "0.4.3"
+
+# A Lixeira e o atualizador do Tauri não existem no Android.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+trash = "5.2.9"
+tauri-plugin-updater = "2.14.1"
+
+# O verificador de certificados do Android chama a JVM e precisa do contexto do app.
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.22.4"
+ndk-context = "0.1.1"
+rustls-platform-verifier = "0.7.1"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Cryptography", "Win32_System_JobObjects"] }

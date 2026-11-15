@@ -3,7 +3,9 @@
 //! as conferências extras e o estado que precisa sobreviver a um fechamento no meio da atualização.
 
 use std::fs::{self, OpenOptions};
-use std::io::{ErrorKind, Write as _};
+#[cfg(desktop)]
+use std::io::ErrorKind;
+use std::io::Write as _;
 use std::path::Path;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -13,10 +15,13 @@ use semver::Version;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+#[cfg(desktop)]
 use tauri_plugin_updater::{Error as UpdaterError, Update};
 
 use crate::db::now_ms;
-use crate::error::{AppError, AppResult};
+#[cfg(desktop)]
+use crate::error::AppError;
+use crate::error::AppResult;
 use crate::library;
 use crate::notifications::{self, Event, Kind, NewNotification};
 
@@ -31,8 +36,8 @@ const MAX_LOG_BYTES: u64 = 256 * 1024;
 pub const CHECK_TIMEOUT: Duration = Duration::from_secs(10);
 /// O prazo do plugin vale para o download inteiro, então precisa caber uma conexão lenta.
 pub const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(30 * 60);
-/// Builds de depuração não usam a internet: testes e desenvolvimento ficam isolados.
-pub const ENABLED: bool = !cfg!(debug_assertions);
+/// Builds de depuração não usam a internet: testes e desenvolvimento ficam isolados. No celular o plugin não existe.
+pub const ENABLED: bool = !cfg!(debug_assertions) && cfg!(desktop);
 
 /// Uma versão publicada, com as notas como estão na release.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -103,6 +108,7 @@ pub enum Progress {
 /// O que só vale enquanto o aplicativo está aberto.
 #[derive(Default)]
 pub struct Session {
+    #[cfg(desktop)]
     pub update: Mutex<Option<Update>>,
     pub abort_download: Mutex<Option<Box<dyn FnOnce() + Send>>>,
 }
@@ -332,6 +338,7 @@ fn clip_notes(mut notes: String) -> String {
     notes
 }
 
+#[cfg(desktop)]
 pub fn release_from_update(update: &Update, endpoint: &str) -> ReleaseInfo {
     ReleaseInfo {
         version: update.version.clone(),
@@ -413,6 +420,7 @@ pub fn sha256_matches(bytes: &[u8], expected: &str) -> bool {
 // Erros
 // ---------------------------------------------------------------------------
 
+#[cfg(desktop)]
 pub fn describe(error: &UpdaterError) -> AppError {
     match error {
         UpdaterError::Reqwest(_) | UpdaterError::Network(_) | UpdaterError::ReleaseNotFound => {
