@@ -97,13 +97,16 @@ fn every_format_imports_and_reads_through_content_addresses() {
     let pg = pages(4);
     let files = as_files(&pg);
     let svc = PageService::new(dir.join("cache-paginas"));
-    let comics = [
+    let mut comics = vec![
         ("cbz", make_cbz(&dir.join("Volume_01.cbz"), &files), "Volume 01"),
-        ("cbr", make_rar5(&dir.join("Volume_02.cbr"), &files), "Volume 02"),
         ("cb7", make_cb7(&dir.join("Volume_03.cb7"), &files), "Volume 03"),
         ("cbt", make_cbt(&dir.join("Volume_04.cbt"), &files), "Volume 04"),
         ("folder", make_folder(&dir.join("Volume 05"), &files), "Volume 05"),
     ];
+    // O UnRAR abre o descritor por /proc/self/fd, que só existe no Linux e no Android (no Windows não há content://).
+    if cfg!(unix) {
+        comics.push(("cbr", make_rar5(&dir.join("Volume_02.cbr"), &files), "Volume 02"));
+    }
     for (format, real, title) in comics {
         let address = uri(&real);
         assert!(!address.to_string_lossy().contains("Volume"), "o endereço de teste não pode ter o nome");
