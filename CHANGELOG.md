@@ -10,10 +10,12 @@ O app do Windows não muda. Por dentro, o Prancha passa a compilar também para 
 ### Novidades
 
 - O núcleo do Prancha compila para o Android: no celular, a Lixeira e o atualizador do Windows ficam desligados (apagar o arquivo original avisa que ainda não dá), e as conexões HTTPS usam os certificados do sistema do Android.
+- O app Android ganha um projeto próprio em `apps/android` (identificador `app.prancha`), ainda com a interface do desktop. Ele escolhe arquivos e pastas pelo seletor do sistema e guarda a permissão de leitura, então a biblioteca continua abrindo depois de reiniciar o celular. CBZ, CBR, CB7, CBT, PDF e pastas de imagens são lidos direto pelo endereço que o Android entrega, sem copiar o arquivo.
+- No Android, abrir um CBZ, CBR, CB7, CBT ou PDF pelo gerenciador de arquivos põe a HQ na biblioteca e abre o leitor. Quando o outro app só dá acesso enquanto o Prancha está aberto, a HQ é copiada para a pasta do app, para não sumir da biblioteca depois.
 
 ### Melhorias
 
-- O código foi reorganizado em um monorepo: o aplicativo do Windows em `apps/desktop`, o núcleo em Rust em `crates/prancha-core` (sem depender do Tauri), os comandos do app em `crates/prancha-app` e o código da interface que não depende de tela em `packages/shared`. As verificações do GitHub conferem também a compilação para o Android.
+- O código foi reorganizado em um monorepo: o aplicativo do Windows em `apps/desktop`, o núcleo em Rust em `crates/prancha-core` (sem depender do Tauri), os comandos do app em `crates/prancha-app` e o código da interface que não depende de tela em `packages/shared`. As verificações do GitHub geram também um APK de teste do Android, que fica nos artefatos da execução.
 
 ### Correções
 

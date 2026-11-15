@@ -1,0 +1,21 @@
+[package]
+name = "prancha-android"
+description = "Prancha para Android"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "prancha_android_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.7.3", features = [] }
+
+[dependencies]
+tauri = { version = "2.12.4", features = [] }
+prancha-app = { path = "../../../crates/prancha-app" }
+# O código gerado pelo `tauri::generate_context!` usa o serde_json pelo nome.
+serde_json = "1.0.154"

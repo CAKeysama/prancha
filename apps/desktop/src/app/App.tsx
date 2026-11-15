@@ -35,6 +35,8 @@ import { Sidebar } from "./Sidebar";
 import { SUPPORTED_FORMATS_TEXT } from "./config";
 import { disableContextMenu } from "./context-menu";
 import { sound } from "@prancha/shared/services/sound";
+import { api } from "@prancha/shared/services/api";
+import { onComicOpened } from "@prancha/shared/services/events";
 
 function Screen({ route }: { route: Route }) {
   switch (route.name) {
@@ -129,7 +131,18 @@ function Screen({ route }: { route: Route }) {
 }
 
 function Shell() {
-  const { route, stack } = useNav();
+  const { route, stack, navigate } = useNav();
+  // Só no Android há o que abrir: uma HQ aberta pelo gerenciador de arquivos vai direto para o leitor. A busca
+  // na montagem cobre o app aberto pelo próprio arquivo, quando o aviso chega antes da interface.
+  useEffect(() => {
+    const open = () =>
+      void api
+        .takeOpenedComic()
+        .then((id) => id && navigate({ name: "reader", id }))
+        .catch(() => undefined);
+    open();
+    return onComicOpened(open);
+  }, [navigate]);
   const { loaded, loadError } = useSettings();
   // Durante a leitura, só o leitor faz som.
   const reading = route.name === "reader" || route.name === "chapter";

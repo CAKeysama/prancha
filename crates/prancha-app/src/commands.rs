@@ -10,6 +10,7 @@ use tauri::ipc::Channel;
 use tauri::utils::config::BundleType;
 use tauri::webview::NewWindowResponse;
 use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindowBuilder};
+#[cfg(not(target_os = "android"))]
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 #[cfg(desktop)]
@@ -26,7 +27,9 @@ use crate::extensions::reading::{self, ChapterReadInfo};
 use crate::extensions::repository::{self, CatalogItem, CatalogQuery, RepositoryInfo, RepositoryPreview};
 use crate::extensions::sources::{self, BrowsePage, ChapterSession, ComicOrigin, SeriesCard, SeriesView, SourceSummary};
 use crate::extensions::suwayomi;
-use crate::formats::{self, COMIC_EXTENSIONS};
+use crate::formats;
+#[cfg(not(target_os = "android"))]
+use crate::formats::COMIC_EXTENSIONS;
 use crate::guided::{self, store::{self, GuidedPage, GuidedRegion}};
 use crate::import::{self, EVENT_LIBRARY};
 use crate::location;
@@ -314,30 +317,44 @@ async fn pick_paths(app: AppHandle, mode: PickMode, title: &str) -> AppResult<Op
     if let Some(result) = e2e_pick() {
         return Ok(result);
     }
-    // Provisório até o acesso a pastas do Android: "Adicionar pasta" importa a pasta Documents do próprio
-    // app (Android/data/app.prancha/files/Documents), onde os arquivos de teste são copiados pelo adb.
-    #[cfg(mobile)]
-    if matches!(mode, PickMode::Folder) {
-        let dir = app.path().document_dir().map_err(|e| AppError::user("internal", e.to_string()))?;
-        return Ok(Some(vec![dir]));
+    // No Android, o seletor do sistema: devolve endereços content:// com a permissão de leitura guardada.
+    #[cfg(target_os = "android")]
+    {
+        let _ = title;
+        tauri::async_runtime::spawn_blocking(move || crate::android::pick(&app, matches!(mode, PickMode::Folder)))
+            .await
+            .map_err(|e| AppError::user("internal", e.to_string()))?
+            .map_err(|e| AppError::user("internal", e.to_string()))
     }
-    let title = title.to_string();
-    tauri::async_runtime::spawn_blocking(move || {
-        let dialog = app.dialog().file().set_title(&title);
-        let picked = match mode {
-            PickMode::Files => dialog
-                .add_filter("Quadrinhos (CBZ, CBR, CB7, CBT, PDF)", COMIC_EXTENSIONS)
-                .blocking_pick_files()
-                .map(|v| v.into_iter().filter_map(|f| f.into_path().ok()).collect::<Vec<_>>()),
-            #[cfg(desktop)]
-            PickMode::Folder => dialog.blocking_pick_folder().and_then(|f| f.into_path().ok()).map(|p| vec![p]),
-            #[cfg(mobile)]
-            PickMode::Folder => None,
-        };
-        Ok(picked)
-    })
-    .await
-    .map_err(|e| AppError::user("internal", e.to_string()))?
+    #[cfg(not(target_os = "android"))]
+    {
+        let title = title.to_string();
+        tauri::async_runtime::spawn_blocking(move || {
+            let dialog = app.dialog().file().set_title(&title);
+            let picked = match mode {
+                PickMode::Files => dialog
+                    .add_filter("Quadrinhos (CBZ, CBR, CB7, CBT, PDF)", COMIC_EXTENSIONS)
+                    .blocking_pick_files()
+                    .map(|v| v.into_iter().filter_map(|f| f.into_path().ok()).collect::<Vec<_>>()),
+                #[cfg(desktop)]
+                PickMode::Folder => dialog.blocking_pick_folder().and_then(|f| f.into_path().ok()).map(|p| vec![p]),
+                #[cfg(mobile)]
+                PickMode::Folder => None,
+            };
+            Ok(picked)
+        })
+        .await
+        .map_err(|e| AppError::user("internal", e.to_string()))?
+    }
+}
+
+/// A HQ que outro app abriu (Android) e que a interface ainda não mostrou.
+#[derive(Default)]
+pub struct OpenedComic(pub std::sync::Mutex<Option<i64>>);
+
+#[tauri::command]
+pub fn take_opened_comic(opened: State<'_, OpenedComic>) -> Option<i64> {
+    opened.0.lock().unwrap().take()
 }
 
 #[tauri::command]

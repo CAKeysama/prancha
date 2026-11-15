@@ -11,6 +11,7 @@ const EVENTS = {
   notifications: "notifications:changed",
   notificationActivate: "notifications:activate",
   mal: "mal:changed",
+  comicOpened: "comic:opened",
 } as const;
 
 /** Liga um ouvinte do Tauri; devolve a função que o desliga, mesmo antes de ele ficar pronto (segura em StrictMode). */
@@ -48,3 +49,6 @@ export const onNotificationsChanged = (h: (e: { unread: number; created?: number
 export const onNotificationActivated = (h: (e: { id: number }) => void) => subscribe<{ id: number }>(EVENTS.notificationActivate, h);
 
 export const onMalChanged = (h: () => void) => subscribe<unknown>(EVENTS.mal, () => h());
+
+/** Android: uma HQ aberta por outro app (gerenciador de arquivos) já entrou na biblioteca; o id sai de `takeOpenedComic`. */
+export const onComicOpened = (h: () => void) => subscribe<unknown>(EVENTS.comicOpened, () => h());

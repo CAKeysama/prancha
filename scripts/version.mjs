@@ -52,7 +52,7 @@ export function newestReleased(released) {
 }
 
 /** Os pacotes Rust do repositório: todos herdam a versão do `[workspace.package]` do Cargo.toml. */
-export const CRATES = ["prancha", "prancha-app", "prancha-core"];
+export const CRATES = ["prancha", "prancha-android", "prancha-app", "prancha-core"];
 const CRATES_PATTERN = `(?:${CRATES.join("|")})`;
 
 /** A versão de cada pacote do repositório no Cargo.lock. */

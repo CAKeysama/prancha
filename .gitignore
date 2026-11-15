@@ -3,6 +3,7 @@ dist/
 /target/
 extensions/target/
 apps/desktop/src-tauri/gen/schemas/
+apps/android/src-tauri/gen/schemas/
 test-results/
 playwright-report/
 tests/.tmp/

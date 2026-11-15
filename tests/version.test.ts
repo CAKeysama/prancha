@@ -8,7 +8,7 @@ const files = {
   "apps/desktop/src-tauri/tauri.conf.json": '{\n  "version": "1.2.3"\n}\n',
   "Cargo.toml": '[workspace]\nmembers = ["apps/desktop/src-tauri"]\n\n[workspace.package]\nversion = "1.2.3"\n\n[workspace.dependencies]\nx = { version = "1.2.3" }\n',
   "Cargo.lock":
-    '[[package]]\nname = "outro"\nversion = "1.2.3"\n\n[[package]]\nname = "prancha"\nversion = "1.2.3"\n\n[[package]]\nname = "prancha-app"\nversion = "1.2.3"\n\n[[package]]\nname = "prancha-core"\nversion = "1.2.3"\n\n[[package]]\nname = "prancha-core-extra"\nversion = "1.2.3"\n',
+    '[[package]]\nname = "outro"\nversion = "1.2.3"\n\n[[package]]\nname = "prancha"\nversion = "1.2.3"\n\n[[package]]\nname = "prancha-android"\nversion = "1.2.3"\n\n[[package]]\nname = "prancha-app"\nversion = "1.2.3"\n\n[[package]]\nname = "prancha-core"\nversion = "1.2.3"\n\n[[package]]\nname = "prancha-core-extra"\nversion = "1.2.3"\n',
 };
 
 const entry = (version: string) => `# Histórico\n\n## [${version}] - 2026-11-09\n\nResumo.\n\n### Correções\n\n- Algo.\n`;

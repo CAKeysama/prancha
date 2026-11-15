@@ -3386,6 +3386,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "prancha-android"
+version = "0.13.0"
+dependencies = [
+ "prancha-app",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+]
+
+[[package]]
 name = "prancha-app"
 version = "0.13.0"
 dependencies = [

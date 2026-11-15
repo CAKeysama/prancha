@@ -99,6 +99,8 @@ export const api = {
   cancelImport: (jobId: number) => call<boolean>("cancel_import", { jobId }),
 
   openComic: (id: number) => call<ReaderSession>("open_comic", { id }),
+  /** Android: a HQ aberta por outro app que a interface ainda não mostrou (some ao ser lida). */
+  takeOpenedComic: () => call<number | null>("take_opened_comic"),
   saveProgress: (id: number, pageIndex: number, pageCount: number, scrollRatio: number) =>
     call<ReadStatus>("save_progress", { id, pageIndex, pageCount, scrollRatio }),
   setPdfPageCount: (id: number, pageCount: number) => call<void>("set_pdf_page_count", { id, pageCount }),

@@ -142,6 +142,7 @@ e `apps/desktop/src-tauri/tauri.conf.json` (`productName` e `app.windows[0].titl
 | Pasta | Conteúdo |
 |---|---|
 | `apps/desktop/` | Aplicativo para Windows: a interface em React (`src/`, com `features/`, `components/` e `app/`), o projeto Tauri (`src-tauri/`, com o `tauri.conf.json`, os ícones e as permissões) e os testes de interface (`tests/unit/`), no executável real (`tests/e2e/`) e de atualização (`tests/update/`) |
+| `apps/android/` | Aplicativo para Android, em desenvolvimento: o projeto Tauri (`src-tauri/`) com o projeto Gradle (`gen/android`) e o plugin Kotlin que lê os arquivos escolhidos no seletor do sistema |
 | `packages/shared/` | O que a interface usa sem depender de tela: `domain/` (tipos e regras) e `services/` (chamadas ao backend, eventos, PDF, sons, cache) |
 | `crates/prancha-core/` | Núcleo em Rust, sem Tauri: formatos, importação, capas, banco de dados (`migrations/`), em `src/guided/` a detecção da Leitura Guiada, em `src/extensions/` repositórios, runtime, fontes e downloads, MyAnimeList e telemetria |
 | `crates/prancha-app/` | Os comandos que a interface chama, o protocolo `prancha://` e o atualizador, sobre o núcleo |

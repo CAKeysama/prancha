@@ -1,6 +1,8 @@
 //! Prancha — comandos da interface, protocolo `prancha://` e atualizador, sobre o núcleo `prancha-core`.
 //! O aplicativo (apps/desktop) só monta o contexto do Tauri e chama [`run`].
 
+#[cfg(target_os = "android")]
+pub mod android;
 pub mod commands;
 pub mod protocol;
 pub mod updates;
@@ -108,11 +110,14 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
     let builder = tauri::Builder::default();
     #[cfg(desktop)]
     let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(android::init());
     builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .manage(updates::Session::default())
+        .manage(commands::OpenedComic::default())
         .register_asynchronous_uri_scheme_protocol("prancha", |ctx, request, responder| {
             // A janela de verificação mostra um site de terceiros, que não pode ler nada da biblioteca.
             if ctx.webview_label() != "main" {
@@ -143,6 +148,8 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
                     start_telemetry(app, &core);
                     core.mal.spawn();
                     app.manage(core.clone());
+                    #[cfg(target_os = "android")]
+                    android::watch_opened(app.handle(), core.clone());
                     std::thread::spawn(move || {
                         // Antes dos downloads: nada da obra que não pode aparecer volta a baixar.
                         if let Err(e) = extensions::sources::forget_blocked(&core, &core.db()) {
@@ -191,6 +198,7 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
             commands::reveal_comic,
             commands::open_data_dir,
             commands::pick_import_paths,
+            commands::take_opened_comic,
             commands::start_import,
             commands::cancel_import,
             commands::open_comic,

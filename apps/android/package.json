@@ -1,0 +1,9 @@
+{
+  "name": "@prancha/android",
+  "private": true,
+  "type": "module",
+  "description": "Prancha para Android: o aplicativo Tauri (src-tauri). Até a interface de toque (Fase 2), usa a mesma interface do desktop.",
+  "scripts": {
+    "tauri": "tauri"
+  }
+}

@@ -376,6 +376,18 @@ describe("configurações", () => {
 });
 
 describe("biblioteca", () => {
+  it("abre no leitor a HQ que outro app entregou, na abertura e com o app aberto", async () => {
+    settings.onboarding = { status: "completed", step: 4, comicId: null };
+    comics = [comic];
+    const queue: number[] = [7];
+    overrides.take_opened_comic = () => queue.shift() ?? null;
+    render(<App />);
+    await waitFor(() => expect(calls.filter((c) => c.cmd === "open_comic").map((c) => c.args.id)).toEqual([7]));
+    queue.push(9);
+    await act(() => emit("comic:opened", {}));
+    await waitFor(() => expect(calls.filter((c) => c.cmd === "open_comic").map((c) => c.args.id)).toEqual([7, 9]));
+  });
+
   it("mostra progresso real e ações separadas", async () => {
     settings.onboarding = { status: "completed", step: 4, comicId: null };
     comics = [comic];

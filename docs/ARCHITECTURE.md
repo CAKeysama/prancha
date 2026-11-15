@@ -32,12 +32,15 @@ versão só para tudo:
 | Pasta | O que tem | Depende de |
 |---|---|---|
 | `apps/desktop/` | `app/`, `features/` e `components/` do desenho acima, o projeto Tauri (`src-tauri/`) e os testes de interface | `@prancha/shared`, `prancha-app` |
+| `apps/android/` | O projeto Tauri do Android (`src-tauri/`, com o projeto Gradle em `gen/android` e o plugin Kotlin de arquivos `FilesPlugin.kt`). Até a interface de toque, usa a interface de `apps/desktop` | `prancha-app` |
 | `packages/shared/` | `domain/` e `services/` do desenho acima, sem tela | `@tauri-apps/api`, `pdfjs-dist` |
 | `crates/prancha-app/` | `commands.rs`, `protocol.rs`, `updates.rs` e a montagem do aplicativo (`run`) | `prancha-core`, Tauri |
 | `crates/prancha-core/` | O resto do backend do desenho acima, sem Tauri: biblioteca, formatos, páginas, leitura guiada, extensões, MyAnimeList, telemetria | — |
 
 O núcleo não depende do Tauri: os testes dele compilam sem a WebView, e o mesmo código compila para o Android
-(`cargo check -p prancha-app --target aarch64-linux-android`, conferido no CI). As extensões em `extensions/` ficam num
+(o CI gera um APK de depuração de `apps/android`). No Android, os quadrinhos ficam guardados como endereços
+`content://` do seletor do sistema: as leituras do disco passam por `prancha-core/src/location.rs`, que usa `std::fs`
+para caminhos comuns e o plugin Kotlin para esses endereços (o UnRAR, que só abre por nome, recebe `/proc/self/fd/<n>`). As extensões em `extensions/` ficam num
 workspace do Cargo à parte, porque compilam para `wasm32-unknown-unknown`.
 
 A interface nunca recebe acesso a caminhos arbitrários: arquivos são escolhidos pelo diálogo
