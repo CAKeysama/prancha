@@ -16,7 +16,7 @@ fn corrupt(e: std::io::Error) -> FormatError {
 }
 
 fn for_each(path: &Path, mut f: impl FnMut(&str, &mut tar::Entry<'_, File>) -> FormatResult<bool>) -> FormatResult<()> {
-    let mut archive = tar::Archive::new(File::open(path)?);
+    let mut archive = tar::Archive::new(crate::location::open(path)?);
     let mut count = 0usize;
     for entry in archive.entries_with_seek().map_err(corrupt)? {
         let mut entry = entry.map_err(corrupt)?;

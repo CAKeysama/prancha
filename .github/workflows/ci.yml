@@ -76,7 +76,7 @@ jobs:
       # dos testes muito devagar. Só muda a velocidade, não o que é testado; elas ficam no cache e só recompilam quando mudam.
       - name: Testes do backend
         shell: bash
-        run: cargo test --workspace --lib --test backend --test extensions --config 'profile.dev.package."*".opt-level=2'
+        run: cargo test --workspace --lib --test backend --test content --test extensions --config 'profile.dev.package."*".opt-level=2'
 
   # O Android usa o mesmo núcleo e os mesmos comandos: confere que eles compilam para aarch64-linux-android com o NDK
   # que já vem no Ubuntu do GitHub, inclusive o código em C e C++ (UnRAR, SQLite, ring). O APK ainda é gerado à mão.

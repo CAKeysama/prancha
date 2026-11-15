@@ -6,7 +6,7 @@ pub mod protocol;
 pub mod updates;
 
 // Os módulos do núcleo ficam acessíveis como `crate::db`, `crate::core`… como eram antes da separação.
-use prancha_core::{core, covers, db, error, extensions, formats, guided, import, library, mal, notifications, pages, telemetry};
+use prancha_core::{core, covers, db, error, extensions, formats, guided, import, library, location, mal, notifications, pages, telemetry};
 
 use std::path::PathBuf;
 use std::sync::Arc;

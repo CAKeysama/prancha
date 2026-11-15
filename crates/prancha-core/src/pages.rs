@@ -82,7 +82,7 @@ impl PageService {
         }
         let format = ComicFormat::parse(&info.format).ok_or_else(|| FormatError::Unsupported(info.format.clone()))?;
         let path = Path::new(&info.path);
-        if !path.exists() {
+        if !crate::location::exists(path) {
             return Err(FormatError::Io(std::io::Error::new(std::io::ErrorKind::NotFound, "missing")));
         }
         let listing = formats::list(format, path)?;

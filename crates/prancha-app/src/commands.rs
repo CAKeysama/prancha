@@ -29,6 +29,7 @@ use crate::extensions::suwayomi;
 use crate::formats::{self, COMIC_EXTENSIONS};
 use crate::guided::{self, store::{self, GuidedPage, GuidedRegion}};
 use crate::import::{self, EVENT_LIBRARY};
+use crate::location;
 use crate::library::{
     self, CollectionInfo, ComicDetails, ComicSummary, HomeData, LibraryQuery, MetadataPatch, Progress,
 };
@@ -119,7 +120,7 @@ pub async fn get_comic(state: S<'_>, id: i64) -> AppResult<ComicDetails> {
     blocking(&state, move |c| {
         // Confere a existência do arquivo a cada abertura dos detalhes.
         let info = library::file_info(&c.db(), id)?;
-        let exists = Path::new(&info.path).exists();
+        let exists = location::exists(Path::new(&info.path));
         if exists == info.missing {
             library::set_missing(&c.db(), id, !exists)?;
         }
@@ -185,7 +186,7 @@ fn move_to_trash(_path: &str) -> AppResult<()> {
 pub async fn remove_comic(state: S<'_>, id: i64, delete_original: bool) -> AppResult<RemoveResult> {
     changing(&state, move |c| {
         let info = library::file_info(&c.db(), id)?;
-        let trashed = delete_original && Path::new(&info.path).exists();
+        let trashed = delete_original && location::exists(Path::new(&info.path));
         if trashed {
             move_to_trash(&info.path)?;
         }
@@ -243,7 +244,7 @@ pub async fn relocate_comic(app: AppHandle, state: S<'_>, id: i64, path: Option<
                 return Err(AppError::user("duplicate", "Esse arquivo já está registrado como outra HQ da biblioteca."));
             }
         }
-        let size = import::content_size(format, &listing, &std::fs::metadata(&path)?);
+        let size = import::content_size(format, &listing, &location::metadata(&path)?);
         {
             let db = c.db();
             library::relink(&db, id, &path_str, &import::display_name(&path), size)?;
@@ -262,7 +263,7 @@ pub async fn relocate_comic(app: AppHandle, state: S<'_>, id: i64, path: Option<
 #[tauri::command]
 pub async fn reveal_comic(app: AppHandle, state: S<'_>, id: i64) -> AppResult<()> {
     let info = blocking(&state, move |c| library::file_info(&c.db(), id)).await?;
-    if !Path::new(&info.path).exists() {
+    if !location::exists(Path::new(&info.path)) {
         return Err(AppError::user("file_missing", "O arquivo não está mais nesse local."));
     }
     app.opener()
@@ -385,7 +386,7 @@ pub struct ReaderSession {
 pub async fn open_comic(state: S<'_>, id: i64) -> AppResult<ReaderSession> {
     blocking(&state, move |c| {
         let info = library::file_info(&c.db(), id)?;
-        if !Path::new(&info.path).exists() {
+        if !location::exists(Path::new(&info.path)) {
             library::set_missing(&c.db(), id, true)?;
             library_changed(c);
             return Err(AppError::user(

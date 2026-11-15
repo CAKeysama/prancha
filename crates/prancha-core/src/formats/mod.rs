@@ -10,12 +10,12 @@ mod tarfmt;
 mod zipfmt;
 
 use std::collections::HashMap;
-use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use crate::location;
 use crate::natural::natural_path_cmp;
 pub use comicinfo::ComicInfo;
 
@@ -142,6 +142,11 @@ impl Listing {
 }
 
 pub fn extension_of(path: &Path) -> String {
+    // Um endereço content:// não termina no nome do arquivo: a extensão vem do nome que o sistema informa.
+    if location::is_content(path) {
+        let name = location::file_name(path).unwrap_or_default();
+        return Path::new(&name).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+    }
     path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default()
 }
 
@@ -220,15 +225,15 @@ pub(crate) fn read_bounded(reader: &mut dyn Read, declared: u64, limit: u64) -> 
 /// Identifica o formato pelo conteúdo (assinatura), não apenas pela extensão.
 /// Um `.cbr` que na verdade é ZIP é tratado como CBZ, situação comum na prática.
 pub fn detect(path: &Path) -> FormatResult<ComicFormat> {
-    let meta = std::fs::metadata(path)?;
-    if meta.is_dir() {
+    let meta = location::metadata(path)?;
+    if meta.is_dir {
         return Ok(ComicFormat::Folder);
     }
     if !is_comic_file(path) {
         return Err(unsupported(path));
     }
     let mut head = [0u8; 1024];
-    let mut file = File::open(path)?;
+    let mut file = location::open(path)?;
     let mut read = 0;
     while read < head.len() {
         let n = file.read(&mut head[read..])?;

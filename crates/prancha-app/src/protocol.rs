@@ -143,7 +143,7 @@ fn pdf_file(core: &Core, id: i64, req: &Request<Vec<u8>>) -> AppResult<Resp> {
     if info.format != "pdf" {
         return Ok(error(StatusCode::NOT_FOUND, "not_found", "Recurso não encontrado."));
     }
-    let mut file = std::fs::File::open(&info.path).map_err(|e| note_missing(core, id, e))?;
+    let mut file = crate::location::open(std::path::Path::new(&info.path)).map_err(|e| note_missing(core, id, e))?;
     let len = file.metadata().map(|m| m.len()).unwrap_or(0);
     let range = req.headers().get(header::RANGE).and_then(|v| v.to_str().ok()).map(|v| parse_range(v, len));
     let (status, start, end) = match range {

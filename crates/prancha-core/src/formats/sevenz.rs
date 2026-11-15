@@ -24,7 +24,11 @@ fn map_err(e: sevenz_rust2::Error) -> FormatError {
 }
 
 fn open(path: &Path) -> FormatResult<ArchiveReader<std::fs::File>> {
-    let mut reader = ArchiveReader::open(path, Password::empty()).map_err(map_err)?;
+    let mut reader = if crate::location::is_content(path) {
+        ArchiveReader::new(crate::location::open(path)?, Password::empty()).map_err(map_err)?
+    } else {
+        ArchiveReader::open(path, Password::empty()).map_err(map_err)?
+    };
     reader.set_thread_count(1);
     Ok(reader)
 }

@@ -109,7 +109,7 @@ impl Core {
         let started = db::now_ms();
         let mut gone = NewNotification::new(Kind::FilesMissing).grouped(crate::notifications::DOWNLOADS_WINDOW_MS);
         for info in infos {
-            let exists = Path::new(&info.path).exists();
+            let exists = crate::location::exists(Path::new(&info.path));
             if !exists && !info.missing {
                 library::set_missing(&conn, info.id, true)?;
                 missing += 1;

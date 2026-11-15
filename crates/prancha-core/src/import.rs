@@ -4,7 +4,6 @@
 //! impressão digital → duplicatas → registrar → gerar capa → informar o resultado.
 
 use std::collections::{BTreeSet, HashMap};
-use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
@@ -18,6 +17,7 @@ use crate::covers::{self, COVER_PARAMS_VERSION, CoverKind};
 use crate::error::AppResult;
 use crate::formats::{self, ComicFormat, FormatError, Listing};
 use crate::library::{self, NewComic};
+use crate::location;
 use crate::natural::natural_path_cmp;
 use crate::notifications::{self, Event, Kind, NewNotification};
 use crate::text::title_from_file_name;
@@ -67,6 +67,10 @@ pub fn duplicate_policy(conn: &Connection) -> DuplicatePolicy {
 
 /// Caminho absoluto sem o prefixo `\\?\` do Windows, para comparação estável.
 pub fn canonical(path: &Path) -> std::io::Result<PathBuf> {
+    // Um endereço content:// já é a forma estável: o sistema não tem outro nome para ele.
+    if location::is_content(path) {
+        return Ok(path.to_path_buf());
+    }
     let c = std::fs::canonicalize(path)?;
     let s = c.to_string_lossy();
     if let Some(rest) = s.strip_prefix(r"\\?\") {
@@ -79,7 +83,7 @@ pub fn canonical(path: &Path) -> std::io::Result<PathBuf> {
 }
 
 pub fn display_name(path: &Path) -> String {
-    path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| path.to_string_lossy().to_string())
+    location::file_name(path).unwrap_or_else(|| path.to_string_lossy().to_string())
 }
 
 fn failed(path: &Path, message: impl Into<String>) -> ItemResult {
@@ -92,19 +96,64 @@ fn failed(path: &Path, message: impl Into<String>) -> ItemResult {
     }
 }
 
+/// O que a procura dentro das pastas escolhidas encontrou.
+#[derive(Default)]
+struct Scan {
+    found: Vec<PathBuf>,
+    image_dirs: BTreeSet<PathBuf>,
+    errors: Vec<ItemResult>,
+}
+
+impl Scan {
+    /// Um arquivo encontrado em `parent`.
+    fn visit(&mut self, p: &Path, name: &str, parent: Option<&Path>) {
+        if name.starts_with('.') {
+            return;
+        }
+        if formats::is_comic_file(p) {
+            self.found.push(p.to_path_buf());
+        } else if formats::KNOWN_UNSUPPORTED_EXTENSIONS.contains(&formats::extension_of(p).as_str()) {
+            self.errors.push(failed(p, formats::unsupported(p).to_string()));
+        } else if formats::is_image_name(name) {
+            if let Some(parent) = parent {
+                self.image_dirs.insert(parent.to_path_buf());
+            }
+        }
+    }
+
+    /// Percorre uma pasta do seletor do Android, que não tem caminho no disco, até a mesma profundidade.
+    fn walk_content(&mut self, dir: &Path, depth: usize) {
+        if depth >= MAX_SCAN_DEPTH {
+            return;
+        }
+        match location::read_dir(dir) {
+            Ok(entries) => {
+                for e in entries {
+                    if e.is_file {
+                        self.visit(&e.path, &e.name, Some(dir));
+                    } else if !e.name.starts_with('.') {
+                        self.walk_content(&e.path, depth + 1);
+                    }
+                }
+            }
+            Err(e) => self.errors.push(failed(dir, format!("Não foi possível ler a pasta: {}", crate::error::io_message(&e)))),
+        }
+    }
+}
+
 /// Expande os caminhos escolhidos em candidatos (arquivos de HQ e pastas com imagens).
 pub fn expand(paths: &[PathBuf]) -> (Vec<PathBuf>, Vec<ItemResult>) {
     let mut candidates: Vec<PathBuf> = Vec::new();
     let mut errors = Vec::new();
     for path in paths {
-        let meta = match std::fs::metadata(path) {
+        let meta = match location::metadata(path) {
             Ok(m) => m,
             Err(e) => {
                 errors.push(failed(path, crate::error::io_message(&e)));
                 continue;
             }
         };
-        if meta.is_file() {
+        if meta.is_file {
             if formats::is_comic_file(path) {
                 candidates.push(path.clone());
             } else {
@@ -112,36 +161,29 @@ pub fn expand(paths: &[PathBuf]) -> (Vec<PathBuf>, Vec<ItemResult>) {
             }
             continue;
         }
-        let mut found: Vec<PathBuf> = Vec::new();
-        let mut image_dirs: BTreeSet<PathBuf> = BTreeSet::new();
-        for entry in walkdir::WalkDir::new(path).max_depth(MAX_SCAN_DEPTH).follow_links(false) {
-            match entry {
-                Ok(e) => {
-                    if !e.file_type().is_file() {
-                        continue;
-                    }
-                    let p = e.path();
-                    let name = e.file_name().to_string_lossy();
-                    if name.starts_with('.') {
-                        continue;
-                    }
-                    if formats::is_comic_file(p) {
-                        found.push(p.to_path_buf());
-                    } else if formats::KNOWN_UNSUPPORTED_EXTENSIONS.contains(&formats::extension_of(p).as_str()) {
-                        errors.push(failed(p, formats::unsupported(p).to_string()));
-                    } else if formats::is_image_name(&name) {
-                        if let Some(parent) = p.parent() {
-                            image_dirs.insert(parent.to_path_buf());
+        let mut scan = Scan::default();
+        if location::is_content(path) {
+            scan.walk_content(path, 0);
+        } else {
+            for entry in walkdir::WalkDir::new(path).max_depth(MAX_SCAN_DEPTH).follow_links(false) {
+                match entry {
+                    Ok(e) => {
+                        if !e.file_type().is_file() {
+                            continue;
                         }
+                        let p = e.path();
+                        scan.visit(p, &e.file_name().to_string_lossy(), p.parent());
                     }
-                }
-                Err(e) => {
-                    let p = e.path().map(Path::to_path_buf).unwrap_or_else(|| path.clone());
-                    let msg = e.io_error().map(crate::error::io_message).unwrap_or_else(|| e.to_string());
-                    errors.push(failed(&p, format!("Não foi possível ler a pasta: {msg}")));
+                    Err(e) => {
+                        let p = e.path().map(Path::to_path_buf).unwrap_or_else(|| path.clone());
+                        let msg = e.io_error().map(crate::error::io_message).unwrap_or_else(|| e.to_string());
+                        scan.errors.push(failed(&p, format!("Não foi possível ler a pasta: {msg}")));
+                    }
                 }
             }
         }
+        let Scan { mut found, image_dirs, errors: scan_errors } = scan;
+        errors.extend(scan_errors);
         found.extend(image_dirs);
         if found.is_empty() {
             errors.push(failed(path, "A pasta não contém imagens nem arquivos de quadrinhos compatíveis."));
@@ -154,8 +196,8 @@ pub fn expand(paths: &[PathBuf]) -> (Vec<PathBuf>, Vec<ItemResult>) {
 }
 
 /// Uma pasta não tem tamanho próprio: vale a soma das páginas.
-pub fn content_size(format: ComicFormat, listing: &Listing, meta: &std::fs::Metadata) -> i64 {
-    if format == ComicFormat::Folder { listing.pages.iter().map(|p| p.size as i64).sum() } else { meta.len() as i64 }
+pub fn content_size(format: ComicFormat, listing: &Listing, meta: &location::Meta) -> i64 {
+    if format == ComicFormat::Folder { listing.pages.iter().map(|p| p.size as i64).sum() } else { meta.len as i64 }
 }
 
 /// Total de páginas, quando já se sabe: um PDF grande só o conhece ao abrir.
@@ -176,11 +218,11 @@ pub fn fingerprint(format: ComicFormat, path: &Path, listing: &Listing) -> Resul
             hasher.update(&p.size.to_le_bytes());
         }
         if let Some(first) = listing.pages.first() {
-            let mut f = File::open(path.join(&first.name))?;
+            let mut f = location::open(&location::child(path, &first.name)?)?;
             hasher.update_reader(&mut f)?;
         }
     } else {
-        let mut f = File::open(path)?;
+        let mut f = location::open(path)?;
         hasher.update_reader(&mut f)?;
     }
     Ok(hasher.finalize().to_hex().to_string())
@@ -291,17 +333,17 @@ fn process_path(conn: &Connection, covers_dir: &Path, path: &Path, policy: Dupli
     }
 
     let format = formats::detect(path)?;
-    let meta = std::fs::metadata(path)?;
+    let meta = location::metadata(path)?;
     // Confirma permissão de leitura antes de processar.
     if format != ComicFormat::Folder {
-        File::open(path)?;
+        location::open(path)?;
     }
     let listing = formats::list(format, path)?;
     let fp = fingerprint(format, path, &listing)?;
     let size = content_size(format, &listing, &meta);
 
     let dups = library::find_by_fingerprint(conn, &fp)?;
-    if let Some(moved) = dups.iter().find(|d| d.missing || !Path::new(&d.path).exists()) {
+    if let Some(moved) = dups.iter().find(|d| d.missing || !location::exists(Path::new(&d.path))) {
         library::relink(conn, moved.id, &path_str, &display_name(path), size)?;
         let message = format!("“{}” foi encontrado em um novo local. A localização foi atualizada e o progresso mantido.", moved.title);
         return Ok(("relinked", Some(message), Some(moved.id)));
@@ -393,7 +435,7 @@ pub fn regenerate_covers(conn: &Connection, covers_dir: &Path, emit: &Emit) -> A
         let info = library::file_info(conn, id)?;
         let path = PathBuf::from(&info.path);
         let Some(format) = ComicFormat::parse(&info.format) else { continue };
-        if !path.exists() {
+        if !location::exists(&path) {
             library::set_missing(conn, id, true)?;
             continue;
         }

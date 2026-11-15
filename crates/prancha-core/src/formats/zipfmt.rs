@@ -10,7 +10,7 @@ use super::{
 };
 
 fn open(path: &Path) -> FormatResult<zip::ZipArchive<BufReader<File>>> {
-    let file = File::open(path)?;
+    let file = crate::location::open(path)?;
     zip::ZipArchive::new(BufReader::new(file)).map_err(map_err)
 }
 

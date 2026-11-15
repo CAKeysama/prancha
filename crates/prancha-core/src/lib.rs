@@ -10,6 +10,7 @@ pub mod formats;
 pub mod guided;
 pub mod import;
 pub mod library;
+pub mod location;
 pub mod mal;
 pub mod natural;
 pub mod notifications;

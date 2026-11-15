@@ -23,11 +23,16 @@ fn useful_title(t: &str) -> bool {
 }
 
 pub fn list(path: &Path) -> FormatResult<Listing> {
-    let size = std::fs::metadata(path)?.len();
+    let size = crate::location::metadata(path)?.len;
     if size > MAX_METADATA_BYTES {
         return Ok(Listing::default());
     }
-    let meta = lopdf::Document::load_metadata(path).map_err(|e| match e {
+    let loaded = if crate::location::is_content(path) {
+        lopdf::Document::load_metadata_from(crate::location::open(path)?)
+    } else {
+        lopdf::Document::load_metadata(path)
+    };
+    let meta = loaded.map_err(|e| match e {
         lopdf::Error::IO(io) => FormatError::Io(io),
         other => FormatError::Corrupt(format!("PDF inválido ({other})")),
     })?;

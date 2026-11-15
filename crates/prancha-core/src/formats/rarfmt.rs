@@ -22,7 +22,14 @@ fn entry_name(h: &unrar::FileHeader) -> String {
     h.filename.to_string_lossy().replace('\\', "/")
 }
 
+// O UnRAR só abre por nome de arquivo: um endereço content:// vira o /proc/self/fd/<n> do descritor do sistema.
+fn native(path: &Path) -> FormatResult<crate::location::NativePath> {
+    Ok(crate::location::native_path(path)?)
+}
+
 pub fn list(path: &Path) -> FormatResult<Listing> {
+    let native = native(path)?;
+    let path = native.path();
     let archive = unrar::Archive::new(path).open_for_listing().map_err(map_err)?;
     let mut pages = Vec::new();
     let mut info_name = None;
@@ -53,6 +60,8 @@ pub fn list(path: &Path) -> FormatResult<Listing> {
 }
 
 fn read_limited(path: &Path, name: &str, limit: u64) -> FormatResult<Vec<u8>> {
+    let native = native(path)?;
+    let path = native.path();
     let mut archive = unrar::Archive::new(path).open_for_processing().map_err(map_err)?;
     while let Some(header) = archive.read_header().map_err(map_err)? {
         if entry_name(header.entry()) == name {
@@ -78,6 +87,8 @@ pub fn extract(
     sink: &mut dyn FnMut(usize, Vec<u8>) -> FormatResult<bool>,
 ) -> FormatResult<()> {
     let mut remaining = wanted.len();
+    let native = native(path)?;
+    let path = native.path();
     let mut archive = unrar::Archive::new(path).open_for_processing().map_err(map_err)?;
     while remaining > 0 {
         let Some(header) = archive.read_header().map_err(map_err)? else { break };
