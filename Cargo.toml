@@ -7,7 +7,7 @@ exclude = ["extensions"]
 
 # A versão é uma só para o repositório inteiro (ver CONTRIBUTING.md).
 [workspace.package]
-version = "0.12.1"
+version = "0.13.0"
 authors = ["Prancha"]
 edition = "2024"
 license = "MIT"

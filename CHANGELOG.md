@@ -3,6 +3,22 @@
 Tudo o que mudou em cada versão do Prancha. O projeto segue o [versionamento semântico](https://semver.org/lang/pt-BR/),
 e as notas das releases e a [página de downloads](https://cakeysama.github.io/prancha/) são geradas a partir deste arquivo.
 
+## [0.13.0] - 2026-11-15
+
+O app do Windows não muda. Por dentro, o Prancha passa a compilar também para o Android, primeiro passo da versão para celular.
+
+### Novidades
+
+- O núcleo do Prancha compila para o Android: no celular, a Lixeira e o atualizador do Windows ficam desligados (apagar o arquivo original avisa que ainda não dá), e as conexões HTTPS usam os certificados do sistema do Android.
+
+### Melhorias
+
+- O código foi reorganizado em um monorepo: o aplicativo do Windows em `apps/desktop`, o núcleo em Rust em `crates/prancha-core` (sem depender do Tauri), os comandos do app em `crates/prancha-app` e o código da interface que não depende de tela em `packages/shared`. As verificações do GitHub conferem também a compilação para o Android.
+
+### Correções
+
+- A compilação para o Android a partir do Windows escolhia as bibliotecas do sistema pelo computador que compila, e não pelo celular; e a leitura de CBR não compilava para o Android (a função `lutimes` não existe nas versões mais antigas que o app aceita). Uma cópia corrigida do `unrar_sys` fica em `vendor/` até a correção sair no pacote.
+
 ## [0.12.1] - 2026-11-14
 
 O site oficial volta a mostrar a versão mais recente. O app não muda.
