@@ -33,10 +33,6 @@ CREATE TABLE sync_account (
     state         TEXT    NOT NULL DEFAULT 'signed_in' CHECK (state IN ('signed_in','expired'))
 );
 
--- A chave portátil da obra e do capítulo. Nas extensões do Prancha é o próprio `remote_id`; nas do Mihon, o endereço
--- da obra e do capítulo na fonte, que não muda de um aparelho para outro. NULL: ainda não descoberta.
-ALTER TABLE online_series ADD COLUMN sync_key TEXT;
-ALTER TABLE online_chapters ADD COLUMN sync_key TEXT;
 -- A pasta tem um id que vale em todos os aparelhos.
 ALTER TABLE collections ADD COLUMN sync_id TEXT;
 UPDATE collections SET sync_id = lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)), 2) || '-a' || substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(6)));
@@ -58,6 +54,16 @@ CREATE TABLE sync_series_meta (
     chapter_sort_at  INTEGER,
     reader_mode_at   INTEGER
 );
+
+-- Obras que saíram do banco deste aparelho (tiradas da biblioteca, bloqueadas ou esquecidas), para a saída subir.
+-- Só sobe a de uma obra que a nuvem conhece.
+CREATE TABLE sync_series_gone (
+    extension_id  TEXT    NOT NULL,
+    source_id     TEXT    NOT NULL,
+    remote_id     TEXT    NOT NULL,
+    removed_at    INTEGER NOT NULL,
+    PRIMARY KEY (extension_id, source_id, remote_id)
+) WITHOUT ROWID;
 
 -- Quando o capítulo virou lido ou não lido neste aparelho (ou veio assim da nuvem).
 CREATE TABLE sync_chapter_meta (
@@ -123,7 +129,7 @@ CREATE TABLE sync_remote_items (
 ) WITHOUT ROWID;
 
 -- ---------------------------------------------------------------------------------------------------------------------
--- Gatilhos. `quiet` = a sincronização está aplicando o que veio da nuvem.
+-- Gatilhos. Ficam quietos enquanto `sync_state.applying` = 1 (a sincronização aplicando o que veio da nuvem).
 -- ---------------------------------------------------------------------------------------------------------------------
 
 CREATE TRIGGER sync_series_following AFTER UPDATE OF following ON online_series
@@ -156,6 +162,12 @@ BEGIN
     INSERT INTO sync_series_meta (series_id, reader_mode_at) VALUES (new.id, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))
     ON CONFLICT (series_id) DO UPDATE SET reader_mode_at = excluded.reader_mode_at;
     INSERT OR IGNORE INTO sync_dirty (kind, ref) VALUES ('series', new.id);
+END;
+
+CREATE TRIGGER sync_series_delete AFTER DELETE ON online_series WHEN (SELECT applying FROM sync_state) = 0
+BEGIN
+    INSERT OR REPLACE INTO sync_series_gone (extension_id, source_id, remote_id, removed_at)
+    VALUES (old.extension_id, old.source_id, old.remote_id, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER));
 END;
 
 CREATE TRIGGER sync_chapter_read AFTER UPDATE OF completed_at, manual_unread ON online_chapters

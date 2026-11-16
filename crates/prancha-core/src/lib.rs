@@ -3,6 +3,7 @@
 
 pub mod core;
 pub mod account;
+pub mod sync;
 pub mod covers;
 pub mod db;
 pub mod error;
