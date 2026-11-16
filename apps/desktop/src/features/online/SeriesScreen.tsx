@@ -486,7 +486,7 @@ export function SeriesScreen({ id }: { id: number }) {
           </>
         }
       />
-      <div className="mx-auto max-w-5xl px-6 py-6">
+      <div className="mx-auto max-w-5xl px-6 py-6 max-desk:px-4">
         {view.sourceError && (
           <div role="alert" className="mb-5 flex items-start gap-3 rounded-md border border-border bg-surface px-4 py-3">
             <CloudOff size={18} className="mt-0.5 shrink-0 text-muted" aria-hidden />

@@ -1,4 +1,4 @@
-import { memo, useId, type ReactNode } from "react";
+import { memo, useId, useRef, type ReactNode } from "react";
 import { BookOpen, CircleCheck, CircleDashed, FileWarning, MoreHorizontal, Star } from "lucide-react";
 import { Button, IconButton } from "../../components/Button";
 import { Cover } from "../../components/Cover";
@@ -12,6 +12,7 @@ import { STATUS_LABELS, formatDate, progressLabel, progressRatio, readActionLabe
 import { FORMAT_LABELS, type ComicSummary, type ReadStatus } from "@prancha/shared/domain/types";
 import { OnlineCover } from "../online/parts";
 import { useComicActions } from "./comic-actions";
+import { useCompact } from "../../app/platform";
 
 interface StatusProps {
   status: ReadStatus;
@@ -72,8 +73,25 @@ function Flags({ missing, favorite, newCount = 0 }: { missing: boolean; favorite
   );
 }
 
-function MoreMenu({ title, items }: { title: string; items: MenuEntry[] }) {
-  return <Menu label={`Ações para ${title}`} items={items} trigger={(p) => <IconButton {...p} icon={MoreHorizontal} label={`Mais ações para ${title}`} size="sm" />} />;
+function MoreMenu({ title, items, buttonRef }: { title: string; items: MenuEntry[]; buttonRef?: { current: HTMLButtonElement | null } }) {
+  return (
+    <Menu
+      label={`Ações para ${title}`}
+      items={items}
+      trigger={(p) => (
+        <IconButton
+          {...p}
+          ref={(el) => {
+            p.ref(el);
+            if (buttonRef) buttonRef.current = el;
+          }}
+          icon={MoreHorizontal}
+          label={`Mais ações para ${title}`}
+          size="sm"
+        />
+      )}
+    />
+  );
 }
 
 /** O que muda entre uma HQ e uma obra de fonte: o desenho do cartão e da linha é o mesmo. */
@@ -95,18 +113,41 @@ interface ItemFrame {
   onResume?: () => void;
 }
 
-function CardFrame({ title, sub, ids, cover, status, favorite, missing, onOpen, onRead, menu, width, highlight, newCount, onResume }: ItemFrame & { width: number; missing?: boolean; highlight?: boolean }) {
+function CardFrame({ title, sub, ids, cover, status, favorite, missing, onOpen, onRead, menu, width, highlight, newCount, onResume, tapReads }: ItemFrame & { width: number; missing?: boolean; highlight?: boolean; tapReads?: boolean }) {
   const titleId = useId();
   const coverHeight = width * 1.5;
+  // No celular (design aprovado): tocar na HQ abre a leitura e o toque longo abre as ações numa folha. Não há
+  // passar o mouse para mostrar o botão Ler, e o botão de ações não cabe ao lado do título num cartão estreito.
+  const phone = useCompact();
+  const menuButton = useRef<HTMLButtonElement | null>(null);
+  const read = phone && tapReads && onRead;
   return (
-    <article aria-labelledby={titleId} className="group relative" style={{ width }} {...ids}>
-      <button type="button" onClick={onOpen} className={cn("block w-full rounded-md text-left", highlight && "ring-2 ring-accent ring-offset-2 ring-offset-bg")} aria-label={`Ver detalhes de ${title}`}>
+    <article
+      aria-labelledby={titleId}
+      className="group relative"
+      style={{ width }}
+      {...ids}
+      onContextMenu={
+        phone
+          ? (e) => {
+              e.preventDefault();
+              menuButton.current?.click();
+            }
+          : undefined
+      }
+    >
+      <button
+        type="button"
+        onClick={read || onOpen}
+        className={cn("block w-full rounded-md text-left", highlight && "ring-2 ring-accent ring-offset-2 ring-offset-bg")}
+        aria-label={read ? `${readActionLabel(status)}: ${title}` : `Ver detalhes de ${title}`}
+      >
         <div className="relative">
           {cover}
           <Flags missing={missing ?? false} favorite={favorite} newCount={newCount} />
         </div>
       </button>
-      {onRead && (
+      {onRead && !phone && (
         <div className="absolute inset-x-0 flex justify-center opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100" style={{ top: coverHeight - 40 }}>
           <Button size="sm" variant="primary" icon={BookOpen} onClick={onRead} aria-label={`${readActionLabel(status)}: ${title}`}>
             {status.status === "reading" ? "Continuar" : "Ler"}
@@ -120,8 +161,8 @@ function CardFrame({ title, sub, ids, cover, status, favorite, missing, onOpen, 
           </h3>
           <p className="h-[18px] truncate text-xs text-muted">{sub}</p>
         </div>
-        <div className="-mr-1 shrink-0">
-          <MoreMenu title={title} items={menu} />
+        <div className={cn("-mr-1 shrink-0", phone && "hidden")}>
+          <MoreMenu title={title} items={menu} buttonRef={menuButton} />
         </div>
       </div>
       <div className="mt-1">
@@ -199,6 +240,7 @@ export const ComicCard = memo(function ComicCard({ comic, width, collectionId, h
       onOpen={() => actions.openDetails(comic)}
       onRead={comic.missing ? null : () => actions.read(comic)}
       menu={actions.menuFor(comic, { collectionId })}
+      tapReads
     />
   );
 });

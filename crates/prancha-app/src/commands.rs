@@ -357,6 +357,48 @@ pub fn take_opened_comic(opened: State<'_, OpenedComic>) -> Option<i64> {
     opened.0.lock().unwrap().take()
 }
 
+// A tela no Android (barras do sistema, leitor em tela cheia, Voltar na tela inicial). No desktop não fazem nada:
+// lá a tela cheia do leitor é a da janela.
+
+/// Leitor em tela cheia, sem as barras do sistema.
+#[tauri::command]
+pub async fn screen_immersive(app: AppHandle, on: bool) -> AppResult<()> {
+    #[cfg(target_os = "android")]
+    tauri::async_runtime::spawn_blocking(move || crate::android::set_immersive(&app, on))
+        .await
+        .map_err(|e| AppError::user("internal", e.to_string()))?
+        .map_err(|e| AppError::user("internal", e.to_string()))?;
+    #[cfg(not(target_os = "android"))]
+    let _ = (app, on);
+    Ok(())
+}
+
+/// A cor atrás das barras do sistema e o tom dos ícones delas, iguais ao tema do app.
+#[tauri::command]
+pub async fn screen_bars(app: AppHandle, dark: bool, color: String) -> AppResult<()> {
+    #[cfg(target_os = "android")]
+    tauri::async_runtime::spawn_blocking(move || crate::android::set_bars(&app, dark, &color))
+        .await
+        .map_err(|e| AppError::user("internal", e.to_string()))?
+        .map_err(|e| AppError::user("internal", e.to_string()))?;
+    #[cfg(not(target_os = "android"))]
+    let _ = (app, dark, color);
+    Ok(())
+}
+
+/// Voltar na tela inicial: o app vai para segundo plano.
+#[tauri::command]
+pub async fn screen_leave(app: AppHandle) -> AppResult<()> {
+    #[cfg(target_os = "android")]
+    tauri::async_runtime::spawn_blocking(move || crate::android::move_to_back(&app))
+        .await
+        .map_err(|e| AppError::user("internal", e.to_string()))?
+        .map_err(|e| AppError::user("internal", e.to_string()))?;
+    #[cfg(not(target_os = "android"))]
+    let _ = app;
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn pick_import_paths(app: AppHandle, mode: PickMode) -> AppResult<Option<Vec<String>>> {
     let title = match mode {

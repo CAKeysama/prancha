@@ -6,9 +6,26 @@ import { Spinner } from "../../components/Feedback";
 import type { Size } from "@prancha/shared/domain/reader";
 import { renderPdfPage } from "@prancha/shared/services/pdf";
 import { fetchPageError, type PageSrc } from "@prancha/shared/services/urls";
+import { IS_ANDROID } from "../../app/platform";
 
 /** Espera curta só aparece se demorar: a página já pronta (pré-carregada, em cache) entra sem piscar. */
 export const APPEAR_LATE: CSSProperties = { animation: "p-fade-in 140ms ease-out 250ms both" };
+
+/** Degraus da largura pedida: a página pré-carregada e a da tela precisam ter o mesmo endereço para o cache servir. */
+const WIDTH_STEP = 256;
+
+/**
+ * No Android a página vem reduzida à largura em que aparece, em pixels do aparelho: o WebView guarda cada página
+ * decodificada, e a original costuma ter o dobro da largura da tela. No desktop, sempre a original.
+ */
+export function atWidth(url: string, cssWidth: number): string {
+  if (!IS_ANDROID || cssWidth <= 0) return url;
+  const px = Math.ceil((cssWidth * (window.devicePixelRatio || 1)) / WIDTH_STEP) * WIDTH_STEP;
+  return `${url}${url.includes("?") ? "&" : "?"}w=${px}`;
+}
+
+/** Largura de leitura: no mínimo a da tela, a mesma da pré-carga. Com zoom, a página pede de novo, maior. */
+const readingWidth = (cssWidth = 0) => Math.max(cssWidth, window.innerWidth);
 
 interface PageViewProps {
   src: PageSrc;
@@ -51,7 +68,7 @@ function PageError({ index, message, onRetry, width, height }: { index: number; 
 function ImagePage({ src: srcOf, index, width, height, flush, onSize }: Omit<PageViewProps, "pdf">) {
   // Cada nova tentativa pede a imagem de novo, sem passar pelo cache.
   const [token, setToken] = useState(0);
-  const src = srcOf(index, token);
+  const src = atWidth(srcOf(index, token), readingWidth(width));
   // Guardados junto com o endereço: a resposta atrasada de uma tentativa antiga não vale para a nova.
   const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
   const [failure, setFailure] = useState<{ src: string; message: string } | null>(null);
@@ -165,7 +182,7 @@ export function usePreload(src: PageSrc, pages: number[], enabled: boolean, onSi
       key
         .split(",")
         .filter(Boolean)
-        .map((p) => [src(Number(p)), Number(p)] as const),
+        .map((p) => [atWidth(src(Number(p)), readingWidth()), Number(p)] as const),
     );
     for (const [url, img] of live) {
       if (wanted.has(url)) continue;

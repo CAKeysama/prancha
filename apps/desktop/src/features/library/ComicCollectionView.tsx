@@ -3,6 +3,10 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { isSeries, itemKey, type LibraryItem } from "@prancha/shared/domain/library-items";
 import { THUMB_WIDTHS } from "@prancha/shared/domain/settings";
 import { useSettings } from "../../app/settings-context";
+import { useCompact } from "../../app/platform";
+
+/** No celular a largura mínima é menor: três colunas no tamanho médio em 360 dp, duas no grande. */
+const PHONE_THUMB_WIDTHS: typeof THUMB_WIDTHS = { small: 84, medium: 100, large: 148 };
 import { ComicCard, ComicRow, SeriesItemCard, SeriesItemRow, cardHeight } from "./ComicItem";
 
 function useWidth(ref: RefObject<HTMLElement | null>): number {
@@ -35,9 +39,10 @@ export function ComicCollectionView({ items, view, scrollRef, collectionId }: Pr
   const { settings } = useSettings();
   const container = useRef<HTMLDivElement>(null);
   const width = useWidth(container);
+  const phone = useCompact();
   const compact = settings["appearance.density"] === "compact";
-  const gap = compact ? 12 : 20;
-  const minCard = THUMB_WIDTHS[settings["appearance.thumbSize"]];
+  const gap = compact || phone ? 12 : 20;
+  const minCard = (phone ? PHONE_THUMB_WIDTHS : THUMB_WIDTHS)[settings["appearance.thumbSize"]];
   const cols = view === "grid" ? Math.max(1, Math.floor((width + gap) / (minCard + gap))) : 1;
   const cardW = view === "grid" ? Math.floor((width - gap * (cols - 1)) / cols) : width;
   const rowH = view === "grid" ? cardHeight(cardW) + gap : 88;
@@ -91,9 +96,10 @@ export function ComicCollectionView({ items, view, scrollRef, collectionId }: Pr
 /** Faixa horizontal simples (tela inicial), sem virtualização: no máximo 12 itens. */
 export function ComicShelf({ items }: { items: LibraryItem[] }) {
   const { settings } = useSettings();
-  const w = THUMB_WIDTHS[settings["appearance.thumbSize"]];
+  const phone = useCompact();
+  const w = phone ? 116 : THUMB_WIDTHS[settings["appearance.thumbSize"]];
   return (
-    <div role="list" className="-mx-1 flex gap-5 overflow-x-auto px-1 pt-1 pb-3">
+    <div role="list" className="-mx-1 flex gap-5 overflow-x-auto px-1 pt-1 pb-3 max-desk:-mx-4 max-desk:gap-3 max-desk:px-4 max-desk:[scrollbar-width:none]">
       {items.map((item) => (
         <div role="listitem" key={itemKey(item)} className="shrink-0">
           <Item item={item} view="grid" width={w} />

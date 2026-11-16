@@ -398,7 +398,7 @@ export function RepositoriesScreen() {
           </>
         }
       />
-      <div className="mx-auto max-w-4xl px-6 py-4">
+      <div className="mx-auto max-w-4xl px-6 py-4 max-desk:px-4">
         {error && !repositories && <ErrorState title="Não foi possível abrir os repositórios" message={error} />}
         {!error && !repositories && <Spinner label="Carregando…" />}
         {repositories?.length === 0 && (

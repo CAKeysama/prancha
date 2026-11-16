@@ -6,6 +6,7 @@
 //!   nunca viram caminhos no disco, o que elimina path traversal.
 
 use std::collections::HashMap;
+use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
@@ -54,6 +55,35 @@ fn mime_for(name: &str) -> &'static str {
         Some("bmp") => "image/bmp",
         Some("avif") => "image/avif",
         _ => "application/octet-stream",
+    }
+}
+
+/// Reduz a página para `max_width` px de largura, com a mesma proporção. O Android pede a largura da tela: o
+/// WebView guarda cada página decodificada, e uma de 2000×3000 ocupa 24 MB onde 7 MB bastariam.
+/// `None` quando a original serve: já cabe, é GIF (pode ser animado) ou não decodifica aqui.
+pub fn fit_width(bytes: &[u8], mime: &str, max_width: u32) -> Option<(Vec<u8>, &'static str)> {
+    if max_width == 0 || mime == "image/gif" {
+        return None;
+    }
+    // Só o cabeçalho: uma página que já cabe não é decodificada à toa.
+    let (width, height) = image::ImageReader::new(Cursor::new(bytes)).with_guessed_format().ok()?.into_dimensions().ok()?;
+    if width <= max_width {
+        return None;
+    }
+    let img = crate::covers::decode_limited(bytes).ok()?;
+    let new_height = ((u64::from(height) * u64::from(max_width)) / u64::from(width)).max(1) as u32;
+    let small = img.resize_exact(max_width, new_height, image::imageops::FilterType::Triangle);
+    let mut out = Cursor::new(Vec::new());
+    // PNG com canal alfa todo opaco é comum em HQ: vira JPEG, bem mais leve.
+    let opaque = !small.color().has_alpha() || small.as_rgba8().is_some_and(|rgba| rgba.pixels().all(|p| p[3] == 255));
+    if opaque {
+        let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 88);
+        image::DynamicImage::ImageRgb8(small.to_rgb8()).write_with_encoder(encoder).ok()?;
+        Some((out.into_inner(), "image/jpeg"))
+    } else {
+        // A transparência continua: o JPEG pintaria o fundo.
+        small.write_to(&mut out, image::ImageFormat::Png).ok()?;
+        Some((out.into_inner(), "image/png"))
     }
 }
 
@@ -286,4 +316,52 @@ impl PageService {
 fn filetime_touch(path: &Path) -> std::io::Result<()> {
     let f = std::fs::OpenOptions::new().write(true).open(path)?;
     f.set_modified(std::time::SystemTime::now())
+}
+
+#[cfg(test)]
+mod fit_tests {
+    use super::*;
+
+    fn encode(img: image::DynamicImage, format: image::ImageFormat) -> Vec<u8> {
+        let mut out = Cursor::new(Vec::new());
+        img.write_to(&mut out, format).unwrap();
+        out.into_inner()
+    }
+
+    fn page(w: u32, h: u32) -> Vec<u8> {
+        let img = image::RgbImage::from_fn(w, h, |x, y| image::Rgb([(x % 255) as u8, (y % 255) as u8, 90]));
+        encode(image::DynamicImage::ImageRgb8(img), image::ImageFormat::Jpeg)
+    }
+
+    #[test]
+    fn large_pages_shrink_to_the_width_keeping_the_aspect() {
+        let (bytes, mime) = fit_width(&page(2000, 3000), "image/jpeg", 1000).unwrap();
+        assert_eq!(mime, "image/jpeg");
+        let img = image::load_from_memory(&bytes).unwrap();
+        assert_eq!((img.width(), img.height()), (1000, 1500));
+    }
+
+    #[test]
+    fn pages_that_fit_and_gifs_stay_as_they_are() {
+        assert!(fit_width(&page(800, 1200), "image/jpeg", 1080).is_none());
+        assert!(fit_width(&page(2000, 3000), "image/gif", 1080).is_none());
+        assert!(fit_width(&page(2000, 3000), "image/jpeg", 0).is_none());
+        assert!(fit_width(b"nada de imagem", "image/jpeg", 1080).is_none());
+    }
+
+    #[test]
+    fn transparency_is_kept_as_png() {
+        let img = image::RgbaImage::from_fn(1200, 600, |x, _| image::Rgba([10, 20, 30, (x % 200) as u8]));
+        let (bytes, mime) = fit_width(&encode(image::DynamicImage::ImageRgba8(img), image::ImageFormat::Png), "image/png", 600).unwrap();
+        assert_eq!(mime, "image/png");
+        let img = image::load_from_memory(&bytes).unwrap();
+        assert_eq!((img.width(), img.height(), img.color().has_alpha()), (600, 300, true));
+    }
+
+    #[test]
+    fn opaque_rgba_pages_become_jpeg() {
+        let img = image::RgbaImage::from_fn(1200, 600, |x, _| image::Rgba([(x % 255) as u8, 20, 30, 255]));
+        let (_, mime) = fit_width(&encode(image::DynamicImage::ImageRgba8(img), image::ImageFormat::Png), "image/png", 600).unwrap();
+        assert_eq!(mime, "image/jpeg");
+    }
 }

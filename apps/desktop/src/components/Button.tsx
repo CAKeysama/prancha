@@ -17,8 +17,9 @@ const VARIANTS: Record<Variant, string> = {
 };
 
 const SIZES: Record<Size, string> = {
-  sm: "h-7 px-2.5 text-sm gap-1.5",
-  md: "h-8 px-3 text-base gap-2",
+  // No celular o alvo de toque cresce: 40 e 36 px, perto dos 48 dp do Android contando o espaço em volta.
+  sm: "h-7 px-2.5 text-sm gap-1.5 max-desk:h-9 max-desk:px-3",
+  md: "h-8 px-3 text-base gap-2 max-desk:h-10 max-desk:px-4",
 };
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -93,7 +94,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
         className={cn(
           "inline-flex shrink-0 items-center justify-center rounded-md border text-muted hover:text-fg",
           "transition-colors duration-100 disabled:cursor-not-allowed disabled:opacity-50",
-          size === "sm" ? "size-7" : "size-8",
+          size === "sm" ? "size-7 max-desk:size-9" : "size-8 max-desk:size-10",
           VARIANTS[variant],
           pressed && "bg-accent-subtle text-accent-fg hover:text-accent-fg",
           className,

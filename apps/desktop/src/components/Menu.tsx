@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 
 import { createPortal } from "react-dom";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "./cn";
+import { useCompact } from "../app/platform";
 
 export type MenuEntry =
   | {
@@ -48,6 +49,8 @@ export function Menu({ trigger, items: rawItems, label, align = "end" }: MenuPro
   const [triggerNode, setTriggerNode] = useState<HTMLButtonElement | null>(null);
   const menuEl = useRef<HTMLDivElement>(null);
   const id = useId();
+  // No celular o menu vira uma folha presa na borda de baixo, com linhas da altura de um dedo.
+  const sheet = useCompact();
 
   const close = useCallback(
     (refocus = true) => {
@@ -59,6 +62,11 @@ export function Menu({ trigger, items: rawItems, label, align = "end" }: MenuPro
 
   /** Posição calculada no clique, a partir do botão que abriu o menu. */
   const toggle = () => {
+    if (sheet && !open) {
+      setPos({ left: 0, top: 0, up: false });
+      setOpen(true);
+      return;
+    }
     if (open || !triggerNode) {
       setOpen(false);
       return;
@@ -74,6 +82,9 @@ export function Menu({ trigger, items: rawItems, label, align = "end" }: MenuPro
 
   useEffect(() => {
     if (!open) return;
+    // Na folha do celular, o fundo escurecido fecha o menu; o foco não vai para o primeiro item, para ele não
+    // aparecer destacado.
+    if (sheet) return;
     const first = menuEl.current?.querySelector<HTMLElement>('[role="menuitem"]:not([aria-disabled="true"])');
     first?.focus();
     const onDown = (e: MouseEvent) => {
@@ -86,7 +97,7 @@ export function Menu({ trigger, items: rawItems, label, align = "end" }: MenuPro
       document.removeEventListener("mousedown", onDown);
       window.removeEventListener("resize", onScroll);
     };
-  }, [open, close, triggerNode]);
+  }, [open, close, triggerNode, sheet]);
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     const nodes = Array.from(menuEl.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not([aria-disabled="true"])') ?? []);
@@ -114,6 +125,54 @@ export function Menu({ trigger, items: rawItems, label, align = "end" }: MenuPro
       })}
       {open &&
         pos &&
+        sheet &&
+        createPortal(
+          <div className="fixed inset-0 z-[60] flex flex-col justify-end">
+            <div className="p-enter absolute inset-0 bg-overlay" onClick={() => close(false)} aria-hidden />
+            <div
+              ref={menuEl}
+              id={id}
+              role="menu"
+              aria-label={label}
+              onKeyDown={onKeyDown}
+              className="p-sheet relative max-h-[80%] overflow-y-auto rounded-t-2xl border-t border-border bg-elevated pt-2 pb-3 shadow-overlay"
+            >
+              <div className="mx-auto mb-1 h-1 w-8 rounded-full bg-border-control" aria-hidden />
+              <p className="truncate px-5 pt-2 pb-2 text-sm font-semibold text-muted">{label}</p>
+              {items.map((item, i) =>
+                item.kind === "separator" ? (
+                  <div key={`sep-${i}`} role="separator" className="my-1 h-px bg-border" />
+                ) : (
+                  <button
+                    key={item.label}
+                    type="button"
+                    role="menuitem"
+                    aria-disabled={item.disabled || undefined}
+                    tabIndex={-1}
+                    onClick={() => {
+                      if (item.disabled) return;
+                      close(false);
+                      item.onSelect();
+                    }}
+                    className={cn(
+                      "flex min-h-12 w-full items-center gap-4 px-5 text-left text-base outline-none active:bg-active",
+                      item.danger ? "text-danger" : "text-fg",
+                      item.disabled && "opacity-50",
+                    )}
+                  >
+                    {item.icon && <item.icon size={20} aria-hidden className={item.danger ? "" : "text-muted"} />}
+                    <span className="flex-1 truncate">{item.label}</span>
+                    {item.hint && <span className="text-xs text-muted">{item.hint}</span>}
+                  </button>
+                ),
+              )}
+            </div>
+          </div>,
+          document.body,
+        )}
+      {open &&
+        pos &&
+        !sheet &&
         createPortal(
           <div
             ref={menuEl}

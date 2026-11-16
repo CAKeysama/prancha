@@ -273,7 +273,7 @@ export function ExploreScreen() {
           </div>
         )}
       </PageHeader>
-      <div className="px-6 py-4">
+      <div className="px-6 py-4 max-desk:px-4">
         {sources.length === 0 && (
           <EmptyState icon={Compass} title="Nenhuma fonte instalada" actions={<Button onClick={() => nav.navigate({ name: "extensions" })}>Abrir extensões</Button>}>
             Fontes vêm de extensões, que você instala a partir de um repositório.

@@ -24,6 +24,9 @@ pub const EVENT_OPENED: &str = "comic:opened";
 /// O plugin Kotlin, guardado no estado do app para o seletor.
 pub struct Files(PluginHandle<Wry>);
 
+/// O plugin Kotlin da tela (`ScreenPlugin`): barras do sistema, modo imersivo e o Voltar na tela inicial.
+pub struct Screen(PluginHandle<Wry>);
+
 #[derive(Serialize)]
 struct UriArgs<'a> {
     uri: &'a str,
@@ -115,6 +118,40 @@ pub fn init() -> TauriPlugin<Wry> {
             Ok(())
         })
         .build()
+}
+
+/// Registra o plugin Kotlin da tela. Cada plugin do Tauri carrega uma classe Kotlin só, por isso é outro.
+pub fn init_screen() -> TauriPlugin<Wry> {
+    Builder::new("prancha-screen")
+        .setup(|app, api| {
+            app.manage(Screen(api.register_android_plugin("app.prancha", "ScreenPlugin")?));
+            Ok(())
+        })
+        .build()
+}
+
+#[derive(Serialize)]
+struct ImmersiveArgs {
+    on: bool,
+}
+
+#[derive(Serialize)]
+struct BarsArgs<'a> {
+    dark: bool,
+    color: &'a str,
+}
+
+/// Chamadas da interface para a tela. Esperam o Kotlin responder: rodam fora da thread principal.
+pub fn set_immersive(app: &tauri::AppHandle, on: bool) -> io::Result<()> {
+    app.state::<Screen>().0.run_mobile_plugin::<serde_json::Value>("setImmersive", ImmersiveArgs { on }).map(|_| ()).map_err(io_error)
+}
+
+pub fn set_bars(app: &tauri::AppHandle, dark: bool, color: &str) -> io::Result<()> {
+    app.state::<Screen>().0.run_mobile_plugin::<serde_json::Value>("setBars", BarsArgs { dark, color }).map(|_| ()).map_err(io_error)
+}
+
+pub fn move_to_back(app: &tauri::AppHandle) -> io::Result<()> {
+    app.state::<Screen>().0.run_mobile_plugin::<serde_json::Value>("moveToBack", ()).map(|_| ()).map_err(io_error)
 }
 
 /// O seletor do sistema: arquivos soltos ou uma pasta. `None` quando a pessoa cancela.

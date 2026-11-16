@@ -32,7 +32,12 @@ import { LibraryEventsProvider } from "./library-events";
 import { NavigationProvider, sectionOf, useNav, type Route } from "./navigation";
 import { SettingsProvider, useSettings } from "./settings-context";
 import { Sidebar } from "./Sidebar";
-import { SUPPORTED_FORMATS_TEXT } from "./config";
+import { BottomNav, MoreScreen, showsBottomNav } from "./MobileNav";
+import { useCompact } from "./platform";
+import { useAndroidBack } from "./android-back";
+import { HeaderAccessory } from "../components/PageHeader";
+import { NotificationBell } from "../features/notifications/NotificationBell";
+import { ADD_COMICS_HINT } from "./config";
 import { disableContextMenu } from "./context-menu";
 import { sound } from "@prancha/shared/services/sound";
 import { api } from "@prancha/shared/services/api";
@@ -52,7 +57,7 @@ function Screen({ route }: { route: Route }) {
             persistSort: true,
             emptyIcon: Library,
             emptyTitle: "Sua biblioteca está vazia",
-            emptyText: `${SUPPORTED_FORMATS_TEXT}, ou arraste para esta janela.`,
+            emptyText: ADD_COMICS_HINT,
             emptyActions: <AddComicsButtons />,
           }}
         />
@@ -127,11 +132,18 @@ function Screen({ route }: { route: Route }) {
       return <ReaderScreen key={route.id} id={route.id} />;
     case "chapter":
       return <ChapterReaderScreen key={route.id} id={route.id} />;
+    case "more":
+      return <MoreScreen />;
   }
 }
 
+/** Telas principais do celular: o sino fica no canto do cabeçalho, já que não há barra lateral. */
+const BELL_ROUTES = new Set<Route["name"]>(["home", "library", "continue", "recent", "favorites", "collections", "explore", "more"]);
+
 function Shell() {
   const { route, stack, navigate } = useNav();
+  const compact = useCompact();
+  useAndroidBack();
   // Só no Android há o que abrir: uma HQ aberta pelo gerenciador de arquivos vai direto para o leitor. A busca
   // na montagem cobre o app aberto pelo próprio arquivo, quando o aviso chega antes da interface.
   useEffect(() => {
@@ -166,6 +178,18 @@ function Shell() {
       <main className="h-full">
         <Screen route={route} />
       </main>
+    );
+  }
+  if (compact) {
+    return (
+      <div className="flex h-full flex-col">
+        <main className="min-h-0 flex-1">
+          <HeaderAccessory.Provider value={BELL_ROUTES.has(route.name) ? <NotificationBell current={false} /> : null}>
+            <Screen route={route} />
+          </HeaderAccessory.Provider>
+        </main>
+        {showsBottomNav(route) && <BottomNav />}
+      </div>
     );
   }
   return (

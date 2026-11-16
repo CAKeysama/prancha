@@ -369,7 +369,7 @@ export function ExtensionsScreen() {
           />
         }
       />
-      <div className="mx-auto max-w-4xl px-6 py-4">{tab === "installed" ? <Installed version={version} onChanged={bump} onBrowse={() => setTab("catalog")} /> : <Catalog onChanged={bump} />}</div>
+      <div className="mx-auto max-w-4xl px-6 py-4 max-desk:px-4">{tab === "installed" ? <Installed version={version} onChanged={bump} onBrowse={() => setTab("catalog")} /> : <Catalog onChanged={bump} />}</div>
     </div>
   );
 }

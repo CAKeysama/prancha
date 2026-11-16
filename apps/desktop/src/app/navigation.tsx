@@ -18,12 +18,15 @@ export type Route =
   | { name: "repositories" }
   | { name: "plugins" }
   | { name: "notifications" }
-  | { name: "settings"; section?: string };
+  | { name: "settings"; section?: string }
+  /** Só no celular: o destino "Mais" da navegação inferior. */
+  | { name: "more" };
 
 interface Nav {
   route: Route;
   stack: Route[];
-  navigate: (r: Route, opts?: { replace?: boolean }) => void;
+  /** `push` empilha mesmo uma rota de primeiro nível (no celular, as telas abertas a partir de "Mais"). */
+  navigate: (r: Route, opts?: { replace?: boolean; push?: boolean }) => void;
   back: () => void;
   canGoBack: boolean;
 }
@@ -37,14 +40,14 @@ export function useNav(): Nav {
 }
 
 /** Rotas de primeiro nível (barra lateral) zeram o histórico. */
-const TOP_LEVEL = new Set(["home", "library", "continue", "recent", "favorites", "collections", "explore", "downloads", "extensions", "repositories", "plugins", "notifications", "settings"]);
+const TOP_LEVEL = new Set(["home", "library", "continue", "recent", "favorites", "collections", "explore", "downloads", "extensions", "repositories", "plugins", "notifications", "settings", "more"]);
 
 export function NavigationProvider({ children, initial = { name: "home" } }: { children: ReactNode; initial?: Route }) {
   const [stack, setStack] = useState<Route[]>([initial]);
-  const navigate = useCallback((r: Route, opts?: { replace?: boolean }) => {
+  const navigate = useCallback((r: Route, opts?: { replace?: boolean; push?: boolean }) => {
     setStack((s) => {
       if (opts?.replace) return [...s.slice(0, -1), r];
-      if (TOP_LEVEL.has(r.name)) return [r];
+      if (TOP_LEVEL.has(r.name) && !opts?.push) return [r];
       return [...s.slice(-20), r];
     });
   }, []);

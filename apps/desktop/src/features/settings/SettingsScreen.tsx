@@ -26,6 +26,7 @@ import type { AppInfo, SortKey, StorageInfo } from "@prancha/shared/domain/types
 import { api, errorMessage } from "@prancha/shared/services/api";
 import { onCoversProgress } from "@prancha/shared/services/events";
 import { useSettings } from "../../app/settings-context";
+import { IS_ANDROID } from "../../app/platform";
 import { useNav } from "../../app/navigation";
 import { useOnboarding } from "../onboarding/onboarding-context";
 import { GithubReleaseButton, ReleaseNotes } from "../updates/UpdateDialogs";
@@ -268,11 +269,13 @@ function StorageSection() {
   };
   return (
     <Section id="armazenamento" title="Armazenamento" description="Limpar caches não apaga suas HQs nem o progresso.">
-      <SettingRow id="pasta" label="Pasta de dados do aplicativo" description={info ? <span className="font-mono text-xs break-all select-text">{info.dataDir}</span> : "Carregando…"}>
-        <Button icon={FolderOpen} onClick={() => void api.openDataDir().catch((e) => toast.error("Não foi possível abrir a pasta", errorMessage(e)))}>
-          Abrir pasta
-        </Button>
-      </SettingRow>
+      {!IS_ANDROID && (
+        <SettingRow id="pasta" label="Pasta de dados do aplicativo" description={info ? <span className="font-mono text-xs break-all select-text">{info.dataDir}</span> : "Carregando…"}>
+          <Button icon={FolderOpen} onClick={() => void api.openDataDir().catch((e) => toast.error("Não foi possível abrir a pasta", errorMessage(e)))}>
+            Abrir pasta
+          </Button>
+        </SettingRow>
+      )}
       <Anchor id="uso">
         <p className="font-medium">Espaço usado</p>
         {info ? (
@@ -774,6 +777,14 @@ function PrivacySection() {
   );
 }
 
+/**
+ * O que não existe no Android: roda do mouse, atalhos de teclado, abrir a pasta de dados (fica dentro do app, fora
+ * do alcance do gerenciador de arquivos) e o atualizador do Windows (no celular, a atualização pelo APK é outra).
+ */
+const ANDROID_HIDDEN = new Set(["roda", "atalhos", "pasta"]);
+const CATEGORIES = IS_ANDROID ? SETTINGS_CATEGORIES.filter((c) => c.id !== "atualizacoes") : SETTINGS_CATEGORIES;
+const shown = (e: SettingEntry) => !IS_ANDROID || (!ANDROID_HIDDEN.has(e.id) && e.place !== "atualizacoes");
+
 export function SettingsScreen({ section }: { section?: string } = {}) {
   const { settings, effectiveTheme } = useSettings();
   const save = useSave();
@@ -785,11 +796,11 @@ export function SettingsScreen({ section }: { section?: string } = {}) {
   const [suggesting, setSuggesting] = useState(false);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [verifying, setVerifying] = useState(false);
-  const [category, setCategory] = useState<SettingsCategory>(() => SETTINGS_CATEGORIES.find((c) => c.id === section)?.id ?? "aparencia");
+  const [category, setCategory] = useState<SettingsCategory>(() => CATEGORIES.find((c) => c.id === section)?.id ?? "aparencia");
   const [query, setQuery] = useState("");
   const [target, setTarget] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
-  const results = useMemo(() => searchSettings(query), [query]);
+  const results = useMemo(() => searchSettings(query).filter(shown), [query]);
   const searching = query.trim().length > 0;
   useEffect(() => void api.appInfo().then(setAppInfo).catch(() => undefined), []);
 
@@ -854,7 +865,7 @@ export function SettingsScreen({ section }: { section?: string } = {}) {
           />
           <nav aria-label="Categorias das configurações" className="mt-3">
             <ul className="flex flex-col gap-0.5 max-md:flex-row max-md:flex-wrap max-md:gap-1">
-              {SETTINGS_CATEGORIES.map((c) => {
+              {CATEGORIES.map((c) => {
                 const current = !searching && c.id === category;
                 return (
                   <li key={c.id}>
@@ -974,17 +985,19 @@ export function SettingsScreen({ section }: { section?: string } = {}) {
                       onChange={(v) => save("reader.coverAlone", v)}
                     />
                   </Anchor>
-                  <SegmentedRow
-                    id="roda"
-                    label="Roda do mouse"
-                    description="Em página única ou dupla, ao chegar ao fim da página."
-                    value={settings["reader.wheel"]}
-                    onChange={(v) => save("reader.wheel", v)}
-                    options={[
-                      { value: "page", label: "Vira a página" },
-                      { value: "scroll", label: "Só rola" },
-                    ]}
-                  />
+                  {!IS_ANDROID && (
+                    <SegmentedRow
+                      id="roda"
+                      label="Roda do mouse"
+                      description="Em página única ou dupla, ao chegar ao fim da página."
+                      value={settings["reader.wheel"]}
+                      onChange={(v) => save("reader.wheel", v)}
+                      options={[
+                        { value: "page", label: "Vira a página" },
+                        { value: "scroll", label: "Só rola" },
+                      ]}
+                    />
+                  )}
                   <SegmentedRow
                     id="fim"
                     label="Ao avançar depois da última página"
@@ -998,7 +1011,7 @@ export function SettingsScreen({ section }: { section?: string } = {}) {
                   <SegmentedRow
                     id="controles"
                     label="Controles do leitor"
-                    description="Ocultos, voltam ao mover o mouse."
+                    description={IS_ANDROID ? "Ocultos, voltam com um toque no meio da página." : "Ocultos, voltam ao mover o mouse."}
                     value={settings["reader.controls"]}
                     onChange={(v) => save("reader.controls", v)}
                     options={[
@@ -1006,9 +1019,11 @@ export function SettingsScreen({ section }: { section?: string } = {}) {
                       { value: "always", label: "Sempre visíveis" },
                     ]}
                   />
-                  <Anchor id="atalhos">
-                    <ShortcutEditor />
-                  </Anchor>
+                  {!IS_ANDROID && (
+                    <Anchor id="atalhos">
+                      <ShortcutEditor />
+                    </Anchor>
+                  )}
                 </Section>
               )}
 
@@ -1061,7 +1076,7 @@ export function SettingsScreen({ section }: { section?: string } = {}) {
 
               {category === "armazenamento" && <StorageSection />}
 
-              {category === "atualizacoes" && <UpdatesSection />}
+              {category === "atualizacoes" && !IS_ANDROID && <UpdatesSection />}
 
               {category === "integracoes" && (
                 <Section id="integracoes" title="Integrações" description="Contas de outros serviços ligadas ao Prancha. Nada é consultado nem enviado antes de você conectar.">

@@ -13,6 +13,8 @@ import type { CollectionInfo } from "@prancha/shared/domain/types";
 import { api, errorMessage } from "@prancha/shared/services/api";
 import { useLibraryData, useLibraryVersion } from "../../app/library-events";
 import { useNav } from "../../app/navigation";
+import { LibraryTabs } from "../../app/MobileNav";
+import { useCompact } from "../../app/platform";
 import { useScrollMemory } from "../../app/scroll-memory";
 import { useSettings } from "../../app/settings-context";
 import { OnlineCover } from "../online/parts";
@@ -139,6 +141,7 @@ function useCollectionDialogs() {
 
 export function CollectionsScreen() {
   const nav = useNav();
+  const phone = useCompact();
   const { settings } = useSettings();
   const { data, error } = useLibraryData(() => api.collections(), [], "collections");
   const d = useCollectionDialogs();
@@ -155,8 +158,10 @@ export function CollectionsScreen() {
             </Button>
           ) : undefined
         }
-      />
-      <div className="px-6 py-5">
+      >
+        {phone && <LibraryTabs current="collections" />}
+      </PageHeader>
+      <div className="px-6 py-5 max-desk:px-4">
         {error && <ErrorState title="Não foi possível carregar as coleções" message={error} />}
         {!data && !error && <Spinner label="Carregando coleções…" />}
         {data && data.length === 0 && (

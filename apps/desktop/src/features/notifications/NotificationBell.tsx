@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type 
 import { createPortal } from "react-dom";
 import { Bell, CheckCheck, Settings } from "lucide-react";
 import { useNav } from "../../app/navigation";
+import { useCompact } from "../../app/platform";
 import { useSettings } from "../../app/settings-context";
 import { Button, IconButton } from "../../components/Button";
 import { Spinner } from "../../components/Feedback";
@@ -27,6 +28,9 @@ export function panelPosition(anchor: DOMRect, viewport: { width: number; height
 
 export function NotificationBell({ current }: { narrow?: boolean; current: boolean }) {
   const { unread } = useNotifications();
+  const nav = useNav();
+  // No celular não cabe o painel ao lado do sino: abre a tela de notificações.
+  const compact = useCompact();
   const [open, setOpen] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
   const panelId = useId();
@@ -40,18 +44,18 @@ export function NotificationBell({ current }: { narrow?: boolean; current: boole
       <button
         ref={button}
         type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-haspopup="dialog"
+        onClick={() => (compact ? nav.navigate({ name: "notifications" }, { push: true }) : setOpen((o) => !o))}
+        aria-haspopup={compact ? undefined : "dialog"}
         aria-expanded={open}
         aria-controls={open ? panelId : undefined}
         aria-current={current ? "page" : undefined}
         aria-label={unread > 0 ? `Notificações, ${unreadLabel(unread)}` : "Notificações"}
         className={cn(
-          "relative inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-hover hover:text-fg",
+          "relative inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-hover hover:text-fg max-desk:size-10",
           (open || current) && "bg-hover text-fg",
         )}
       >
-        <Bell size={18} aria-hidden />
+        <Bell size={compact ? 22 : 18} aria-hidden />
         {label && (
           <span
             key={label}

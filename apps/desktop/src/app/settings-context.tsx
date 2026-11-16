@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { IS_ANDROID } from "./platform";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { DEFAULT_SETTINGS, resolveTheme, sanitizeSettings, type SettingKey, type Settings } from "@prancha/shared/domain/settings";
 import { api, errorMessage } from "@prancha/shared/services/api";
@@ -91,6 +92,11 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     const root = document.documentElement;
     const apply = () => {
       root.dataset.theme = effectiveTheme;
+      // No Android, a faixa atrás das barras do sistema acompanha o fundo do app.
+      if (IS_ANDROID) {
+        const color = getComputedStyle(root).getPropertyValue("--p-bg").trim();
+        void api.setSystemBars(effectiveTheme === "dark", color).catch(() => undefined);
+      }
     };
     const animate = !firstTheme.current && root.dataset.theme !== effectiveTheme && typeof document.startViewTransition === "function" && !prefersReducedMotion();
     firstTheme.current = false;

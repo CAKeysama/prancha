@@ -55,7 +55,8 @@ import { ReaderTip } from "../onboarding/ReaderTip";
 import { useLeaveFullscreenOnClose } from "./fullscreen";
 import { GuidedReader } from "./GuidedReader";
 import { PageIndexPanel, ReaderSettingsPanel, ShortcutsDialog } from "./ReaderPanels";
-import { PagedView, VerticalView, type ScrollInfo, type VerticalHandle } from "./Views";
+import { PagedView, VerticalView, type ReaderTouch, type ScrollInfo, type VerticalHandle } from "./Views";
+import { IS_ANDROID, useCompact } from "../../app/platform";
 import type { Navigation, ReadingLifecycle } from "@prancha/shared/domain/reading-lifecycle";
 import { APPEAR_LATE, usePreload } from "./PageView";
 import { useProgressSaver } from "./useProgressSaver";
@@ -252,6 +253,7 @@ export function Reader({ content, pdf, zoomState: [zoom, setZoom] }: { content: 
   const verticalRef = useRef<VerticalHandle>(null);
   const hideTimer = useRef<number | undefined>(undefined);
   const root = useRef<HTMLDivElement>(null);
+  const compact = useCompact();
   const [initialRatio] = useState(content.start.scrollRatio);
 
   const { schedule, flush } = useProgressSaver(content.saveProgress, pageCount);
@@ -587,6 +589,7 @@ export function Reader({ content, pdf, zoomState: [zoom, setZoom] }: { content: 
       .catch((e) => toast.error("Não foi possível reiniciar o progresso", errorMessage(e)));
   };
 
+  const phone = IS_ANDROID || compact;
   const indicator = pageIndicator((continuous ? [page] : spread).map((p) => p - chapter.first), chapter.count);
   const firstShown = continuous ? page : spread[0]!;
   const chapterBefore = chapters[chapterIndex - 1];
@@ -608,7 +611,33 @@ export function Reader({ content, pdf, zoomState: [zoom, setZoom] }: { content: 
   const withKey = (label: string, a: ShortcutAction) => (k(a) ? `${label} (${k(a)})` : label);
   const barsInert = guided || (pinnedHidden && !visible);
 
-  const sideButtons = !continuous && (
+  // ---- Toque (celular): bordas e arrasto viram a página, o meio mostra ou esconde as barras ----
+  const toggleBars = () => {
+    if (panel) {
+      setPanel(null);
+      return;
+    }
+    if (visible) {
+      window.clearTimeout(hideTimer.current);
+      setControlsVisible(false);
+    } else {
+      showControls();
+    }
+  };
+  const touch: ReaderTouch | undefined = phone
+    ? {
+        onTap: (x) => {
+          if (continuous || (x >= 0.3 && x <= 0.7)) toggleBars();
+          else if (x < 0.3) (rtl ? next : prev)();
+          else (rtl ? prev : next)();
+        },
+        // O dedo indo para a esquerda leva adiante na leitura da esquerda para a direita, e o contrário no mangá.
+        onSwipe: (d) => (d < 0 === !rtl ? next : prev)(),
+        setZoom,
+      }
+    : undefined;
+
+  const sideButtons = !continuous && !phone && (
     <>
       <SideButton side="left-3" icon={ChevronLeft} label={rtl ? nextLabel : prevLabel} onClick={rtl ? next : prev} disabled={!rtl && spreadIdx === 0} visible={visible} />
       <SideButton side="right-3" icon={ChevronRight} label={rtl ? prevLabel : nextLabel} onClick={rtl ? prev : next} disabled={rtl && spreadIdx === 0} visible={visible} />
@@ -616,7 +645,8 @@ export function Reader({ content, pdf, zoomState: [zoom, setZoom] }: { content: 
   );
 
   return (
-    <div ref={root} role="region" className="relative flex h-full flex-col overflow-hidden bg-reader text-fg" onMouseMove={showControls} aria-label={`Leitor: ${content.title}`}>
+    // No toque, o celular também gera movimentos de mouse: as barras só respondem aos toques (ver `touch`).
+    <div ref={root} role="region" className="relative flex h-full flex-col overflow-hidden bg-reader text-fg" onMouseMove={phone ? undefined : showControls} aria-label={`Leitor: ${content.title}`}>
       {/* Barra superior */}
       <header
         inert={barsInert}
@@ -627,8 +657,8 @@ export function Reader({ content, pdf, zoomState: [zoom, setZoom] }: { content: 
         {...barEvents}
       >
         <span className={tour} data-tour="reader-back">
-          <Button variant="ghost" size="sm" icon={ArrowLeft} onClick={back} title={withKey(content.backTitle, "back")}>
-            {content.backLabel}
+          <Button variant="ghost" size="sm" icon={ArrowLeft} onClick={back} title={withKey(content.backTitle, "back")} aria-label={phone ? content.backTitle : undefined}>
+            {!phone && content.backLabel}
           </Button>
         </span>
         <div className="min-w-0 flex-1 px-2">
@@ -645,7 +675,8 @@ export function Reader({ content, pdf, zoomState: [zoom, setZoom] }: { content: 
             ))}
           </div>
         )}
-        <div className={cn("flex items-center gap-0.5", tour)} role="group" aria-label="Zoom" data-tour="reader-zoom">
+        {/* No celular o zoom é pela pinça e pelo duplo toque. */}
+        <div className={cn("flex items-center gap-0.5", tour, phone && "hidden")} role="group" aria-label="Zoom" data-tour="reader-zoom">
           <IconButton icon={ZoomOut} label="Diminuir zoom" shortcut={k("zoomOut")} onClick={() => setZoom(zoomOut)} size="sm" />
           <button
             type="button"
@@ -658,7 +689,7 @@ export function Reader({ content, pdf, zoomState: [zoom, setZoom] }: { content: 
           </button>
           <IconButton icon={ZoomIn} label="Aumentar zoom" shortcut={k("zoomIn")} onClick={() => setZoom(zoomIn)} size="sm" />
         </div>
-        <span className="mx-1 h-5 w-px bg-border" aria-hidden />
+        {!phone && <span className="mx-1 h-5 w-px bg-border" aria-hidden />}
         {chapter.guidedComicId !== null && (
           <Button
             variant="ghost"
@@ -673,7 +704,10 @@ export function Reader({ content, pdf, zoomState: [zoom, setZoom] }: { content: 
         <IconButton icon={ModeIcon} label={`Alternar modo de exibição (atual: ${MODE_LABELS[mode]})`} shortcut={k("cycleMode")} onClick={() => setMode(nextMode(mode))} size="sm" />
         <IconButton icon={ListOrdered} label="Índice de páginas" shortcut={k("pageIndex")} pressed={panel === "index"} onClick={() => togglePanel("index")} size="sm" />
         <IconButton icon={Settings2} label="Configurações de leitura" pressed={panel === "settings"} onClick={() => togglePanel("settings")} size="sm" />
-        <IconButton icon={fullscreen ? Minimize : Maximize} label={fullscreen ? "Sair da tela cheia" : "Entrar em tela cheia"} shortcut={k("fullscreen")} onClick={() => void toggleFullscreen()} size="sm" />
+        {/* No Android a leitura já é em tela cheia. */}
+        {!IS_ANDROID && (
+          <IconButton icon={fullscreen ? Minimize : Maximize} label={fullscreen ? "Sair da tela cheia" : "Entrar em tela cheia"} shortcut={k("fullscreen")} onClick={() => void toggleFullscreen()} size="sm" />
+        )}
       </header>
 
       {/* Área de leitura (com controles fixos, reserva espaço para não cobrir a página) */}
@@ -694,9 +728,10 @@ export function Reader({ content, pdf, zoomState: [zoom, setZoom] }: { content: 
             startRatio={page === content.start.pageIndex ? initialRatio : 0}
             onSize={onSize}
             onPosition={onPosition}
+            touch={touch}
           />
         ) : (
-          <PagedView pageSrc={content.pageSrc} spread={spread} sizes={sizes} fit={fit} zoom={zoom} direction={direction} pdf={pdf} onSize={onSize} onWheelEdge={onWheelEdge} />
+          <PagedView pageSrc={content.pageSrc} spread={spread} sizes={sizes} fit={fit} zoom={zoom} direction={direction} pdf={pdf} onSize={onSize} onWheelEdge={onWheelEdge} touch={touch} />
         )}
         {!continuous && firstShown === chapter.first && chapterIndex > 0 && (
           <p role="status" className="p-enter pointer-events-none absolute top-[53px] left-1/2 z-10 max-w-[80%] -translate-x-1/2 truncate rounded-full border border-border bg-elevated/90 px-3 py-1 text-xs text-muted shadow-overlay">

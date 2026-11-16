@@ -6,6 +6,8 @@
 //! - `/file/<id>`         o PDF original, com suporte a `Range` para o PDF.js
 //! - `/online-cover/<id>` miniatura de uma obra de uma fonte, baixada aqui e guardada em cache
 //! - `/online-page/<id>/<i>` página de um capítulo de uma fonte: do arquivo, se estiver baixado, ou da fonte
+//!
+//! As páginas aceitam `?w=<px>`: a imagem mais larga que isso é reduzida (o Android pede a largura da tela).
 
 use std::io::{Read, Seek, SeekFrom};
 
@@ -58,12 +60,13 @@ pub fn handle(core: &Core, req: &Request<Vec<u8>>) -> Resp {
     let segments: Vec<&str> = req.uri().path().trim_matches('/').split('/').collect();
     let id = segments.get(1).and_then(|v| v.parse::<i64>().ok());
     let index = segments.get(2).and_then(|v| v.parse::<usize>().ok());
+    let width = fit_width_param(req.uri().query());
     let served = match (segments[0], id, index) {
         ("cover", Some(id), _) => cover(core, id),
-        ("page", Some(id), Some(index)) => page(core, id, index),
+        ("page", Some(id), Some(index)) => page(core, id, index, width),
         ("file", Some(id), _) => pdf_file(core, id, req),
         ("online-cover", Some(id), _) => online_cover(core, id),
-        ("online-page", Some(id), Some(index)) => online_page(core, id, index),
+        ("online-page", Some(id), Some(index)) => online_page(core, id, index, width),
         ("cover" | "page" | "file" | "online-cover" | "online-page", ..) => return error(StatusCode::BAD_REQUEST, "bad_request", "Requisição inválida."),
         _ => return error(StatusCode::NOT_FOUND, "not_found", "Recurso não encontrado."),
     };
@@ -102,14 +105,36 @@ fn online_cover(core: &Core, id: i64) -> AppResult<Resp> {
     })
 }
 
-fn online_page(core: &Core, id: i64, index: usize) -> AppResult<Resp> {
+/// Menor e maior largura aceitas em `?w=`: abaixo disso a página ficaria ilegível; acima, não economiza nada.
+const FIT_WIDTH_RANGE: (u32, u32) = (256, 8192);
+
+fn fit_width_param(query: Option<&str>) -> u32 {
+    query
+        .into_iter()
+        .flat_map(|q| q.split('&'))
+        .find_map(|pair| pair.strip_prefix("w="))
+        .and_then(|v| v.parse::<u32>().ok())
+        .map_or(0, |w| w.clamp(FIT_WIDTH_RANGE.0, FIT_WIDTH_RANGE.1))
+}
+
+/// A página, reduzida à largura pedida quando passa dela.
+fn fitted(bytes: Vec<u8>, mime: &'static str, width: u32) -> (Vec<u8>, &'static str) {
+    if width == 0 {
+        return (bytes, mime);
+    }
+    crate::pages::fit_width(&bytes, mime, width).unwrap_or((bytes, mime))
+}
+
+fn online_page(core: &Core, id: i64, index: usize, width: u32) -> AppResult<Resp> {
     let (bytes, mime) = sources::chapter_page(core, id, index)?;
+    let (bytes, mime) = fitted(bytes, mime, width);
     Ok(base(StatusCode::OK).header(header::CONTENT_TYPE, mime).header(header::CACHE_CONTROL, "private, max-age=3600").body(bytes).unwrap())
 }
 
-fn page(core: &Core, id: i64, index: usize) -> AppResult<Resp> {
+fn page(core: &Core, id: i64, index: usize, width: u32) -> AppResult<Resp> {
     let info = library::file_info(&core.db(), id)?;
     let (bytes, mime) = core.pages.read_page(&info, index).map_err(|e| note_missing(core, id, e))?;
+    let (bytes, mime) = fitted(bytes, mime, width);
     Ok(base(StatusCode::OK)
         .header(header::CONTENT_TYPE, mime)
         .header(header::CACHE_CONTROL, "private, max-age=3600")
@@ -174,7 +199,17 @@ fn pdf_file(core: &Core, id: i64, req: &Request<Vec<u8>>) -> AppResult<Resp> {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_range;
+    use super::{fit_width_param, parse_range};
+
+    #[test]
+    fn fit_width_query() {
+        assert_eq!(fit_width_param(None), 0);
+        assert_eq!(fit_width_param(Some("r=123")), 0);
+        assert_eq!(fit_width_param(Some("r=1&w=1280")), 1280);
+        assert_eq!(fit_width_param(Some("w=12")), 256);
+        assert_eq!(fit_width_param(Some("w=99999")), 8192);
+        assert_eq!(fit_width_param(Some("w=abc")), 0);
+    }
 
     #[test]
     fn ranges() {

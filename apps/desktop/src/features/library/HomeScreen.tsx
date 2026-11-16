@@ -9,7 +9,7 @@ import { progressLabel, progressRatio, subtitle } from "@prancha/shared/domain/p
 import { api } from "@prancha/shared/services/api";
 import { useLibraryData } from "../../app/library-events";
 import { useNav, type Route } from "../../app/navigation";
-import { SUPPORTED_FORMATS_TEXT } from "../../app/config";
+import { ADD_COMICS_HINT } from "../../app/config";
 import { useScrollMemory } from "../../app/scroll-memory";
 import { AddComicsButtons } from "./AddComicsButtons";
 import { ComicShelf } from "./ComicCollectionView";
@@ -21,7 +21,7 @@ import { OnlineCover } from "../online/parts";
 function Section({ title, to, children }: { title: string; to?: Route; children: ReactNode }) {
   const nav = useNav();
   return (
-    <section aria-label={title} className="mb-8">
+    <section aria-label={title} className="mb-8 max-desk:mb-6">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-lg font-semibold">{title}</h2>
         {to && (
@@ -42,7 +42,7 @@ function ResumeHero({ item }: { item: LibraryItem }) {
   const ratio = online ? seriesRatio(item) : progressRatio(item);
   const sub = online ? item.sourceName : subtitle(item);
   return (
-    <div className="mb-8 flex items-center gap-5 rounded-lg border border-border bg-surface p-4">
+    <div className="mb-8 flex items-center gap-5 rounded-lg border border-border bg-surface p-4 max-desk:mb-6 max-desk:flex-wrap max-desk:gap-x-4 max-desk:gap-y-3 max-desk:p-3">
       <div className="w-20 shrink-0">
         {online ? <OnlineCover series={item} eager /> : <Cover comicId={item.id} title={item.title} kind={item.coverKind} rev={item.coverRev} error={item.coverError} eager />}
       </div>
@@ -53,7 +53,8 @@ function ResumeHero({ item }: { item: LibraryItem }) {
         <p className="mt-2 text-sm">{online ? seriesProgressLabel(item) : progressLabel(item)}</p>
         {ratio !== null && <ProgressBar value={ratio} label={`Progresso de ${item.title}`} className="mt-1.5 max-w-sm" />}
       </div>
-      <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
+      {/* No celular os botões descem para uma linha própria, com Continuar à direita, perto do polegar. */}
+      <div className="flex shrink-0 flex-col gap-2 sm:flex-row max-desk:w-full max-desk:flex-row max-desk:justify-end">
         <Button variant="ghost" onClick={() => (online ? actions.openSeries(item) : actions.openDetails(item))}>
           Detalhes
         </Button>
@@ -71,7 +72,7 @@ function EmptyHome() {
     <div className="mx-auto flex max-w-xl flex-col items-center px-6 py-14 text-center">
       <Library size={32} className="mb-4 text-accent" aria-hidden />
       <h2 className="text-2xl font-semibold">Sua biblioteca está vazia</h2>
-      <p className="mt-2 text-base text-muted">{SUPPORTED_FORMATS_TEXT}, ou arraste para esta janela.</p>
+      <p className="mt-2 text-base text-muted">{ADD_COMICS_HINT}</p>
       <div className="mt-6 flex flex-wrap justify-center gap-2">
         <Button variant="primary" icon={Plus} onClick={() => void pickAndImport("files")}>
           Adicionar quadrinhos
@@ -92,7 +93,7 @@ export function HomeScreen() {
   return (
     <div ref={scrollRef} className="h-full overflow-y-auto">
       <PageHeader title="Início" actions={data && data.total > 0 ? <AddComicsButtons /> : undefined} />
-      <div className="px-6 py-6">
+      <div className="px-6 py-6 max-desk:px-4 max-desk:py-4">
         {error && (
           <ErrorState
             title="Não foi possível carregar a tela inicial"

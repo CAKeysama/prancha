@@ -29,7 +29,7 @@ export function PluginsScreen() {
   return (
     <div className="h-full overflow-y-auto">
       <PageHeader title="Plugins" />
-      <div className="mx-auto max-w-3xl px-6 py-6">
+      <div className="mx-auto max-w-3xl px-6 py-6 max-desk:px-4">
         <section aria-label="Fontes de leitura" className="flex items-start gap-4 rounded-lg border border-border bg-surface p-4">
           <Compass size={24} className="mt-0.5 shrink-0 text-muted" aria-hidden />
           <div className="min-w-0 flex-1">

@@ -9,7 +9,12 @@ import { FIT_LABELS, MODE_LABELS } from "@prancha/shared/domain/reader";
 import type { ControlsBehavior, FitMode, ReaderMode, ReadingDirection, WheelBehavior } from "@prancha/shared/domain/settings";
 import { SHORTCUT_ACTIONS, SHORTCUT_LABELS, formatKey, type ShortcutMap } from "@prancha/shared/domain/shortcuts";
 import { useSettings } from "../../app/settings-context";
+import { IS_ANDROID } from "../../app/platform";
 import type { PageSrc } from "@prancha/shared/services/urls";
+import { atWidth } from "./PageView";
+
+/** Largura das miniaturas da lista de páginas (três por linha no painel), com folga. */
+const THUMB_WIDTH = 120;
 
 /**
  * Ao fechar, devolve o foco a quem abriu, se a pessoa chegou pelo teclado. Com o mouse, o leitor põe o foco
@@ -120,16 +125,18 @@ export function ReaderSettingsPanel({
             onChange={(v) => void update("reader.coverAlone", v)}
           />
         )}
-        <Segmented<WheelBehavior>
-          label="Roda do mouse"
-          value={settings["reader.wheel"]}
-          onChange={(v) => void update("reader.wheel", v)}
-          size="sm"
-          options={[
-            { value: "page", label: "Vira a página" },
-            { value: "scroll", label: "Só rola" },
-          ]}
-        />
+        {!IS_ANDROID && (
+          <Segmented<WheelBehavior>
+            label="Roda do mouse"
+            value={settings["reader.wheel"]}
+            onChange={(v) => void update("reader.wheel", v)}
+            size="sm"
+            options={[
+              { value: "page", label: "Vira a página" },
+              { value: "scroll", label: "Só rola" },
+            ]}
+          />
+        )}
         <Segmented<ControlsBehavior>
           label="Controles do leitor"
           value={settings["reader.controls"]}
@@ -141,9 +148,11 @@ export function ReaderSettingsPanel({
           ]}
         />
         <div className="flex flex-wrap gap-2 border-t border-border pt-4">
-          <Button size="sm" icon={Keyboard} onClick={onShowShortcuts}>
-            Atalhos de teclado
-          </Button>
+          {!IS_ANDROID && (
+            <Button size="sm" icon={Keyboard} onClick={onShowShortcuts}>
+              Atalhos de teclado
+            </Button>
+          )}
           <Button size="sm" icon={EyeOff} onClick={onHideControls} title={hideKey ? `Atalho: ${hideKey}` : undefined}>
             Ocultar controles
           </Button>
@@ -245,7 +254,7 @@ export function PageIndexPanel({
                 {isPdf ? (
                   <span className="text-lg font-semibold text-muted">{i + 1}</span>
                 ) : (
-                  <img src={pageSrc(i)} alt="" loading="lazy" decoding="async" className="h-full w-full object-contain" />
+                  <img src={atWidth(pageSrc(i), THUMB_WIDTH)} alt="" loading="lazy" decoding="async" className="h-full w-full object-contain" />
                 )}
               </span>
               <span>{i + 1}</span>

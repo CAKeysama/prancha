@@ -227,7 +227,7 @@ export function NotificationsScreen() {
     );
   } else {
     body = (
-      <div className="mx-auto max-w-3xl px-6 py-4">
+      <div className="mx-auto max-w-3xl px-6 py-4 max-desk:px-4">
         <div className="mb-2 flex min-h-8 flex-wrap items-center gap-2 px-3">
           <Checkbox
             label={selected.size ? `${selected.size} selecionada${selected.size > 1 ? "s" : ""}` : "Selecionar todas"}

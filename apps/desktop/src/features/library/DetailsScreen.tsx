@@ -13,6 +13,7 @@ import { FORMAT_LABELS, type ComicDetails, type FieldSource } from "@prancha/sha
 import { api, errorMessage } from "@prancha/shared/services/api";
 import { useLibraryData, useLibraryVersion } from "../../app/library-events";
 import { useNav } from "../../app/navigation";
+import { IS_ANDROID } from "../../app/platform";
 import { useSettings } from "../../app/settings-context";
 import { SourceBadge, useComicActions } from "./comic-actions";
 
@@ -136,7 +137,7 @@ export function DetailsScreen({ id }: { id: number }) {
           />
         }
       />
-      <div className="mx-auto max-w-5xl px-6 py-6">
+      <div className="mx-auto max-w-5xl px-6 py-6 max-desk:px-4">
         {comic.missing && <MissingBanner comic={comic} />}
         <div className="flex gap-8 max-md:flex-col">
           <div className="w-64 shrink-0 max-md:mx-auto max-md:w-48">
@@ -253,7 +254,7 @@ export function DetailsScreen({ id }: { id: number }) {
               <Row label="Tamanho">{formatBytes(comic.fileSize)}</Row>
               <Row label="Localização">
                 <span className="font-mono text-sm break-all select-text">{comic.path}</span>
-                {!comic.missing && (
+                {!comic.missing && !IS_ANDROID && (
                   <button
                     type="button"
                     className="ml-2 text-sm font-medium text-accent-fg hover:underline"

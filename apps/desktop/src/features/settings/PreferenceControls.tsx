@@ -3,6 +3,7 @@ import { Play } from "lucide-react";
 import { Button } from "../../components/Button";
 import { ChoiceCards, Slider, Switch } from "../../components/Form";
 import type { InterfaceFont } from "@prancha/shared/domain/settings";
+import { IS_ANDROID } from "../../app/platform";
 import { SOUND_LABELS, sound, type SoundName } from "@prancha/shared/services/sound";
 
 // Controles usados na configuração inicial e em Configurações, para os dois lugares mostrarem a mesma coisa.
@@ -11,7 +12,7 @@ const FONT_OPTIONS: { value: InterfaceFont; label: string; description: string }
   { value: "hanken", label: "Hanken Grotesk", description: "Padrão. Neutra e compacta." },
   { value: "atkinson", label: "Atkinson Hyperlegible", description: "Letras bem distintas, para ler com menos esforço." },
   { value: "plex", label: "IBM Plex Sans", description: "A das versões anteriores." },
-  { value: "system", label: "Sistema", description: "Segoe UI, a do Windows." },
+  { value: "system", label: "Sistema", description: IS_ANDROID ? "Roboto, a do Android." : "Segoe UI, a do Windows." },
 ];
 
 /** Cartões de fonte, cada um escrito na própria fonte. */

@@ -25,6 +25,7 @@ import { readActionLabel } from "@prancha/shared/domain/progress";
 import type { CollectionInfo, ComicDetails, ComicSummary, FieldSource, MetadataPatch } from "@prancha/shared/domain/types";
 import { api, errorMessage } from "@prancha/shared/services/api";
 import { useNav } from "../../app/navigation";
+import { IS_ANDROID } from "../../app/platform";
 import { useLibraryVersion } from "../../app/library-events";
 import { useSettings } from "../../app/settings-context";
 import { sound } from "@prancha/shared/services/sound";
@@ -362,7 +363,8 @@ function RemoveDialog({ comic, onClose, onRemoved }: { comic: ComicSummary; onCl
       <p className="mt-2 text-muted">
         {alsoTrash ? "O arquivo original vai para a Lixeira do sistema, de onde ainda pode ser restaurado." : "O arquivo original não será apagado."}
       </p>
-      {!comic.missing && (
+      {/* O Android não tem Lixeira para os arquivos que a pessoa escolheu: lá o original nunca é apagado. */}
+      {!comic.missing && !IS_ANDROID && (
         <div className="mt-4">
           <Checkbox
             label="Também mover o arquivo original para a Lixeira"
@@ -464,8 +466,9 @@ export function ComicActionsProvider({ children }: { children: ReactNode }) {
       items.push({ kind: "separator" });
       if (c.status !== "completed") items.push({ label: "Marcar como concluída", icon: CircleCheck, onSelect: () => void setStatus(c, "completed") });
       if (c.status !== "unread") items.push({ label: "Marcar como não lida", icon: CircleDashed, onSelect: () => void setStatus(c, "unread") });
-      // Nos detalhes, "Mostrar na pasta" já fica ao lado da localização.
-      if (!c.missing && !opts?.inDetails)
+      // Nos detalhes, "Mostrar na pasta" já fica ao lado da localização. O Android não tem como mostrar o arquivo
+      // numa pasta (o gerenciador de arquivos não recebe esse pedido).
+      if (!c.missing && !opts?.inDetails && !IS_ANDROID)
         items.push({
           label: "Mostrar na pasta",
           icon: FolderOpen,

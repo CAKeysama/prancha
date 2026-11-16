@@ -29,7 +29,7 @@ export const TextField = forwardRef<HTMLInputElement, FieldProps & InputHTMLAttr
           id={inputId}
           aria-invalid={error ? true : undefined}
           aria-describedby={hint || error ? `${inputId}-hint` : undefined}
-          className={cn(CONTROL, "h-8", error && "border-danger")}
+          className={cn(CONTROL, "h-8 max-desk:h-10", error && "border-danger")}
           {...rest}
         />
         {(error || hint) && (
@@ -83,7 +83,7 @@ export function Select({
       <label htmlFor={inputId} className={hideLabel ? "sr-only" : "mb-1 block text-sm font-medium"}>
         {label}
       </label>
-      <select id={inputId} className={cn(CONTROL, "h-8 pr-7")} {...rest}>
+      <select id={inputId} className={cn(CONTROL, "h-8 pr-7 max-desk:h-10")} {...rest}>
         {children}
       </select>
       {hint && <p className="mt-1 text-xs text-muted">{hint}</p>}
@@ -200,7 +200,7 @@ export function Segmented<T extends string>({
               onClick={() => onChange(o.value)}
               className={cn(
                 "inline-flex items-center gap-1.5 rounded-[5px] px-2.5 font-medium transition-colors",
-                size === "sm" ? "h-6 text-sm" : "h-7 text-base",
+                size === "sm" ? "h-6 text-sm max-desk:h-8" : "h-7 text-base max-desk:h-9",
                 selected ? "bg-elevated text-fg shadow-[0_0_0_1px_var(--color-border)]" : "text-muted hover:text-fg",
               )}
             >

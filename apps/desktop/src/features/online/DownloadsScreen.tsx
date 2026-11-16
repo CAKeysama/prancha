@@ -73,7 +73,7 @@ export function DownloadsScreen() {
   return (
     <div className="h-full overflow-y-auto">
       {header}
-      <div className="mx-auto max-w-4xl px-6 py-4">
+      <div className="mx-auto max-w-4xl px-6 py-4 max-desk:px-4">
         {error && !items && <ErrorState title="Não foi possível abrir os downloads" message={error} />}
         {!error && !items && <Spinner label="Carregando…" />}
         {items?.length === 0 && (

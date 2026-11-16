@@ -5,6 +5,78 @@ import { DEFAULT_ASPECT, spreadHeight, verticalPageWidth, webtoonWidth, type Siz
 import type { FitMode, ReadingDirection } from "@prancha/shared/domain/settings";
 import type { PageSrc } from "@prancha/shared/services/urls";
 import { PageView } from "./PageView";
+import { useTouchGestures, type TouchGestures } from "./touch";
+
+/** Toque no celular: o leitor decide o que fazer com um toque e um arrasto; a vista cuida do zoom. */
+export interface ReaderTouch {
+  onTap: (x: number) => void;
+  onSwipe?: (direction: -1 | 1) => void;
+  setZoom: (zoom: number) => void;
+}
+
+const TOUCH_MIN_ZOOM = 1;
+const TOUCH_MAX_ZOOM = 4;
+/** Duplo toque: amplia neste tanto no ponto tocado; de novo, volta ao ajuste. */
+const DOUBLE_TAP_ZOOM = 2.5;
+
+/**
+ * Pinça e duplo toque com o ponto tocado parado na tela. Durante a pinça só a escala do conteúdo muda (rápido,
+ * sem redesenhar as páginas); ao soltar, o zoom de verdade é aplicado e a rolagem compensa a mudança de tamanho.
+ */
+function useTouchZoom(
+  viewport: React.RefObject<HTMLDivElement | null>,
+  content: React.RefObject<HTMLDivElement | null>,
+  zoom: number,
+  touch: ReaderTouch | undefined,
+  extra: Partial<TouchGestures>,
+) {
+  const anchor = useRef<{ x: number; y: number; f: number } | null>(null);
+  useLayoutEffect(() => {
+    const a = anchor.current;
+    const el = viewport.current;
+    if (!a || !el) return;
+    anchor.current = null;
+    keepPoint(el, a);
+  }, [zoom, viewport]);
+  const zoomTo = (next: number, x: number, y: number) => {
+    const z = Math.min(TOUCH_MAX_ZOOM, Math.max(TOUCH_MIN_ZOOM, next));
+    if (!touch || Math.abs(z - zoom) < 0.01) return;
+    anchor.current = { x, y, f: z / zoom };
+    touch.setZoom(z);
+  };
+  const clearScale = () => {
+    if (content.current) scaleContent(content.current, null);
+  };
+  useTouchGestures(
+    viewport,
+    touch && {
+      onTap: touch.onTap,
+      onDoubleTap: (x, y) => zoomTo(zoom > 1.05 ? 1 : DOUBLE_TAP_ZOOM, x, y),
+      onPinch: (scale, x, y) => {
+        const el = viewport.current;
+        const c = content.current;
+        if (el && c) scaleContent(c, { scale, x: x + el.scrollLeft, y: y + el.scrollTop });
+      },
+      onPinchEnd: (scale, x, y) => {
+        clearScale();
+        zoomTo(zoom * scale, x, y);
+      },
+      ...extra,
+    },
+  );
+}
+
+/** Depois do zoom, o ponto que estava sob os dedos continua no mesmo lugar da tela. */
+function keepPoint(el: HTMLElement, a: { x: number; y: number; f: number }) {
+  el.scrollLeft = (el.scrollLeft + a.x) * a.f - a.x;
+  el.scrollTop = (el.scrollTop + a.y) * a.f - a.y;
+}
+
+/** Escala provisória durante a pinça, a partir do centro dela; `null` desfaz. */
+function scaleContent(c: HTMLElement, s: { scale: number; x: number; y: number } | null) {
+  c.style.transformOrigin = s ? `${s.x}px ${s.y}px` : "";
+  c.style.transform = s ? `scale(${s.scale})` : "";
+}
 
 export function useViewportSize(ref: React.RefObject<HTMLElement | null>): Size {
   const [size, setSize] = useState<Size>({ width: 0, height: 0 });
@@ -33,11 +105,19 @@ interface PagedProps {
   onSize: (i: number, s: Size) => void;
   /** Roda do mouse: devolve true quando consumiu o evento para virar a página. */
   onWheelEdge: (delta: number, atStart: boolean, atEnd: boolean) => boolean;
+  touch?: ReaderTouch;
 }
 
 /** Página única ou dupla. O conteúdo maior que a janela pode ser rolado. */
-export function PagedView({ pageSrc, spread, sizes, fit, zoom, direction, pdf, onSize, onWheelEdge }: PagedProps) {
+export function PagedView({ pageSrc, spread, sizes, fit, zoom, direction, pdf, onSize, onWheelEdge, touch }: PagedProps) {
   const viewport = useRef<HTMLDivElement>(null);
+  const content = useRef<HTMLDivElement>(null);
+  // Sem zoom, as bordas viram a página na hora e arrastar para o lado também; com zoom, arrastar move a página.
+  useTouchZoom(viewport, content, zoom, touch, {
+    immediate: (x) => zoom <= 1.01 && (x < 0.3 || x > 0.7),
+    onSwipe: touch?.onSwipe,
+    canSwipe: () => zoom <= 1.01,
+  });
   const size = useViewportSize(viewport);
   const aspects = spread.map((i) => aspectOf(sizes.get(i)));
   const padding = 16;
@@ -73,7 +153,7 @@ export function PagedView({ pageSrc, spread, sizes, fit, zoom, direction, pdf, o
 
   return (
     <div ref={viewport} className="h-full w-full overflow-auto outline-none" data-reader-viewport tabIndex={-1}>
-      <div className="flex min-h-full min-w-full" style={{ padding }}>
+      <div ref={content} className="flex min-h-full min-w-full" style={{ padding }}>
         <div className="m-auto flex items-center" key={key}>
           {size.width > 0 &&
             ordered.map((i) => (
@@ -111,6 +191,7 @@ interface VerticalProps {
   onSize: (i: number, s: Size) => void;
   /** Página atual e posição relativa dentro dela (0–1). */
   onPosition: (page: number, ratio: number, scroll: ScrollInfo) => void;
+  touch?: ReaderTouch;
 }
 
 export interface ScrollInfo {
@@ -131,10 +212,12 @@ const GAP = 6;
 
 /** Rolagem contínua. Só monta as páginas próximas da área visível. */
 export const VerticalView = forwardRef<VerticalHandle, VerticalProps>(function VerticalView(
-  { pageSrc, webtoon, footer, chapterStarts, count, sizes, fit, zoom, pdf, startPage, startRatio, onSize, onPosition },
+  { pageSrc, webtoon, footer, chapterStarts, count, sizes, fit, zoom, pdf, startPage, startRatio, onSize, onPosition, touch },
   ref,
 ) {
   const viewport = useRef<HTMLDivElement>(null);
+  const content = useRef<HTMLDivElement>(null);
+  useTouchZoom(viewport, content, zoom, touch, {});
   const size = useViewportSize(viewport);
   const pageEls = useRef<Array<HTMLDivElement | null>>([]);
   const [range, setRange] = useState<[number, number]>([Math.max(0, startPage - 2), startPage + 3]);
@@ -239,7 +322,7 @@ export const VerticalView = forwardRef<VerticalHandle, VerticalProps>(function V
 
   return (
     <div ref={viewport} className="h-full w-full overflow-auto outline-none [overflow-anchor:auto]" data-reader-viewport tabIndex={-1}>
-      <div className={cn("flex flex-col items-center", !webtoon && "py-1.5")} style={{ gap: webtoon ? 0 : GAP }}>
+      <div ref={content} className={cn("flex flex-col items-center", !webtoon && "py-1.5")} style={{ gap: webtoon ? 0 : GAP }}>
         {size.width > 0 &&
           Array.from({ length: count }, (_, i) => {
             const { w, h } = layout(i);

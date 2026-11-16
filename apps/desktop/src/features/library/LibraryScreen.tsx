@@ -14,6 +14,9 @@ import { useLibraryData } from "../../app/library-events";
 import { useSettings } from "../../app/settings-context";
 import { useScrollMemory } from "../../app/scroll-memory";
 import { AddComicsButtons } from "./AddComicsButtons";
+import { LibraryTabs } from "../../app/MobileNav";
+import { useNav } from "../../app/navigation";
+import { useCompact } from "../../app/platform";
 import { ComicCollectionView } from "./ComicCollectionView";
 import { useLibrarySeries } from "./use-library-series";
 
@@ -182,8 +185,13 @@ export function clearLibraryFilters() {
   filterMemory.clear();
 }
 
+/** Seções da biblioteca que no celular viram abas (no desktop, itens da barra lateral). */
+const TABBED = new Set(["library", "continue", "recent", "favorites"]);
+
 export function LibraryScreen({ preset }: { preset: LibraryPreset }) {
   const { settings, update } = useSettings();
+  const routeName = useNav().route.name;
+  const phone = useCompact();
   const memoryKey = `${preset.title}\n${preset.collectionId ?? ""}`;
   const [remembered] = useState<Filters | undefined>(() => filterMemory.get(memoryKey));
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -262,7 +270,12 @@ export function LibraryScreen({ preset }: { preset: LibraryPreset }) {
         backLabel={preset.backLabel}
         actions={preset.headerActions ?? (showEmpty && preset.emptyActions ? undefined : <AddComicsButtons />)}
       >
-        <div className="flex items-center gap-2">
+        {phone && TABBED.has(routeName) && (
+          <div className="mb-3">
+            <LibraryTabs current={routeName} />
+          </div>
+        )}
+        <div className="flex items-center gap-2 max-desk:flex-wrap">
           <div className="relative min-w-40 flex-1 sm:max-w-sm">
             <Search size={15} aria-hidden className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-muted" />
             <label htmlFor="library-search" className="sr-only">
@@ -280,7 +293,7 @@ export function LibraryScreen({ preset }: { preset: LibraryPreset }) {
                 }
               }}
               placeholder="Pesquisar"
-              className="h-8 w-full rounded-md border border-border-control bg-bg pr-8 pl-8 text-base placeholder:text-muted focus-visible:border-accent focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-accent"
+              className="h-8 w-full rounded-md border border-border-control bg-bg pr-8 pl-8 text-base max-desk:h-10 placeholder:text-muted focus-visible:border-accent focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-accent"
             />
             {text && (
               <button
@@ -305,8 +318,8 @@ export function LibraryScreen({ preset }: { preset: LibraryPreset }) {
             onFormat={setFormat}
             onClear={clearChips}
           />
-          <div className="ml-auto flex items-center gap-2">
-            <Select label="Ordenar" hideLabel value={`${sort === "recentProgress" ? "opened" : sort}:${desc ? "desc" : "asc"}`} onChange={(e) => setSortValue(e.target.value)} className="w-52 max-sm:w-40">
+          <div className="ml-auto flex items-center gap-2 max-desk:ml-0 max-desk:w-full">
+            <Select label="Ordenar" hideLabel value={`${sort === "recentProgress" ? "opened" : sort}:${desc ? "desc" : "asc"}`} onChange={(e) => setSortValue(e.target.value)} className="w-52 max-desk:w-auto max-desk:flex-1">
               {SORT_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
@@ -336,7 +349,7 @@ export function LibraryScreen({ preset }: { preset: LibraryPreset }) {
           </div>
         )}
       </PageHeader>
-      <div className="px-6 py-5">
+      <div className="px-6 py-5 max-desk:px-4 max-desk:py-4">
         {error && (
           <ErrorState
             title="Não foi possível carregar a biblioteca"

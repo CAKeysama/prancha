@@ -101,6 +101,12 @@ export const api = {
   openComic: (id: number) => call<ReaderSession>("open_comic", { id }),
   /** Android: a HQ aberta por outro app que a interface ainda não mostrou (some ao ser lida). */
   takeOpenedComic: () => call<number | null>("take_opened_comic"),
+  /** Android: tela cheia do leitor, sem as barras do sistema. No desktop não faz nada. */
+  setImmersive: (on: boolean) => call<void>("screen_immersive", { on }),
+  /** Android: cor atrás das barras do sistema e tom dos ícones, iguais ao tema. No desktop não faz nada. */
+  setSystemBars: (dark: boolean, color: string) => call<void>("screen_bars", { dark, color }),
+  /** Android: o Voltar na tela inicial manda o app para segundo plano. */
+  leaveApp: () => call<void>("screen_leave"),
   saveProgress: (id: number, pageIndex: number, pageCount: number, scrollRatio: number) =>
     call<ReadStatus>("save_progress", { id, pageIndex, pageCount, scrollRatio }),
   setPdfPageCount: (id: number, pageCount: number) => call<void>("set_pdf_page_count", { id, pageCount }),

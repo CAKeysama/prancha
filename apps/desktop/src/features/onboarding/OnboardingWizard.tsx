@@ -8,6 +8,7 @@ import { Logo } from "../../components/Logo";
 import { cn } from "../../components/cn";
 import { APP_NAME, SUPPORTED_FORMATS_TEXT } from "../../app/config";
 import { useNav } from "../../app/navigation";
+import { IS_ANDROID } from "../../app/platform";
 import { useSettings } from "../../app/settings-context";
 import { FIT_LABELS, MODE_LABELS } from "@prancha/shared/domain/reader";
 import { ONBOARDING_STEPS, type FitMode, type ReaderMode, type ReadingDirection, type Settings } from "@prancha/shared/domain/settings";
@@ -126,7 +127,7 @@ function Wizard() {
       </header>
 
       <main className="min-h-0 flex-1 overflow-y-auto">
-        <div key={step} className={cn("mx-auto flex min-h-full w-full max-w-5xl px-6 py-6", direction === "back" ? "p-step-back" : "p-step-forward")}>
+        <div key={step} className={cn("mx-auto flex min-h-full w-full max-w-5xl px-6 py-6 max-desk:px-4", direction === "back" ? "p-step-back" : "p-step-forward")}>
           {name === "welcome" && <WelcomeStep titleId={titleId} onStart={() => go(1)} />}
           {name === "appearance" && <AppearanceStep titleId={titleId} />}
           {name === "type" && <TypeStep titleId={titleId} />}
@@ -137,7 +138,7 @@ function Wizard() {
       </main>
 
       {name !== "welcome" && (
-        <footer className="flex h-16 shrink-0 items-center gap-4 px-6">
+        <footer className="flex h-16 shrink-0 items-center gap-4 px-6 max-desk:gap-2 max-desk:px-4">
           <Progress step={step} />
           <div className="ml-auto flex gap-2">
             <Button onClick={() => go(step - 1)}>
@@ -162,12 +163,12 @@ function Wizard() {
 function Progress({ step }: { step: number }) {
   return (
     <div className="flex items-center gap-3">
-      <div className="flex gap-1" aria-hidden>
+      <div className="flex gap-1 max-desk:hidden" aria-hidden>
         {Array.from({ length: COUNTED }, (_, i) => (
           <span key={i} className={cn("h-1 w-6 rounded-full transition-colors", i < step ? "bg-accent" : "bg-border")} />
         ))}
       </div>
-      <span className="text-sm text-muted tabular-nums">
+      <span className="text-sm whitespace-nowrap text-muted tabular-nums">
         {step} de {COUNTED}
       </span>
     </div>
@@ -515,7 +516,7 @@ function StartStep({ titleId, onImported }: { titleId: string; onImported: (coun
           <h3 id={`${titleId}-files`} className="text-base font-medium">
             Adicionar HQs
           </h3>
-          <p className="mt-0.5 text-sm text-muted">{SUPPORTED_FORMATS_TEXT}. Também dá para arrastar para a janela.</p>
+          <p className="mt-0.5 text-sm text-muted">{SUPPORTED_FORMATS_TEXT}.{IS_ANDROID ? "" : " Também dá para arrastar para a janela."}</p>
           <div className="mt-3 flex flex-wrap gap-2">
             <Button icon={FileUp} disabled={picking || !!running} onClick={() => void pick("files")}>
               Escolher arquivos
