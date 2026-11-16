@@ -115,6 +115,19 @@ jobs:
           export NDK_HOME="$ANDROID_NDK_LATEST_HOME"
           npx tauri android build --debug --apk --target aarch64 --ci
 
+      # O build passa mesmo quando falta o Kotlin de um plugin, e o app só fecha ao abrir no celular: confere as classes no APK.
+      - name: Confere os plugins Android no APK
+        run: |
+          apk=$(find apps/android/src-tauri/gen/android/app/build/outputs/apk -name '*.apk' | head -n 1)
+          dex=$(mktemp -d)
+          unzip -q -o "$apk" 'classes*.dex' -d "$dex"
+          for class in app/tauri/dialog/DialogPlugin com/plugin/fs/FsPlugin app/tauri/notification/NotificationPlugin app/tauri/opener/OpenerPlugin app/prancha/FilesPlugin; do
+            if ! grep -q -a "L$class;" "$dex"/classes*.dex; then
+              echo "::error::O APK não tem a classe $class."
+              exit 1
+            fi
+          done
+
       - uses: actions/upload-artifact@v7
         with:
           name: prancha-android-debug
