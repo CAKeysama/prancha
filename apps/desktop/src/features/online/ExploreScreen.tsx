@@ -13,6 +13,7 @@ import { ApiError, api, errorMessage } from "@prancha/shared/services/api";
 import { setData } from "@prancha/shared/services/query-cache";
 import { STEP, ensure, exploreVersion, keyOf, moreTitles, refreshAll, retry, sectionOf, setTitlesShown, showMore, subscribeExplore, titlesShownFor, type Mode, type Search as ExploreSearch, type Section } from "./explore-store";
 import { GridSkeleton, OnlineCover, SeriesGrid, SourceTrouble } from "./parts";
+import { IS_ANDROID } from "../../app/platform";
 
 const HISTORY_KEY = "online.searchHistory";
 
@@ -275,7 +276,7 @@ export function ExploreScreen() {
       </PageHeader>
       <div className="px-6 py-4 max-desk:px-4">
         {sources.length === 0 && (
-          <EmptyState icon={Compass} title="Nenhuma fonte instalada" actions={<Button onClick={() => nav.navigate({ name: "extensions" })}>Abrir extensões</Button>}>
+          <EmptyState icon={Compass} title="Nenhuma fonte instalada" actions={<Button onClick={() => nav.navigate({ name: "extensions" }, { push: IS_ANDROID })}>Abrir extensões</Button>}>
             Fontes vêm de extensões, que você instala a partir de um repositório.
           </EmptyState>
         )}

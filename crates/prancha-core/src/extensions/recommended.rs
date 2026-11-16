@@ -67,6 +67,10 @@ struct Cache {
 pub fn load(core: &Core, refresh: bool) -> AppResult<RecommendedList> {
     let path = cache_path(core);
     let mut list = if refresh { refreshed(&path, &core.net, fetch(&core.net)) } else { local(&path, &core.net) };
+    if cfg!(target_os = "android") {
+        // O Android ainda recusa repositórios do Mihon (`repository::preview`): não adianta oferecer.
+        list.entries.retain(|e| !is_mihon(e));
+    }
     let stored: Vec<String> = repository::list(&core.db())?.into_iter().map(|r| r.url).collect();
     mark_added(&mut list.entries, &stored);
     Ok(list)
@@ -172,6 +176,10 @@ fn folder(address: &str) -> Option<String> {
     Some(format!("{}://{}{}", url.scheme(), url.host_str()?, &path[..=path.rfind('/')?]))
 }
 
+fn is_mihon(entry: &Recommended) -> bool {
+    Url::parse(&entry.url).is_ok_and(|url| repository::names_a_mihon_file(&url))
+}
+
 fn mark_added(entries: &mut [Recommended], stored: &[String]) {
     let stored: Vec<String> = stored.iter().filter_map(|url| folder(url)).collect();
     for entry in entries {
@@ -193,6 +201,15 @@ mod tests {
 
     fn compatible(id: &str, url: &str) -> Value {
         serde_json::json!({ "id": id, "name": "Nome", "description": "Descrição", "url": url })
+    }
+
+    #[test]
+    fn mihon_entries_are_recognized_by_the_address() {
+        let entries = parse(BUNDLED, &net()).unwrap();
+        let keiyoushi = entries.iter().find(|e| e.id == "keiyoushi").unwrap();
+        assert!(is_mihon(keiyoushi));
+        let prancha = Recommended { url: "https://exemplo.com/prancha/repo.json".into(), ..keiyoushi.clone() };
+        assert!(!is_mihon(&prancha));
     }
 
     #[test]

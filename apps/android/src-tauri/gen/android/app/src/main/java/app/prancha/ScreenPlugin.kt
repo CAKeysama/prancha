@@ -2,10 +2,14 @@ package app.prancha
 
 import android.app.Activity
 import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.os.Build
 import android.view.View
 import android.view.WindowManager
 import android.webkit.WebView
+import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
+import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -91,16 +95,26 @@ class ScreenPlugin(private val activity: Activity) : Plugin(activity) {
     }
   }
 
-  /** A faixa atrás das barras na cor do tema do app, com ícones claros ou escuros conforme o tema. */
+  /**
+   * A faixa atrás das barras na cor do tema do app, com ícones claros ou escuros conforme o tema. O estilo das barras
+   * é refeito pelo tema do app, não pelo do sistema: o `enableEdgeToEdge` da MainActivity escolhe pelo modo escuro do
+   * celular, e um app claro num celular escuro ficava com a faixa escura e os ícones escuros por cima.
+   */
   @Command
   fun setBars(invoke: Invoke) {
     val args = invoke.parseArgs(BarsArgs::class.java)
     activity.runOnUiThread {
-      try {
-        content.setBackgroundColor(Color.parseColor(args.color))
+      val color = try {
+        Color.parseColor(args.color)
       } catch (e: IllegalArgumentException) {
-        // Cor que o Android não entende: fica a do tema do sistema.
+        null // Cor que o Android não entende: fica a do tema do sistema.
       }
+      if (color != null) {
+        content.setBackgroundColor(color)
+        activity.window.setBackgroundDrawable(ColorDrawable(color))
+      }
+      val bars = if (args.dark) SystemBarStyle.dark(Color.TRANSPARENT) else SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
+      (activity as ComponentActivity).enableEdgeToEdge(bars, bars)
       val c = controller()
       c.isAppearanceLightStatusBars = !args.dark
       c.isAppearanceLightNavigationBars = !args.dark

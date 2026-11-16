@@ -369,7 +369,7 @@ fn sibling(base: &Url, file: &str) -> Option<Url> {
     Some(url)
 }
 
-fn names_a_mihon_file(url: &Url) -> bool {
+pub(crate) fn names_a_mihon_file(url: &Url) -> bool {
     let path = url.path().to_ascii_lowercase();
     path.ends_with(".apk") || path.ends_with("/index.min.json") || path.ends_with("/index.pb")
 }

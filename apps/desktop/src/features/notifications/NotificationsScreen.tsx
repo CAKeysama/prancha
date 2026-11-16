@@ -25,6 +25,7 @@ import {
 import { api, errorMessage } from "@prancha/shared/services/api";
 import { CATEGORY_ICONS, NotificationItem } from "./NotificationItem";
 import { applyNotificationChange, useNotifications } from "./notifications-context";
+import { IS_ANDROID } from "../../app/platform";
 
 export const PAGE_SIZE = 30;
 
@@ -164,7 +165,7 @@ export function NotificationsScreen() {
             </Button>
           )}
           {/* O mesmo atalho do popup do sino. */}
-          <IconButton variant="secondary" icon={Settings} label="Preferências de notificação" onClick={() => nav.navigate({ name: "settings", section: "notificacoes" })} />
+          <IconButton variant="secondary" icon={Settings} label="Preferências de notificação" onClick={() => nav.navigate({ name: "settings", section: "notificacoes" }, { push: IS_ANDROID })} />
         </>
       }
     >

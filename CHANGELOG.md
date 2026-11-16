@@ -27,6 +27,7 @@ O app do Windows não muda. Por dentro, o Prancha passa a compilar também para 
 - A compilação para o Android a partir do Windows escolhia as bibliotecas do sistema pelo computador que compila, e não pelo celular; e a leitura de CBR não compilava para o Android (a função `lutimes` não existe nas versões mais antigas que o app aceita). Uma cópia corrigida do `unrar_sys` fica em `vendor/` até a correção sair no pacote.
 - No Android, um CBR escolhido pelo seletor do sistema não abria ("O arquivo não foi encontrado"): o leitor de RAR reabria o arquivo pelo caminho `/proc/self/fd/…`, que não aponta para um arquivo de verdade. A cópia do `unrar_sys` em `vendor/` passa a usar o descritor que o app já tem aberto.
 - PDFs não abriam nos celulares com o WebView anterior à versão 140 ("a.toHex is not a function"): o leitor de PDF passa a usar a versão do PDF.js compatível com navegadores mais antigos.
+- No Android, trocar para o tema claro com o app aberto deixava a faixa atrás das barras do sistema escura, com os ícones escuros por cima; ao abrir já no tema claro, a faixa ficava lilás. Voltar de uma tela aberta por um botão de outra (como Repositórios, aberta em Extensões) voltava ao Início em vez da tela anterior. Os recomendados não oferecem mais o repositório do Mihon no celular, onde ele ainda não funciona.
 
 ## [0.12.1] - 2026-11-14
 

@@ -9,6 +9,7 @@ import { DOWNLOAD_STATUS_LABELS, type DownloadView } from "@prancha/shared/domai
 import { formatBytes } from "@prancha/shared/domain/progress";
 import { api, errorMessage } from "@prancha/shared/services/api";
 import { onDownloadChanged } from "@prancha/shared/services/events";
+import { IS_ANDROID } from "../../app/platform";
 
 const ACTIVE = new Set(["queued", "running", "paused"]);
 
@@ -77,7 +78,7 @@ export function DownloadsScreen() {
         {error && !items && <ErrorState title="Não foi possível abrir os downloads" message={error} />}
         {!error && !items && <Spinner label="Carregando…" />}
         {items?.length === 0 && (
-          <EmptyState icon={Download} title="Nenhum download" actions={<Button onClick={() => nav.navigate({ name: "explore" })}>Explorar</Button>}>
+          <EmptyState icon={Download} title="Nenhum download" actions={<Button onClick={() => nav.navigate({ name: "explore" }, { push: IS_ANDROID })}>Explorar</Button>}>
             Os capítulos que você baixar entram na biblioteca e abrem sem internet.
           </EmptyState>
         )}

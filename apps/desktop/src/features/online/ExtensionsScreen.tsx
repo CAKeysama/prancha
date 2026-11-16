@@ -15,6 +15,7 @@ import { api, errorMessage } from "@prancha/shared/services/api";
 import { onComponentProgress } from "@prancha/shared/services/events";
 import { Fact } from "./parts";
 import { sound } from "@prancha/shared/services/sound";
+import { IS_ANDROID } from "../../app/platform";
 
 const CATALOG_PAGE = 100;
 
@@ -150,7 +151,7 @@ function Catalog({ onChanged }: { onChanged: () => void }) {
 
   if (repositories.data?.length === 0) {
     return (
-      <EmptyState icon={Puzzle} title="Nenhum repositório" actions={<Button onClick={() => nav.navigate({ name: "repositories" })}>Abrir repositórios</Button>}>
+      <EmptyState icon={Puzzle} title="Nenhum repositório" actions={<Button onClick={() => nav.navigate({ name: "repositories" }, { push: IS_ANDROID })}>Abrir repositórios</Button>}>
         Adicione um repositório para ver as extensões que ele oferece.
       </EmptyState>
     );
