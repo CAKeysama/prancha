@@ -22,3 +22,6 @@
 
 # O verificador de certificados do núcleo chama estas classes pela JNI.
 -keep, includedescriptorclasses class org.rustls.platformverifier.** { *; }
+
+# A verificação de capítulos novos chama o Rust por este nome (Java_app_prancha_PranchaNative_checkFollowing).
+-keep class app.prancha.PranchaNative { *; }

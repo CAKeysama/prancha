@@ -106,6 +106,28 @@ fn a_valid_call_returns_data() {
 }
 
 #[test]
+fn the_compiled_extension_is_kept_on_disk_and_reused() {
+    let sandbox = Sandbox::new(EngineLimits::default());
+    let cache = sandbox.dir.path().join("compilados");
+    let extension = sandbox.install("e", free());
+    let first = SourceEngine::with_limits(Arc::new(Net::new(true)), sandbox.dir.path().join("t.db"), EngineLimits::default()).unwrap().with_compiled_cache(Some(cache.clone()));
+    assert_eq!(first.search(&extension, None, "livre", "Aurora", 1, &[]).unwrap().results[0].title, "Aurora 1");
+    let saved: Vec<_> = std::fs::read_dir(&cache).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+    assert_eq!(saved.len(), 1);
+    assert!(saved[0].starts_with(&format!("{}-", extension.sha256)) && saved[0].ends_with(".cwasm"));
+
+    // Outra abertura do app lê o compilado; um arquivo estragado só faz compilar de novo.
+    let second = SourceEngine::with_limits(Arc::new(Net::new(true)), sandbox.dir.path().join("t.db"), EngineLimits::default()).unwrap().with_compiled_cache(Some(cache.clone()));
+    assert_eq!(second.search(&extension, None, "livre", "Aurora", 1, &[]).unwrap().results[0].title, "Aurora 1");
+    std::fs::write(cache.join(&saved[0]), b"estragado").unwrap();
+    let third = SourceEngine::with_limits(Arc::new(Net::new(true)), sandbox.dir.path().join("t.db"), EngineLimits::default()).unwrap().with_compiled_cache(Some(cache.clone()));
+    assert_eq!(third.search(&extension, None, "livre", "Aurora", 1, &[]).unwrap().results[0].title, "Aurora 1");
+
+    third.forget(&extension.sha256);
+    assert_eq!(std::fs::read_dir(&cache).unwrap().count(), 0);
+}
+
+#[test]
 fn an_endless_loop_hits_the_time_limit() {
     let sandbox = Sandbox::new(EngineLimits { fuel: u64::MAX / 2, call_timeout: Duration::from_millis(300), ..Default::default() });
     let extension = sandbox.install("e", free());
@@ -2268,6 +2290,26 @@ fn finished_downloads_of_a_series_become_one_notification_and_failures_another()
     assert_eq!(failure.actions[0], notifications::Action::OpenDownloads);
     assert!(!failure.body.contains("500"), "o detalhe técnico fica em Downloads: {}", failure.body);
     assert_eq!(notifications::unread_count(&core.db()).unwrap(), 2);
+}
+
+#[test]
+fn the_queue_says_when_it_starts_and_when_it_empties() {
+    let (_dir, core, _repo) = core_with_fixture(&["127.0.0.1"]);
+    let changes = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let seen = changes.clone();
+    assert!(core.downloads.on_busy.set(Arc::new(move |busy| seen.lock().unwrap().push(busy))).is_ok());
+    let server = pages_server();
+    let first = chapter(&core, "obra", &format!("{}|0,1", server.base));
+    let second = chapter(&core, "outra", &format!("{}|0", server.base));
+    let ids = downloads::enqueue(&core, &[first, second]).unwrap();
+    wait_until(&core, ids[0], &["completed"]);
+    wait_until(&core, ids[1], &["completed"]);
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while changes.lock().unwrap().last() != Some(&false) && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    // Uma volta só para os dois capítulos: começou, esvaziou.
+    assert_eq!(*changes.lock().unwrap(), [true, false]);
 }
 
 #[test]

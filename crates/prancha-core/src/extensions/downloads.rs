@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -120,11 +120,17 @@ struct Running {
     intent: Intent,
 }
 
+/// Avisa quando a fila começa a baixar (`true`) e quando esvazia (`false`). Chamado com a fila travada: não pode
+/// esperar nada (no Android, liga e desliga o serviço que mantém o app vivo em segundo plano).
+pub type BusyHook = Arc<dyn Fn(bool) + Send + Sync>;
+
 #[derive(Default)]
 pub struct Downloads {
     running: Mutex<HashMap<i64, Running>>,
     wake: Condvar,
     workers: OnceLock<()>,
+    pub on_busy: OnceLock<BusyHook>,
+    busy: AtomicBool,
     /// Quando cada fonte pode receber o próximo pedido, mesmo vindo de outro capítulo.
     next_request: Mutex<HashMap<String, Instant>>,
 }
@@ -138,6 +144,14 @@ impl Downloads {
     fn wake_workers(&self) {
         let _running = self.lock();
         self.wake.notify_all();
+    }
+
+    fn set_busy(&self, busy: bool) {
+        if self.busy.swap(busy, Ordering::Relaxed) != busy
+            && let Some(hook) = self.on_busy.get()
+        {
+            hook(busy);
+        }
     }
 
     /// Reserva a próxima vez desta fonte. Quem baixa e quem lê online dividem o mesmo intervalo.
@@ -184,9 +198,15 @@ fn next_job(core: &Core) -> Job {
             Some((id, source)) => {
                 let cancel = Cancel::default();
                 running.insert(id, Running { cancel: cancel.clone(), source: source.clone(), intent: Intent::Run });
+                core.downloads.set_busy(true);
                 return Job { id, source, cancel };
             }
-            None => running = core.downloads.wake.wait(running).unwrap_or_else(|e| e.into_inner()),
+            None => {
+                if running.is_empty() {
+                    core.downloads.set_busy(false);
+                }
+                running = core.downloads.wake.wait(running).unwrap_or_else(|e| e.into_inner());
+            }
         }
     }
 }

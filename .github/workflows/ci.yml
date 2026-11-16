@@ -122,9 +122,17 @@ jobs:
           apk=$(find apps/android/src-tauri/gen/android/app/build/outputs/apk -name '*.apk' | head -n 1)
           dex=$(mktemp -d)
           unzip -q -o "$apk" 'classes*.dex' -d "$dex"
-          for class in app/tauri/dialog/DialogPlugin com/plugin/fs/FsPlugin app/tauri/notification/NotificationPlugin app/tauri/opener/OpenerPlugin app/prancha/FilesPlugin app/prancha/ScreenPlugin; do
+          for class in app/tauri/dialog/DialogPlugin com/plugin/fs/FsPlugin app/tauri/notification/NotificationPlugin app/tauri/opener/OpenerPlugin app/prancha/FilesPlugin app/prancha/ScreenPlugin app/prancha/BackgroundPlugin app/prancha/DownloadService app/prancha/FollowWorker; do
             if ! grep -q -a "L$class;" "$dex"/classes*.dex; then
               echo "::error::O APK não tem a classe $class."
+              exit 1
+            fi
+          done
+          # O FollowWorker chama o Rust por este nome: sem ele, a verificação em segundo plano falha só no celular.
+          unzip -q -o "$apk" 'lib/*/libprancha_android_lib.so' -d "$dex"
+          for lib in "$dex"/lib/*/libprancha_android_lib.so; do
+            if ! grep -q -a "Java_app_prancha_PranchaNative_checkFollowing" "$lib"; then
+              echo "::error::$lib não exporta a ponte da verificação em segundo plano."
               exit 1
             fi
           done

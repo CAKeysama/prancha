@@ -646,9 +646,19 @@ pub fn get(conn: &Connection, id: &str) -> AppResult<RepositoryInfo> {
 // Confiança
 // ---------------------------------------------------------------------------
 
+/// As extensões do Mihon rodam pelo Suwayomi, que só existe no Windows. No Android elas virão carregadas direto,
+/// numa versão futura; até lá o repositório nem entra, em vez de falhar na hora de instalar.
+fn refuse_mihon_on_android(key: &Key) -> AppResult<()> {
+    if cfg!(target_os = "android") && matches!(key, Key::Mihon(_)) {
+        return Err(AppError::user("repo_unsupported", "Repositórios do Mihon ainda não funcionam no Android. Por enquanto, só os de extensões do Prancha."));
+    }
+    Ok(())
+}
+
 /// Consulta o endereço sem gravar nada. Nada aqui é prova de confiança: é o que a pessoa vai avaliar.
 pub fn preview(core: &Core, address: &str) -> AppResult<RepositoryPreview> {
     let (url, manifest, key) = fetch_manifest(&core.net, address)?;
+    refuse_mihon_on_android(&key)?;
     let fetched = fetch_index(&core.net, &key, &manifest.id, &manifest.index_url, None)?.ok_or_else(|| invalid("O índice não pôde ser lido."))?;
     let already_added = core.db().query_row("SELECT 1 FROM source_repositories WHERE id = ?1 OR url = ?2", [&manifest.id, &url], |_| Ok(())).optional()?.is_some();
     Ok(RepositoryPreview {
@@ -668,6 +678,7 @@ pub fn preview(core: &Core, address: &str) -> AppResult<RepositoryPreview> {
 /// Fixa a chave que a pessoa revisou. Se o endereço passou a anunciar outra, nada é gravado.
 pub fn add(core: &Core, address: &str, confirmed_fingerprint: &str) -> AppResult<RepositoryInfo> {
     let (url, manifest, key) = fetch_manifest(&core.net, address)?;
+    refuse_mihon_on_android(&key)?;
     let fingerprint = key.fingerprint();
     if fingerprint != confirmed_fingerprint {
         return Err(AppError::user("repo_fingerprint", "A chave deste repositório mudou desde a revisão. Revise de novo antes de confiar."));

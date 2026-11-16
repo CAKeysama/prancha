@@ -130,8 +130,88 @@ pub fn init_screen() -> TauriPlugin<Wry> {
         .build()
 }
 
+/// O plugin Kotlin do que roda com o app fora da tela (`BackgroundPlugin`): o serviço de downloads.
+pub struct Background(PluginHandle<Wry>);
+
+pub fn init_background() -> TauriPlugin<Wry> {
+    Builder::new("prancha-background")
+        .setup(|app, api| {
+            app.manage(Background(api.register_android_plugin("app.prancha", "BackgroundPlugin")?));
+            Ok(())
+        })
+        .build()
+}
+
+/// O núcleo do app aberto neste processo. A verificação em segundo plano usa ele quando existe, para não abrir
+/// o banco duas vezes nem repetir os avisos que ele mesmo já mostra.
+static RUNNING: std::sync::OnceLock<Arc<Core>> = std::sync::OnceLock::new();
+
 #[derive(Serialize)]
-struct ImmersiveArgs {
+#[serde(rename_all = "camelCase")]
+struct ScheduleArgs<'a> {
+    data_dir: &'a str,
+}
+
+/// Depois que o app abriu: segue a fila de downloads e agenda a verificação das obras acompanhadas.
+pub fn app_started(app: &tauri::AppHandle, core: Arc<Core>) {
+    follow_downloads(app, &core);
+    let data_dir = core.paths.data_dir.to_string_lossy().into_owned();
+    let _ = RUNNING.set(core);
+    let app = app.clone();
+    std::thread::spawn(move || {
+        if let Err(e) = app.state::<Background>().0.run_mobile_plugin::<serde_json::Value>("scheduleFollowCheck", ScheduleArgs { data_dir: &data_dir }) {
+            log::warn!("verificação em segundo plano não agendada: {e}");
+        }
+    });
+}
+
+/// Verifica as obras acompanhadas com o app fechado (o WorkManager chama, pelo `FollowWorker`). Devolve, em JSON,
+/// os avisos do sistema que o app mostraria, para o Kotlin mostrar: sem o app aberto, ninguém mais mostra.
+pub fn check_following(env: &mut jni::Env, context: jni::objects::JObject, data_dir: PathBuf) -> Result<String, String> {
+    use prancha_core::notifications::{NativeNotice, NativeOutcome};
+    use std::sync::Mutex;
+    if let Some(core) = RUNNING.get() {
+        prancha_core::extensions::sources::refresh_following(core, None).map_err(|e| e.to_string())?;
+        return Ok("[]".into());
+    }
+    // As conexões HTTPS conferem certificados pela JVM, como na abertura do app.
+    rustls_platform_verifier::android::init_with_env(env, context).map_err(|e| e.to_string())?;
+    let core = Core::init(data_dir, Arc::new(|_: &str, _| {})).map_err(|e| e.to_string())?;
+    let online = prancha_core::library::get_setting(&core.db(), "plugins.online").ok().flatten() == Some(serde_json::Value::Bool(true));
+    if !online {
+        return Ok("[]".into());
+    }
+    let notices: Arc<Mutex<Vec<serde_json::Value>>> = Arc::default();
+    let collected = notices.clone();
+    let _ = core.notifier.set(Arc::new(move |notice: &NativeNotice| {
+        collected.lock().unwrap_or_else(|e| e.into_inner()).push(serde_json::json!({ "id": notice.id, "title": notice.title, "body": notice.body }));
+        NativeOutcome::Shown
+    }));
+    prancha_core::extensions::sources::refresh_following(&core, None).map_err(|e| e.to_string())?;
+    let list = std::mem::take(&mut *notices.lock().unwrap_or_else(|e| e.into_inner()));
+    Ok(serde_json::Value::Array(list).to_string())
+}
+
+/// Liga o serviço em primeiro plano enquanto a fila de downloads tem capítulos e desliga quando ela esvazia.
+/// O aviso da fila chega com ela travada: a chamada ao Kotlin vai para outra thread, e quem chega por último manda.
+fn follow_downloads(app: &tauri::AppHandle, core: &Core) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let wanted = Arc::new(AtomicBool::new(false));
+    let app = app.clone();
+    let _ = core.downloads.on_busy.set(Arc::new(move |busy| {
+        wanted.store(busy, Ordering::SeqCst);
+        let (app, wanted) = (app.clone(), wanted.clone());
+        std::thread::spawn(move || {
+            let on = wanted.load(Ordering::SeqCst);
+            if let Err(e) = app.state::<Background>().0.run_mobile_plugin::<serde_json::Value>("setDownloading", SwitchArgs { on }) {
+                log::warn!("serviço de downloads: {e}");
+            }
+        });
+    }));
+}
+
+#[derive(Serialize)]
+struct SwitchArgs {
     on: bool,
 }
 
@@ -143,11 +223,43 @@ struct BarsArgs<'a> {
 
 /// Chamadas da interface para a tela. Esperam o Kotlin responder: rodam fora da thread principal.
 pub fn set_immersive(app: &tauri::AppHandle, on: bool) -> io::Result<()> {
-    app.state::<Screen>().0.run_mobile_plugin::<serde_json::Value>("setImmersive", ImmersiveArgs { on }).map(|_| ()).map_err(io_error)
+    app.state::<Screen>().0.run_mobile_plugin::<serde_json::Value>("setImmersive", SwitchArgs { on }).map(|_| ()).map_err(io_error)
 }
 
 pub fn set_bars(app: &tauri::AppHandle, dark: bool, color: &str) -> io::Result<()> {
     app.state::<Screen>().0.run_mobile_plugin::<serde_json::Value>("setBars", BarsArgs { dark, color }).map(|_| ()).map_err(io_error)
+}
+
+#[derive(Deserialize)]
+struct Visible {
+    visible: bool,
+}
+
+/// Se o app está na tela agora. Na dúvida, não: um aviso do sistema a mais é melhor que um perdido.
+pub fn app_visible(app: &tauri::AppHandle) -> bool {
+    app.state::<Screen>().0.run_mobile_plugin::<Visible>("isVisible", ()).is_ok_and(|v| v.visible)
+}
+
+/// No Android 13 ou mais novo, avisos do sistema pedem permissão. Ela é pedida no primeiro aviso, com o app na
+/// tela (a caixa do sistema só aparece por cima dele), e uma vez por abertura: quem recusou continua com a central.
+pub fn ask_notifications_once(app: &tauri::AppHandle, visible: bool) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use tauri::plugin::PermissionState;
+    use tauri_plugin_notification::NotificationExt;
+    static ASKED: AtomicBool = AtomicBool::new(false);
+    if !visible || !matches!(app.notification().permission_state(), Ok(PermissionState::Prompt | PermissionState::PromptWithRationale)) {
+        return;
+    }
+    if ASKED.swap(true, Ordering::Relaxed) {
+        return;
+    }
+    let app = app.clone();
+    // A resposta espera a pessoa: fora da thread de quem publicou o aviso.
+    std::thread::spawn(move || {
+        if let Err(e) = app.notification().request_permission() {
+            log::warn!("permissão de notificações: {e}");
+        }
+    });
 }
 
 pub fn move_to_back(app: &tauri::AppHandle) -> io::Result<()> {

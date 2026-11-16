@@ -34,7 +34,13 @@ fn connect_native_notifications(app: &tauri::AppHandle, core: &Core) {
     use tauri_plugin_notification::{NotificationExt, PermissionState};
     let handle = app.clone();
     let notifier: notifications::Notifier = Arc::new(move |notice: &NativeNotice| {
+        #[cfg(not(target_os = "android"))]
         let focused = handle.get_webview_window("main").and_then(|w| w.is_focused().ok()).unwrap_or(false);
+        // No Android a janela não sabe se tem foco: vale se o app está na tela.
+        #[cfg(target_os = "android")]
+        let focused = android::app_visible(&handle);
+        #[cfg(target_os = "android")]
+        android::ask_notifications_once(&handle, focused);
         if focused {
             return NativeOutcome::Skipped;
         }
@@ -111,7 +117,7 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
     #[cfg(desktop)]
     let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
     #[cfg(target_os = "android")]
-    let builder = builder.plugin(android::init()).plugin(android::init_screen());
+    let builder = builder.plugin(android::init()).plugin(android::init_screen()).plugin(android::init_background());
     builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -150,6 +156,8 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
                     app.manage(core.clone());
                     #[cfg(target_os = "android")]
                     android::watch_opened(app.handle(), core.clone());
+                    #[cfg(target_os = "android")]
+                    android::app_started(app.handle(), core.clone());
                     std::thread::spawn(move || {
                         // Antes dos downloads: nada da obra que não pode aparecer volta a baixar.
                         if let Err(e) = extensions::sources::forget_blocked(&core, &core.db()) {

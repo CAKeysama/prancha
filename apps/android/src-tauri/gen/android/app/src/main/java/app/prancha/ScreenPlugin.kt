@@ -6,6 +6,7 @@ import android.os.Build
 import android.view.View
 import android.view.WindowManager
 import android.webkit.WebView
+import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -14,6 +15,7 @@ import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
+import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
 
 @InvokeArg
@@ -30,7 +32,7 @@ class BarsArgs {
 /**
  * A tela do app no Android: o conteúdo fica entre as barras do sistema (a interface não desenha embaixo delas),
  * o leitor usa a tela inteira e o Voltar na tela inicial manda o app para segundo plano, como os apps do sistema.
- * O Rust chama estes comandos (crates/prancha-app/src/android.rs).
+ * Também diz ao Rust se o app está na tela, para os avisos do sistema. O Rust chama estes comandos (crates/prancha-app/src/android.rs).
  */
 @TauriPlugin
 class ScreenPlugin(private val activity: Activity) : Plugin(activity) {
@@ -53,6 +55,22 @@ class ScreenPlugin(private val activity: Activity) : Plugin(activity) {
       }
       ViewCompat.requestApplyInsets(content)
     }
+  }
+
+  /** O app está na tela: os avisos do sistema só aparecem quando ele não está (com ele aberto, a central basta). */
+  @Volatile private var visible = true
+
+  override fun onResume(activity: AppCompatActivity) {
+    visible = true
+  }
+
+  override fun onPause(activity: AppCompatActivity) {
+    visible = false
+  }
+
+  @Command
+  fun isVisible(invoke: Invoke) {
+    invoke.resolve(JSObject().put("visible", visible))
   }
 
   private fun controller() = WindowCompat.getInsetsController(activity.window, activity.window.decorView)

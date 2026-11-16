@@ -3,7 +3,7 @@
 //! Cada chamada usa uma instância nova, com limites próprios, na thread de trabalho de quem chamou.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -360,11 +360,20 @@ pub struct SourceEngine {
     ticker: Arc<Ticker>,
     /// Compilados por SHA-256. Ficam só na memória, durante a sessão.
     components: Mutex<HashMap<String, Component>>,
+    /// Onde guardar o compilado entre aberturas do app (só no Android, onde compilar a cada abertura pesa).
+    compiled_dir: Option<PathBuf>,
 }
 
 impl SourceEngine {
     pub fn new(net: Arc<Net>, db_path: PathBuf) -> AppResult<Self> {
-        Self::with_limits(net, db_path, EngineLimits::default())
+        let compiled_dir = cfg!(target_os = "android").then(|| db_path.with_file_name("cache").join("extensoes"));
+        Ok(Self::with_limits(net, db_path, EngineLimits::default())?.with_compiled_cache(compiled_dir))
+    }
+
+    /// Guarda as extensões já compiladas nesta pasta, para a próxima abertura não compilar de novo.
+    pub fn with_compiled_cache(mut self, dir: Option<PathBuf>) -> Self {
+        self.compiled_dir = dir;
+        self
     }
 
     pub fn with_limits(net: Arc<Net>, db_path: PathBuf, limits: EngineLimits) -> AppResult<Self> {
@@ -382,6 +391,7 @@ impl SourceEngine {
             slots: Slots { used: Mutex::new(HashMap::new()), freed: Condvar::new() },
             ticker: Arc::default(),
             components: Mutex::new(HashMap::new()),
+            compiled_dir: None,
         })
     }
 
@@ -397,14 +407,52 @@ impl SourceEngine {
         if sha256_hex(&wasm) != extension.sha256 {
             return Err(AppError::user("extension_load", "O arquivo da extensão foi alterado depois da instalação. Instale-a de novo."));
         }
-        // shortcut: a compilação não é cancelável, mas o pacote tem tamanho limitado e vem de um repositório aceito.
-        let component = Component::new(&self.engine, &wasm).map_err(load_failed)?;
+        let component = match &self.compiled_dir {
+            Some(dir) => self.compiled_from_disk(dir, &extension.sha256, &wasm)?,
+            // shortcut: a compilação não é cancelável, mas o pacote tem tamanho limitado e vem de um repositório aceito.
+            None => Component::new(&self.engine, &wasm).map_err(load_failed)?,
+        };
         self.components.lock().unwrap_or_else(|e| e.into_inner()).insert(extension.sha256.clone(), component.clone());
+        Ok(component)
+    }
+
+    /// O compilado guardado, se ainda servir; senão compila e guarda. O nome leva o SHA-256 do pacote (já conferido)
+    /// e a impressão do Wasmtime e da configuração: uma atualização do app que mude o compilador não lê o antigo.
+    fn compiled_from_disk(&self, dir: &Path, sha256: &str, wasm: &[u8]) -> AppResult<Component> {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        self.engine.precompile_compatibility_hash().hash(&mut hasher);
+        let file = dir.join(format!("{sha256}-{:016x}.cwasm", hasher.finish()));
+        // Lido para a memória, e não mapeado: um arquivo truncado por fora não derruba o app depois.
+        if let Ok(bytes) = std::fs::read(&file) {
+            // SAFETY: o arquivo fica na pasta privada do app e só este código escreve nela, com o resultado de
+            // `Component::serialize`; o Wasmtime ainda confere a versão e a configuração antes de usar.
+            if let Ok(component) = unsafe { Component::deserialize(&self.engine, &bytes) } {
+                return Ok(component);
+            }
+        }
+        let component = Component::new(&self.engine, wasm).map_err(load_failed)?;
+        // Sem cache, a extensão ainda funciona: só compila de novo na próxima abertura.
+        let saved = component.serialize().map_err(|e| e.to_string()).and_then(|bytes| {
+            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+            let partial = file.with_extension("parcial");
+            std::fs::write(&partial, bytes).and_then(|()| std::fs::rename(&partial, &file)).map_err(|e| e.to_string())
+        });
+        if let Err(e) = saved {
+            log::warn!("cache da extensão compilada: {e}");
+        }
         Ok(component)
     }
 
     pub fn forget(&self, sha256: &str) {
         self.components.lock().unwrap_or_else(|e| e.into_inner()).remove(sha256);
+        let Some(dir) = &self.compiled_dir else { return };
+        let prefix = format!("{sha256}-");
+        for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+            if entry.file_name().to_string_lossy().starts_with(&prefix) {
+                let _ = std::fs::remove_file(entry.path());
+            }
+        }
     }
 
     fn run<T>(&self, id: &str, grant: &Grant, component: &Component, cancel: Option<&Cancel>, call: impl FnOnce(&mut Store<HostState>, &Extension) -> wasmtime::Result<T>) -> AppResult<T> {

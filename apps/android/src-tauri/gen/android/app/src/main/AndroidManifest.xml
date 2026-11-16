@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- O serviço que mantém os downloads correndo com o app fora da tela (DownloadService). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <!-- AndroidTV support -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
@@ -38,6 +41,11 @@
                 <data android:mimeType="application/pdf" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".DownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <provider
           android:name="androidx.core.content.FileProvider"

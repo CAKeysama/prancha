@@ -3389,6 +3389,8 @@ dependencies = [
 name = "prancha-android"
 version = "0.13.0"
 dependencies = [
+ "jni 0.22.4",
+ "log",
  "prancha-app",
  "serde_json",
  "tauri",
