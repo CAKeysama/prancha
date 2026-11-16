@@ -105,7 +105,7 @@ class ScreenPlugin(private val activity: Activity) : Plugin(activity) {
     val args = invoke.parseArgs(BarsArgs::class.java)
     activity.runOnUiThread {
       val color = try {
-        Color.parseColor(args.color)
+        Color.parseColor(fullHex(args.color))
       } catch (e: IllegalArgumentException) {
         null // Cor que o Android não entende: fica a do tema do sistema.
       }
@@ -120,6 +120,17 @@ class ScreenPlugin(private val activity: Activity) : Plugin(activity) {
       c.isAppearanceLightNavigationBars = !args.dark
       invoke.resolve()
     }
+  }
+
+  /**
+   * O build da interface encurta as cores (`#ffffff` vira `#fff`), e o `Color.parseColor` só aceita 6 ou 8 dígitos.
+   * `#rgb` e `#rgba` viram `#rrggbb` e `#aarrggbb`; o resto passa como veio.
+   */
+  private fun fullHex(color: String): String {
+    val hex = color.trim().removePrefix("#")
+    if (!color.trim().startsWith("#") || (hex.length != 3 && hex.length != 4)) return color.trim()
+    val d = hex.map { "$it$it" }
+    return if (d.size == 3) "#" + d.joinToString("") else "#" + d[3] + d[0] + d[1] + d[2]
   }
 
   /** Voltar na tela inicial: o app vai para segundo plano em vez de fechar, e volta onde estava. */
