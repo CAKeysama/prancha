@@ -30,7 +30,7 @@ function Icon({ src }: { src: string | null }) {
 }
 
 function Permissions({ runtime, network, hosts, storage }: { runtime: string; network: boolean; hosts: string[]; storage: boolean }) {
-  if (runtime === EXTERNAL_RUNTIME) return <Fact label="Permissões">Sem isolamento: acesso aos seus arquivos e à internet</Fact>;
+  if (runtime === EXTERNAL_RUNTIME) return <Fact label="Permissões">{IS_ANDROID ? "Sem isolamento: acesso aos dados do app e à internet" : "Sem isolamento: acesso aos seus arquivos e à internet"}</Fact>;
   return (
     <Fact label="Permissões">
       <ul className="flex flex-col gap-0.5">

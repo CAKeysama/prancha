@@ -10,4 +10,9 @@ pub mod repository;
 pub mod runtime;
 pub mod signing;
 pub mod sources;
+pub mod mihon;
+#[cfg(not(target_os = "android"))]
 pub mod suwayomi;
+// No Android as extensões do Mihon rodam dentro do app, e este módulo ocupa o lugar do Suwayomi.
+#[cfg(target_os = "android")]
+pub use mihon as suwayomi;

@@ -44,6 +44,13 @@
             </intent-filter>
         </activity>
 
+        <!-- O site de uma fonte do Mihon, para a pessoa passar pela verificação anti-robô (MihonPlugin). -->
+        <activity
+            android:name=".VerifyActivity"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|screenLayout|uiMode"
+            android:exported="false"
+            android:label="Verificação do site" />
+
         <service
             android:name=".DownloadService"
             android:exported="false"

@@ -13,6 +13,7 @@ import { formatDate } from "@prancha/shared/domain/progress";
 import { api, errorMessage } from "@prancha/shared/services/api";
 import { Fact } from "./parts";
 import { sound } from "@prancha/shared/services/sound";
+import { IS_ANDROID } from "../../app/platform";
 
 function extensionCount(count: number): string {
   return `${count} ${count === 1 ? "extensão" : "extensões"}`;
@@ -147,7 +148,9 @@ function AddRepositoryDialog({ initialAddress = "", onClose, onAdded }: { initia
       {preview.external && (
         <p className="mt-2 flex items-start gap-2 text-sm">
           <ShieldAlert size={16} className="mt-0.5 shrink-0 text-danger" aria-hidden />
-          Elas foram feitas para o Mihon e rodam sem o isolamento do Prancha, com acesso aos seus arquivos e à internet. A primeira instalação baixa o Suwayomi, um programa de terceiros de cerca de 340 MB.
+          {IS_ANDROID
+            ? "Elas foram feitas para o Mihon e rodam dentro do app, sem o isolamento do Prancha, com acesso aos dados dele e à internet."
+            : "Elas foram feitas para o Mihon e rodam sem o isolamento do Prancha, com acesso aos seus arquivos e à internet. A primeira instalação baixa o Suwayomi, um programa de terceiros de cerca de 340 MB."}
         </p>
       )}
       {preview.alreadyAdded && <p className="mt-2 text-sm text-danger">Este repositório já foi adicionado.</p>}

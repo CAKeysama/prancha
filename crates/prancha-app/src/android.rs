@@ -172,6 +172,28 @@ pub fn init_vault() -> TauriPlugin<Wry> {
         .build()
 }
 
+/// O plugin Kotlin das extensões do Mihon (`MihonPlugin`), que as carrega dentro do app. O núcleo fala com ele por
+/// `extensions::mihon::Host`, e cada chamada bloqueia a thread de quem pediu até a extensão responder.
+struct MihonHost(PluginHandle<Wry>);
+
+impl crate::extensions::mihon::Host for MihonHost {
+    fn call(&self, command: &str, args: serde_json::Value) -> Result<serde_json::Value, String> {
+        self.0.run_mobile_plugin(command, args).map_err(|e| match e {
+            PluginInvokeError::InvokeRejected(rejected) => rejected.message.unwrap_or_else(|| "a extensão falhou sem explicar".into()),
+            other => other.to_string(),
+        })
+    }
+}
+
+pub fn init_mihon() -> TauriPlugin<Wry> {
+    Builder::new("prancha-mihon")
+        .setup(|_app, api| {
+            crate::extensions::mihon::register(Arc::new(MihonHost(api.register_android_plugin("app.prancha", "MihonPlugin")?)));
+            Ok(())
+        })
+        .build()
+}
+
 /// O plugin Kotlin do que roda com o app fora da tela (`BackgroundPlugin`): o serviço de downloads.
 pub struct Background(PluginHandle<Wry>);
 
