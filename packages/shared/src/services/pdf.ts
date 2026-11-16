@@ -1,8 +1,11 @@
 // Integração com o PDF.js: o PDF é lido pelo protocolo `prancha://file/<id>`. O primeiro pedido
 // não tem intervalo e traz o arquivo inteiro; os seguintes pedem só as partes necessárias.
 
-import { GlobalWorkerOptions, getDocument, type PDFDocumentProxy, type RenderTask } from "pdfjs-dist";
-import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+// A versão "legacy" traz as funções que o PDF.js usa e que só chegaram no Chrome 140 (Uint8Array.toHex,
+// toBase64, fromBase64). O WebView2 do Windows já tem; o WebView do Android depende da versão instalada no
+// celular, e num Chrome 133 o PDF não abria ("a.toHex is not a function").
+import { GlobalWorkerOptions, getDocument, type PDFDocumentProxy, type RenderTask } from "pdfjs-dist/legacy/build/pdf.mjs";
+import workerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 import type { Size } from "../domain/reader";
 import { fileUrl } from "./urls";
 
