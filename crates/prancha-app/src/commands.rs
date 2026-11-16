@@ -8,8 +8,11 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use tauri::ipc::Channel;
 use tauri::utils::config::BundleType;
+#[cfg(not(target_os = "android"))]
 use tauri::webview::NewWindowResponse;
-use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Manager, State};
+#[cfg(not(target_os = "android"))]
+use tauri::{WebviewUrl, WebviewWindowBuilder};
 #[cfg(not(target_os = "android"))]
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
@@ -26,6 +29,7 @@ use crate::extensions::recommended::{self, RecommendedList};
 use crate::extensions::reading::{self, ChapterReadInfo};
 use crate::extensions::repository::{self, CatalogItem, CatalogQuery, RepositoryInfo, RepositoryPreview};
 use crate::extensions::sources::{self, BrowsePage, ChapterSession, ComicOrigin, SeriesCard, SeriesView, SourceSummary};
+#[cfg(not(target_os = "android"))]
 use crate::extensions::suwayomi;
 use crate::formats;
 #[cfg(not(target_os = "android"))]
@@ -1328,6 +1332,7 @@ const MAIN_WINDOW: &str = "main";
 /// por ninguém: só leva ao servidor das fontes o que o site entregou depois. A janela não tem acesso
 /// a nada do app (as permissões valem só para `main`, e o protocolo recusa as outras), e é anônima
 /// para cada verificação começar do zero.
+#[cfg(not(target_os = "android"))]
 fn verify_site(app: &AppHandle, core: &Core, address: &str) -> AppResult<bool> {
     let refused = |message: String| AppError::user("verification_failed", message);
     let url: tauri::Url = address.parse().map_err(|_| refused("O endereço deste site não é válido.".into()))?;
@@ -1377,6 +1382,17 @@ fn verify_site(app: &AppHandle, core: &Core, address: &str) -> AppResult<bool> {
         suwayomi::hand_over_cookies(core, &site)?;
     }
     Ok(cleared)
+}
+
+/// No Android, o site abre numa tela do app (`VerifyActivity`), com o navegador do sistema que as extensões do Mihon
+/// usam: a liberação fica nos cookies dele, e não há o que entregar depois.
+#[cfg(target_os = "android")]
+fn verify_site(_app: &AppHandle, _core: &Core, address: &str) -> AppResult<bool> {
+    let url: tauri::Url = address.parse().map_err(|_| AppError::user("verification_failed", "O endereço deste site não é válido."))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err(AppError::user("verification_failed", "O endereço deste site não é válido."));
+    }
+    crate::extensions::mihon::verify(url.as_str())
 }
 
 /// Termina quando a janela do site fecha, para a tela que pediu tentar de novo, e diz se o site liberou.

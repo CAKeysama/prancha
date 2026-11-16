@@ -4,6 +4,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.serialization")
     id("rust")
 }
 
@@ -69,6 +70,8 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_1_8
         targetCompatibility = JavaVersion.VERSION_1_8
+        // O jsoup e o OkHttp das extensões do Mihon usam APIs do Java que o Android 7 não tem.
+        isCoreLibraryDesugaringEnabled = true
     }
     buildFeatures {
         buildConfig = true
@@ -95,6 +98,21 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.10.0")
     // Componente Android do verificador de certificados do núcleo (rustls-platform-verifier-android no Cargo.lock).
     implementation("org.rustls:rustls-platform-verifier:0.2.0")
+    // O que as extensões do Mihon esperam encontrar no app (MihonPlugin, código em java/eu/kanade). As versões
+    // acompanham as do Mihon e as do repositório de extensões do Keiyoushi.
+    implementation("com.squareup.okhttp3:okhttp:5.5.1")
+    implementation("com.squareup.okhttp3:okhttp-brotli:5.5.1")
+    implementation("com.squareup.okhttp3:okhttp-zstd:5.5.1")
+    implementation("org.jsoup:jsoup:1.24.1")
+    implementation("io.reactivex:rxjava:1.3.8")
+    implementation("uy.kohesive.injekt:injekt-core:1.16.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.13.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json-okio:1.13.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-protobuf:1.13.0")
+    implementation("androidx.preference:preference-ktx:1.2.1")
+    implementation("app.cash.quickjs:quickjs-android:0.9.2")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.4")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.0")

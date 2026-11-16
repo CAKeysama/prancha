@@ -429,7 +429,8 @@ fn to_source(row: SourceRow) -> SourceInfo {
 }
 
 /// Instala ou atualiza, confere se o repositório lido pelo servidor é o que a pessoa aprovou e devolve as fontes.
-pub fn install_extension(core: &Core, repository_url: &str, fingerprint: &str, extension_id: &str, updating: bool) -> AppResult<Vec<SourceInfo>> {
+/// O endereço do pacote fica para o Android (`mihon.rs`): aqui quem baixa é o servidor.
+pub fn install_extension(core: &Core, repository_url: &str, fingerprint: &str, extension_id: &str, _package_url: &str, updating: bool) -> AppResult<Vec<SourceInfo>> {
     ensure_component(core)?;
     let client = client(core)?;
     let store: StoreReply = client.graphql("addExtensionStore", "mutation($u:String!){addExtensionStore(input:{indexUrl:$u}){extensionStore{signingKey}}}", json!({ "u": repository_url }), None)?;

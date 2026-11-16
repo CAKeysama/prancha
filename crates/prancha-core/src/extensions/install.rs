@@ -327,7 +327,7 @@ struct Package {
 fn fetch_package(core: &Core, row: &CatalogRow, repository_id: &str, updating: bool) -> AppResult<Package> {
     check_allowed(row)?;
     if row.entry.runtime == suwayomi::RUNTIME {
-        let mut sources = suwayomi::install_extension(core, &row.repository_url, &row.fingerprint, &row.entry.id, updating)?;
+        let mut sources = suwayomi::install_extension(core, &row.repository_url, &row.fingerprint, &row.entry.id, &row.entry.artifact_url, updating)?;
         sources.retain(|source| repository::is_valid_id(&source.id) && source_is_presentable(source));
         return Ok(Package { file_name: String::new(), sha256: String::new(), sources });
     }

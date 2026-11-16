@@ -149,6 +149,9 @@ struct MihonExtension {
 #[serde(rename_all = "camelCase")]
 struct MihonResources {
     jar_url: String,
+    /// O Android carrega o APK direto (`mihon.rs`); no Windows o Suwayomi usa a versão em jar.
+    #[serde(default)]
+    apk_url: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -369,7 +372,7 @@ fn sibling(base: &Url, file: &str) -> Option<Url> {
     Some(url)
 }
 
-pub(crate) fn names_a_mihon_file(url: &Url) -> bool {
+fn names_a_mihon_file(url: &Url) -> bool {
     let path = url.path().to_ascii_lowercase();
     path.ends_with(".apk") || path.ends_with("/index.min.json") || path.ends_with("/index.pb")
 }
@@ -479,6 +482,7 @@ fn mihon_entry(value: Value) -> Option<ExtensionEntry> {
     if !id_is_valid || !short_text(&extension.name, 120) || semver::Version::parse(&extension.version_name).is_err() {
         return None;
     }
+    let artifact_url = if cfg!(target_os = "android") { extension.resources.apk_url? } else { extension.resources.jar_url };
     let sources: Vec<EntrySource> = extension
         .sources
         .into_iter()
@@ -499,7 +503,7 @@ fn mihon_entry(value: Value) -> Option<ExtensionEntry> {
         api_version: API_VERSION.into(),
         min_app_version: env!("CARGO_PKG_VERSION").into(),
         max_app_version: None,
-        artifact_url: extension.resources.jar_url,
+        artifact_url,
         size: 0,
         sha256: String::new(),
         signature_url: String::new(),
@@ -578,7 +582,7 @@ pub struct RepositoryPreview {
     pub fingerprint: String,
     pub extension_count: usize,
     pub already_added: bool,
-    /// Repositório do Mihon: as extensões rodam no Suwayomi, sem o isolamento do Prancha.
+    /// Repositório do Mihon: as extensões rodam no Suwayomi (no Android, dentro do app), sem o isolamento do Prancha.
     pub external: bool,
 }
 
@@ -646,19 +650,9 @@ pub fn get(conn: &Connection, id: &str) -> AppResult<RepositoryInfo> {
 // Confiança
 // ---------------------------------------------------------------------------
 
-/// As extensões do Mihon rodam pelo Suwayomi, que só existe no Windows. No Android elas virão carregadas direto,
-/// numa versão futura; até lá o repositório nem entra, em vez de falhar na hora de instalar.
-fn refuse_mihon_on_android(key: &Key) -> AppResult<()> {
-    if cfg!(target_os = "android") && matches!(key, Key::Mihon(_)) {
-        return Err(AppError::user("repo_unsupported", "Repositórios do Mihon ainda não funcionam no Android. Por enquanto, só os de extensões do Prancha."));
-    }
-    Ok(())
-}
-
 /// Consulta o endereço sem gravar nada. Nada aqui é prova de confiança: é o que a pessoa vai avaliar.
 pub fn preview(core: &Core, address: &str) -> AppResult<RepositoryPreview> {
     let (url, manifest, key) = fetch_manifest(&core.net, address)?;
-    refuse_mihon_on_android(&key)?;
     let fetched = fetch_index(&core.net, &key, &manifest.id, &manifest.index_url, None)?.ok_or_else(|| invalid("O índice não pôde ser lido."))?;
     let already_added = core.db().query_row("SELECT 1 FROM source_repositories WHERE id = ?1 OR url = ?2", [&manifest.id, &url], |_| Ok(())).optional()?.is_some();
     Ok(RepositoryPreview {
@@ -678,7 +672,6 @@ pub fn preview(core: &Core, address: &str) -> AppResult<RepositoryPreview> {
 /// Fixa a chave que a pessoa revisou. Se o endereço passou a anunciar outra, nada é gravado.
 pub fn add(core: &Core, address: &str, confirmed_fingerprint: &str) -> AppResult<RepositoryInfo> {
     let (url, manifest, key) = fetch_manifest(&core.net, address)?;
-    refuse_mihon_on_android(&key)?;
     let fingerprint = key.fingerprint();
     if fingerprint != confirmed_fingerprint {
         return Err(AppError::user("repo_fingerprint", "A chave deste repositório mudou desde a revisão. Revise de novo antes de confiar."));

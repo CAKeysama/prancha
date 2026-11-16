@@ -1,0 +1,21 @@
+# As extensões do Mihon são carregadas depois, de outro arquivo, e chamam estas classes pelo nome: nada aqui pode ser
+# removido ou renomeado na versão de release.
+-keep class eu.kanade.tachiyomi.** { *; }
+-keep class mihon.core.** { *; }
+-keep class tachiyomi.core.** { *; }
+-keep class okhttp3.** { *; }
+-keep class okio.** { *; }
+-keep class org.jsoup.** { *; }
+-keep class rx.** { *; }
+-keep class uy.kohesive.injekt.** { *; }
+-keep class kotlin.** { *; }
+-keep class kotlinx.** { *; }
+-keep class app.cash.quickjs.** { *; }
+-keep class androidx.preference.** { *; }
+-dontwarn okhttp3.**
+-dontwarn org.jsoup.**
+-dontwarn rx.**
+-dontwarn uy.kohesive.injekt.**
+-dontwarn kotlinx.**
+-dontwarn org.brotli.**
+-dontwarn com.squareup.zstd.**
