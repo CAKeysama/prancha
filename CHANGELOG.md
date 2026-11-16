@@ -3,13 +3,13 @@
 Tudo o que mudou em cada versão do Prancha. O projeto segue o [versionamento semântico](https://semver.org/lang/pt-BR/),
 e as notas das releases e a [página de downloads](https://cakeysama.github.io/prancha/) são geradas a partir deste arquivo.
 
-## [0.13.0] - 2026-11-15
+## [0.13.0] - 2026-11-16
 
-O app do Windows não muda. Por dentro, o Prancha passa a compilar também para o Android, primeiro passo da versão para celular.
+O Prancha chega ao Android: a mesma biblioteca, o leitor, as fontes de leitura, o MyAnimeList e as atualizações, com uma interface de toque. O app do Windows não muda.
 
 ### Novidades
 
-- O núcleo do Prancha compila para o Android: no celular, a Lixeira e o atualizador do Windows ficam desligados (apagar o arquivo original avisa que ainda não dá), e as conexões HTTPS usam os certificados do sistema do Android.
+- O núcleo do Prancha compila para o Android: no celular, a Lixeira fica desligada (apagar o arquivo original avisa que ainda não dá), e as conexões HTTPS usam os certificados do sistema do Android.
 - O app Android ganha um projeto próprio em `apps/android` (identificador `app.prancha`). Ele escolhe arquivos e pastas pelo seletor do sistema e guarda a permissão de leitura, então a biblioteca continua abrindo depois de reiniciar o celular. CBZ, CBR, CB7, CBT, PDF e pastas de imagens são lidos direto pelo endereço que o Android entrega, sem copiar o arquivo.
 - No Android, abrir um CBZ, CBR, CB7, CBT ou PDF pelo gerenciador de arquivos põe a HQ na biblioteca e abre o leitor. Quando o outro app só dá acesso enquanto o Prancha está aberto, a HQ é copiada para a pasta do app, para não sumir da biblioteca depois.
 - **Interface de toque no Android**: barra de navegação embaixo (Início, Biblioteca, Explorar quando as fontes de leitura estão ligadas, e Mais), seções da biblioteca em abas, menus que viram folhas subindo da borda, toque longo numa HQ para as ações e botões maiores para o dedo. O botão Voltar do sistema fecha o que estiver aberto, volta uma tela, volta ao Início e, só no segundo toque, sai. O conteúdo fica entre as barras do sistema, que acompanham o tema do app.
@@ -28,6 +28,14 @@ O app do Windows não muda. Por dentro, o Prancha passa a compilar também para 
 - No Android, um CBR escolhido pelo seletor do sistema não abria ("O arquivo não foi encontrado"): o leitor de RAR reabria o arquivo pelo caminho `/proc/self/fd/…`, que não aponta para um arquivo de verdade. A cópia do `unrar_sys` em `vendor/` passa a usar o descritor que o app já tem aberto.
 - PDFs não abriam nos celulares com o WebView anterior à versão 140 ("a.toHex is not a function"): o leitor de PDF passa a usar a versão do PDF.js compatível com navegadores mais antigos.
 - No Android, trocar para o tema claro com o app aberto deixava a faixa atrás das barras do sistema escura, com os ícones escuros por cima; ao abrir já no tema claro, a faixa ficava lilás. Voltar de uma tela aberta por um botão de outra (como Repositórios, aberta em Extensões) voltava ao Início em vez da tela anterior. Os recomendados não oferecem mais o repositório do Mihon no celular, onde ele ainda não funciona.
+
+## [0.12.2] - 2026-11-15
+
+Prepara o banco na nuvem da sincronização entre PC e celular. O app não muda.
+
+### Observações
+
+- O Supabase do projeto ganha o schema `sync`, com as tabelas e as funções que vão guardar o estado da leitura online (repositórios, extensões, obras, capítulos lidos e a posição em cada um) de quem entrar com uma conta. Nenhum arquivo, imagem ou HQ local sobe. O app passa a usar isso numa versão seguinte; detalhes em `docs/SINCRONIZACAO.md`.
 
 ## [0.12.1] - 2026-11-14
 
