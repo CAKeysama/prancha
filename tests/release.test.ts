@@ -6,6 +6,9 @@ import cargo from "../Cargo.toml?raw";
 import lock from "../package-lock.json";
 import pkg from "../package.json";
 import tauri from "../apps/desktop/src-tauri/tauri.conf.json";
+import android from "../apps/android/src-tauri/tauri.conf.json";
+// @ts-expect-error script em JS puro, sem tipos
+import { addAndroid, apkName } from "../scripts/updater-manifest.mjs";
 
 describe("versão do projeto", () => {
   it("é a mesma em todos os arquivos que a guardam e está no changelog", () => {
@@ -28,6 +31,36 @@ describe("atualizador", () => {
 
   it("a interface não fala com a internet: a CSP não libera endereços externos", () => {
     expect(tauri.app.security.csp["connect-src"]).not.toMatch(/https:|github/);
+    expect(android.app.security.csp["connect-src"]).not.toMatch(/https:|github/);
+  });
+
+  it("o app Android confere o APK com a mesma chave e as mesmas releases do desktop", () => {
+    expect(android.plugins.updater.pubkey).toBe(tauri.plugins.updater.pubkey);
+    expect(android.plugins.updater.endpoints).toEqual(tauri.plugins.updater.endpoints);
+    // A versão do APK vem do package.json, a mesma do desktop (ver o teste "versão do projeto").
+    expect(android.version).toBe("../../../package.json");
+  });
+
+  it("acrescenta o APK ao latest.json sem mexer nos pacotes do Windows", () => {
+    // Assinatura feita com uma chave descartável e `--app-version 9.9.9` (a mesma dos testes de crates/prancha-app/src/updates.rs).
+    const signature =
+      "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVndiOGF5QzkvQ0tocGpQVVk3UldmYkM2cU5qQVhBWHVhbENFeEhNdmNuTlcyWktVN0Q0clpNRjJNQVIycnkvU0RnaGdqcXo0WFAwQ2srNnFoOHdNQm9hamp2WlllR3dJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0ODQyMzM3CWZpbGU6cGF5bG9hZC5hcGsJdmVyc2lvbjo5LjkuOQp0OUM4VDU4RlpVby94ejJRRHFlUjd5VlVtK1E1U3VBemx3bTZpenVGY2YveWNjRW9FczFabUZ2Rk1JV1J2R2NUc0hHUUtoYzlWa3VDeE44L3kwdU9Cdz09Cg==";
+    const apk = apkName("9.9.9");
+    const files: Record<string, string> = { [apk]: "APK de teste do Prancha\n", [`${apk}.sig`]: `${signature}\n` };
+    const read = (name: string) => (files[name] === undefined ? null : Buffer.from(files[name]));
+    const windows = { url: "https://exemplo/Prancha_9.9.9_x64-setup.exe", signature: "x", sha256: "y" };
+    const base = { version: "9.9.9", notes: "", pub_date: "2026-11-16T12:00:00Z", platforms: { "windows-x86_64": windows } };
+    const baseUrl = "https://github.com/CAKeysama/prancha/releases/download/v9.9.9";
+    const manifest = addAndroid(base, { read, baseUrl, apk });
+    expect(apk).toBe("Prancha_9.9.9_android-arm64.apk");
+    expect(manifest.platforms["windows-x86_64"]).toEqual(windows);
+    expect(manifest.platforms["android-aarch64"]).toEqual({
+      url: `${baseUrl}/Prancha_9.9.9_android-arm64.apk`,
+      signature,
+      sha256: "0966529c4da04f8d39faa8d8b4050ff3e1fa075ccf088ee84cc1c76780a30e27",
+    });
+    // Uma assinatura de outra versão não entra.
+    expect(() => addAndroid({ ...base, version: "9.9.10" }, { read, baseUrl, apk })).toThrow(/não declara a versão 9.9.10/);
   });
 });
 

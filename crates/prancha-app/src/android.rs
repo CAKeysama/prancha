@@ -184,6 +184,33 @@ pub fn init_background() -> TauriPlugin<Wry> {
         .build()
 }
 
+/// O plugin Kotlin da atualização pelo APK (`UpdatePlugin`): onde o APK baixado fica e o instalador do sistema.
+pub struct Updater(PluginHandle<Wry>);
+
+pub fn init_updater() -> TauriPlugin<Wry> {
+    Builder::new("prancha-updater")
+        .setup(|app, api| {
+            app.manage(Updater(api.register_android_plugin("app.prancha", "UpdatePlugin")?));
+            Ok(())
+        })
+        .build()
+}
+
+#[derive(Deserialize)]
+struct UpdatePath {
+    path: PathBuf,
+}
+
+/// O arquivo do APK, na pasta de cache do app (o Android pode limpá-la, e o FileProvider do app a entrega ao instalador).
+pub fn update_file(app: &tauri::AppHandle) -> io::Result<PathBuf> {
+    app.state::<Updater>().0.run_mobile_plugin::<UpdatePath>("updateFile", ()).map(|r| r.path).map_err(io_error)
+}
+
+/// Abre o instalador do sistema para o APK de [`update_file`], já conferido.
+pub fn install_apk(app: &tauri::AppHandle) -> io::Result<()> {
+    app.state::<Updater>().0.run_mobile_plugin::<serde_json::Value>("installApk", ()).map(|_| ()).map_err(io_error)
+}
+
 /// O núcleo do app aberto neste processo. A verificação em segundo plano usa ele quando existe, para não abrir
 /// o banco duas vezes nem repetir os avisos que ele mesmo já mostra.
 static RUNNING: std::sync::OnceLock<Arc<Core>> = std::sync::OnceLock::new();

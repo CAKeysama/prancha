@@ -26,7 +26,7 @@ import type { AppInfo, SortKey, StorageInfo } from "@prancha/shared/domain/types
 import { api, errorMessage } from "@prancha/shared/services/api";
 import { onCoversProgress } from "@prancha/shared/services/events";
 import { useSettings } from "../../app/settings-context";
-import { IS_ANDROID } from "../../app/platform";
+import { DEVICE, IS_ANDROID } from "../../app/platform";
 import { useNav } from "../../app/navigation";
 import { useOnboarding } from "../onboarding/onboarding-context";
 import { GithubReleaseButton, ReleaseNotes } from "../updates/UpdateDialogs";
@@ -389,7 +389,7 @@ function UpdatesSection() {
       <Anchor id="historico">
         <p className="font-medium">Versões publicadas</p>
         {!history && <p className="text-sm text-muted">Carregando…</p>}
-        {history?.stale && <p className="text-sm text-muted">{releases.length ? "Sem conexão: estas são as notas guardadas neste computador." : "Não foi possível carregar as versões agora."}</p>}
+        {history?.stale && <p className="text-sm text-muted">{releases.length ? `Sem conexão: estas são as notas guardadas neste ${DEVICE}.` : "Não foi possível carregar as versões agora."}</p>}
         {releases.length > 0 && (
           <ul aria-label="Versões publicadas" className="mt-2 divide-y divide-border rounded-md border border-border bg-surface">
             {releases.map((release) => (
@@ -778,12 +778,11 @@ function PrivacySection() {
 }
 
 /**
- * O que não existe no Android: roda do mouse, atalhos de teclado, abrir a pasta de dados (fica dentro do app, fora
- * do alcance do gerenciador de arquivos) e o atualizador do Windows (no celular, a atualização pelo APK é outra).
+ * O que não existe no Android: roda do mouse, atalhos de teclado e abrir a pasta de dados (fica dentro do app, fora
+ * do alcance do gerenciador de arquivos). As atualizações aparecem: no celular, elas vêm pelo APK das releases.
  */
 const ANDROID_HIDDEN = new Set(["roda", "atalhos", "pasta"]);
-const CATEGORIES = IS_ANDROID ? SETTINGS_CATEGORIES.filter((c) => c.id !== "atualizacoes") : SETTINGS_CATEGORIES;
-const shown = (e: SettingEntry) => !IS_ANDROID || (!ANDROID_HIDDEN.has(e.id) && e.place !== "atualizacoes");
+const shown = (e: SettingEntry) => !IS_ANDROID || !ANDROID_HIDDEN.has(e.id);
 
 export function SettingsScreen({ section }: { section?: string } = {}) {
   const { settings, effectiveTheme } = useSettings();
@@ -796,7 +795,7 @@ export function SettingsScreen({ section }: { section?: string } = {}) {
   const [suggesting, setSuggesting] = useState(false);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [verifying, setVerifying] = useState(false);
-  const [category, setCategory] = useState<SettingsCategory>(() => CATEGORIES.find((c) => c.id === section)?.id ?? "aparencia");
+  const [category, setCategory] = useState<SettingsCategory>(() => SETTINGS_CATEGORIES.find((c) => c.id === section)?.id ?? "aparencia");
   const [query, setQuery] = useState("");
   const [target, setTarget] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
@@ -865,7 +864,7 @@ export function SettingsScreen({ section }: { section?: string } = {}) {
           />
           <nav aria-label="Categorias das configurações" className="mt-3">
             <ul className="flex flex-col gap-0.5 max-md:flex-row max-md:flex-wrap max-md:gap-1">
-              {CATEGORIES.map((c) => {
+              {SETTINGS_CATEGORIES.map((c) => {
                 const current = !searching && c.id === category;
                 return (
                   <li key={c.id}>
@@ -1076,7 +1075,7 @@ export function SettingsScreen({ section }: { section?: string } = {}) {
 
               {category === "armazenamento" && <StorageSection />}
 
-              {category === "atualizacoes" && !IS_ANDROID && <UpdatesSection />}
+              {category === "atualizacoes" && <UpdatesSection />}
 
               {category === "integracoes" && (
                 <Section id="integracoes" title="Integrações" description="Contas de outros serviços ligadas ao Prancha. Nada é consultado nem enviado antes de você conectar.">

@@ -3,6 +3,9 @@ import { useSyncExternalStore } from "react";
 /** O app Android usa esta mesma interface, no WebView do sistema. */
 export const IS_ANDROID = typeof navigator !== "undefined" && /\bAndroid\b/.test(navigator.userAgent);
 
+/** Onde os dados ficam guardados, nos textos: "neste computador" ou "neste celular". */
+export const DEVICE = IS_ANDROID ? "celular" : "computador";
+
 /**
  * Largura de celular. A janela do desktop não fica mais estreita que 720 px (tauri.conf.json), então o layout
  * compacto só aparece no celular; o mesmo valor é a variante `max-desk:` do CSS.

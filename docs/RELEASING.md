@@ -54,7 +54,7 @@ Também dá para publicar enviando a tag à mão, como antes: `git tag -a vX.Y.Z
 |---|---|---|
 | `ci.yml` | Push na `main` e pull requests | Tipos, lint, testes de interface e do backend |
 | `versao.yml` | Pull requests e push na `main` | No PR, confere o título, o rótulo de cada commit, se a versão é a que os rótulos pedem nos cinco arquivos e se a entrada do changelog está preenchida. Na `main`, fica vermelho se algo entrou sem versão nova |
-| `release.yml` | Versão nova no `package.json` da `main`, ou tag `vX.Y.Z` | Confere se a versão ainda não saiu, repete as verificações, gera e assina os instaladores, calcula os SHA-256, gera o `latest.json`, cria a tag e publica a release com as notas do changelog |
+| `release.yml` | Versão nova no `package.json` da `main`, ou tag `vX.Y.Z` | Confere se a versão ainda não saiu, repete as verificações, gera e assina os instaladores e o APK do Android, calcula os SHA-256, gera o `latest.json`, cria a tag e publica a release com as notas do changelog |
 | `pages.yml` | Fim do `release.yml`, ou mudança no changelog, no site ou nos scripts das páginas | Regenera e publica a página de downloads no GitHub Pages e o site oficial na Vercel, com a versão, os links e os SHA-256 da release mais recente |
 
 Se qualquer verificação ou build falhar, nada é publicado e o site continua na versão anterior. Corrija e faça um novo push na `main`: como a tag só nasce junto com a release, a mesma versão é tentada de novo.
@@ -82,6 +82,7 @@ Ficam em **Settings → Secrets and variables → Actions** do repositório. Nad
 | Nome | Tipo | Para quê |
 |---|---|---|
 | `TAURI_SIGNING_PRIVATE_KEY` e `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Segredo | Assinar as atualizações. Ver abaixo. |
+| `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` e `ANDROID_KEY_PASSWORD` | Segredo | Assinar o APK do Android. Ver [Chave do APK do Android](#chave-do-apk-do-android). Sem eles, a versão sai só para o Windows, com um aviso na execução. |
 | `RELEASE_TOKEN` | Segredo | Publicar a release e a tag na conta CAKeysama. É um [token fine-grained](https://github.com/settings/personal-access-tokens/new) só deste repositório, com **Contents: Read and write**. Sem ele, ou vencido, a release sai como `github-actions[bot]`, com um aviso na execução. |
 | `VERCEL_TOKEN` | Segredo | Publicar o site oficial. É um [token da Vercel](https://vercel.com/account/tokens) com acesso ao projeto `prancha`. |
 | `MAL_CLIENT_ID` | Variável | O identificador do aplicativo no [MyAnimeList](MYANIMELIST.md#configuração-feita-uma-vez). É público (aparece no endereço de autorização) e entra nos instaladores na compilação. Sem ele (ou fora do formato), a publicação falha antes de compilar; o ensaio manual compila mesmo assim, com a integração escondida. |
@@ -102,6 +103,33 @@ O aplicativo só instala um pacote assinado com esta chave. A parte pública est
 Guarde uma cópia da chave e da senha em lugar seguro. **Sem elas, quem já instalou o Prancha nunca mais recebe atualizações** e precisa instalar a versão nova à mão, porque o aplicativo recusa qualquer outra chave.
 
 Sem os segredos, o `release.yml` falha na compilação e nada é publicado. Para gerar os instaladores no seu computador, defina as duas variáveis no terminal antes de `npm run tauri build`.
+
+## Chave do APK do Android
+
+O Android só instala uma atualização assinada com a mesma chave do app que já está no celular. Por isso a chave do APK é
+uma só, para sempre: **sem ela, quem instalou o Prancha no Android precisa desinstalar (perdendo a biblioteca do app) para
+instalar uma versão assinada com outra chave.** Guarde o arquivo e as senhas em lugar seguro, fora do repositório.
+
+Para criar a chave uma vez (o `keytool` vem com o JDK do Android Studio):
+
+```bash
+keytool -genkeypair -v -keystore prancha-android.jks -alias prancha -keyalg RSA -keysize 4096 -validity 36500
+```
+
+Depois, cadastre os quatro segredos (no PowerShell, `[Convert]::ToBase64String([IO.File]::ReadAllBytes("prancha-android.jks"))` gera o texto do primeiro):
+
+```bash
+base64 -w0 prancha-android.jks | gh secret set ANDROID_KEYSTORE_BASE64 --repo CAKeysama/prancha
+gh secret set ANDROID_KEYSTORE_PASSWORD --repo CAKeysama/prancha
+gh secret set ANDROID_KEY_ALIAS --repo CAKeysama/prancha
+gh secret set ANDROID_KEY_PASSWORD --repo CAKeysama/prancha
+```
+
+O job **Gerar o APK do Android** do `release.yml` monta a chave numa pasta temporária, gera o APK de release só para ARM de
+64 bits (`Prancha_X.Y.Z_android-arm64.apk`), confere a assinatura com o `apksigner` e assina o APK também com a chave
+das atualizações acima (`tauri signer sign --app-version`). O job de publicação acrescenta a entrada `android-aarch64` ao
+`latest.json` e o SHA-256 do APK ao `SHA256SUMS.txt`. O app Android lê essa entrada e confere as duas assinaturas e o SHA-256
+antes de abrir o instalador do sistema (ver [ARCHITECTURE.md](ARCHITECTURE.md#atualizações)).
 
 ## O que não roda no GitHub
 

@@ -32,7 +32,7 @@ versão só para tudo:
 | Pasta | O que tem | Depende de |
 |---|---|---|
 | `apps/desktop/` | `app/`, `features/` e `components/` do desenho acima, o projeto Tauri (`src-tauri/`) e os testes de interface | `@prancha/shared`, `prancha-app` |
-| `apps/android/` | O projeto Tauri do Android (`src-tauri/`, com o projeto Gradle em `gen/android` e o plugin Kotlin de arquivos `FilesPlugin.kt`). Até a interface de toque, usa a interface de `apps/desktop` | `prancha-app` |
+| `apps/android/` | O projeto Tauri do Android (`src-tauri/`, com o projeto Gradle em `gen/android` e os plugins Kotlin em `gen/android/app/src/main/java/app/prancha/`: arquivos, tela, segundo plano, cofre do MyAnimeList e atualização). Usa a mesma interface de `apps/desktop`, que se adapta ao toque | `prancha-app` |
 | `packages/shared/` | `domain/` e `services/` do desenho acima, sem tela | `@tauri-apps/api`, `pdfjs-dist` |
 | `crates/prancha-app/` | `commands.rs`, `protocol.rs`, `updates.rs` e a montagem do aplicativo (`run`) | `prancha-core`, Tauri |
 | `crates/prancha-core/` | O resto do backend do desenho acima, sem Tauri: biblioteca, formatos, páginas, leitura guiada, extensões, MyAnimeList, telemetria | — |
@@ -114,6 +114,8 @@ Usa o `tauri-plugin-updater` e as GitHub Releases, sem servidor próprio. Toda a
 **Estado (`updates.state`, tabela `settings`).** Sobrevive a um fechamento inesperado. `reconcile`, a cada início, é o único lugar que dá uma atualização por concluída, porque a prova é a versão nova estar rodando: compara a versão em execução com `installedVersion` e abre as novidades. Se `pendingVersion` ficou maior que a versão em execução, o instalador não terminou, e a próxima abertura avisa. As notas ficam em `updates.releases`, copiadas das releases: as da versão baixada são gravadas antes do download, para a janela de novidades funcionar sem internet.
 
 **Tela (`features/updates/`).** `updates-context.tsx` faz uma verificação por abertura, sem segurar a interface, e não abre nada sobre o leitor ou a configuração inicial. Recusar grava a versão: ela só fica no indicador do menu lateral até surgir outra mais nova. Erros de verificação automática ficam em `updates.log`, na pasta de dados, sem aparecer para a pessoa.
+
+**No Android.** O plugin do Tauri não existe no celular, então `updates.rs` e `commands.rs` fazem o mesmo caminho por conta própria, com a mesma configuração (`plugins.updater` de `apps/android/src-tauri/tauri.conf.json`, igual à do desktop, conferida em `tests/release.test.ts`). O `latest.json` traz a entrada `android-aarch64`; `apk_from_manifest` aplica as mesmas regras de versão e de origem e só aceita um `.apk`. O download vai direto para a pasta de cache do app (`UpdatePlugin.kt`), sem ficar inteiro na memória. Antes de abrir o instalador, `verify_apk` confere a assinatura minisign com a chave pública do app, a versão declarada nela e o SHA-256 do manifesto; um APK recusado é apagado. O instalador do Android pede a confirmação da pessoa (e, na primeira vez, a permissão de instalar apps do Prancha) e ainda recusa um APK assinado com outra chave que não a do app instalado. Como no desktop, só a próxima abertura confirma a atualização.
 
 **Limites conhecidos.** Com o MSI, o Windows pede a confirmação depois que o aplicativo já fechou: se a pessoa recusar, ele não reabre sozinho, e o aviso aparece na próxima abertura. Falta de disco durante a escrita do instalador e falta de permissão têm mensagem própria, mas só foram testadas por mapeamento de erro.
 

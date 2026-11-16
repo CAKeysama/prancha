@@ -9,6 +9,7 @@ import { formatDate } from "@prancha/shared/domain/progress";
 import type { MalStatus } from "@prancha/shared/domain/mal";
 import { ApiError, api, errorMessage } from "@prancha/shared/services/api";
 import { onMalChanged } from "@prancha/shared/services/events";
+import { DEVICE } from "../../app/platform";
 
 const BADGE: Record<MalStatus["state"], { text: string; className: string }> = {
   connected: { text: "Conectada", className: "bg-success-subtle text-success" },
@@ -109,7 +110,7 @@ export function MalSettings({ anchor }: { anchor: (id: string, children: ReactNo
             </div>
           </div>
           <p className="mt-3 border-t border-border pt-3 text-sm text-muted">
-            Com a conta conectada, cada obra das fontes é associada à obra do MyAnimeList ao ser aberta, e o número de capítulos lidos é atualizado quando você termina um capítulo no leitor. Abrir uma obra ou um capítulo não muda nada no MAL. O Prancha nunca marca uma obra como concluída e não diminui um progresso mais adiantado no MAL. Você entra pelo site do MyAnimeList; o Prancha não vê sua senha e guarda o acesso cifrado neste computador.
+            Com a conta conectada, cada obra das fontes é associada à obra do MyAnimeList ao ser aberta, e o número de capítulos lidos é atualizado quando você termina um capítulo no leitor. Abrir uma obra ou um capítulo não muda nada no MAL. O Prancha nunca marca uma obra como concluída e não diminui um progresso mais adiantado no MAL. Você entra pelo site do MyAnimeList; o Prancha não vê sua senha e guarda o acesso cifrado neste {DEVICE}.
           </p>
         </div>,
       )}
@@ -168,7 +169,7 @@ export function MalSettings({ anchor }: { anchor: (id: string, children: ReactNo
           void run("disconnect", api.malDisconnect, "MyAnimeList desconectado");
         }}
       >
-        O acesso guardado neste computador será apagado{status && status.pending + status.failures.length > 0 ? `, junto com ${status.pending + status.failures.length} atualização(ões) que ainda não foram enviadas` : ""}. As associações das obras ficam, para quando você conectar de novo. Sua lista no MyAnimeList não muda.
+        O acesso guardado neste {DEVICE} será apagado{status && status.pending + status.failures.length > 0 ? `, junto com ${status.pending + status.failures.length} atualização(ões) que ainda não foram enviadas` : ""}. As associações das obras ficam, para quando você conectar de novo. Sua lista no MyAnimeList não muda.
       </ConfirmDialog>
     </>
   );

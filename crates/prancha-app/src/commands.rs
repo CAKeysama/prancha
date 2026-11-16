@@ -730,16 +730,23 @@ pub async fn verify_library(state: S<'_>) -> AppResult<VerifyResult> {
 type Updates<'a> = State<'a, updates::Session>;
 
 /// A cada quanto o download avisa a interface.
-#[cfg(desktop)]
+#[cfg(any(desktop, target_os = "android"))]
 const PROGRESS_STEP: u64 = 128 * 1024;
 /// Tempo para o aviso aparecer: quando o instalador abre, o aplicativo fecha na hora.
 #[cfg(desktop)]
 const INSTALL_NOTICE: std::time::Duration = std::time::Duration::from_millis(800);
 
-/// A origem oficial é a que veio configurada no próprio aplicativo.
+/// A origem oficial é a que veio configurada no próprio aplicativo. O Android traz a mesma configuração do
+/// desktop no seu `tauri.conf.json`, lida por este código e não pelo plugin, que lá não existe.
 fn release_endpoint(app: &AppHandle) -> String {
     let updater = app.config().plugins.0.get("updater");
     updater.and_then(|u| u["endpoints"][0].as_str()).unwrap_or_default().to_string()
+}
+
+#[cfg(target_os = "android")]
+fn release_pubkey(app: &AppHandle) -> String {
+    let updater = app.config().plugins.0.get("updater");
+    updater.and_then(|u| u["pubkey"].as_str()).unwrap_or_default().to_string()
 }
 
 async fn update_snapshot(app: &AppHandle, core: &Arc<Core>) -> AppResult<updates::Snapshot> {
@@ -779,7 +786,19 @@ async fn find_update(app: &AppHandle, core: &Core) -> AppResult<Option<Update>> 
     }))
 }
 
-#[cfg(desktop)]
+/// Procura no `latest.json` o APK de uma versão estável mais nova, para a arquitetura deste celular.
+#[cfg(target_os = "android")]
+async fn find_apk(app: &AppHandle, core: &Core) -> AppResult<Option<updates::ApkUpdate>> {
+    let endpoint = release_endpoint(app);
+    let manifest = updates::fetch_manifest(&endpoint).await.map_err(|e| {
+        updates::log(&core.paths.data_dir, &format!("consulta: {e}"));
+        AppError::user("network", "Não foi possível falar com o GitHub. Verifique sua conexão e tente novamente.")
+    })?;
+    let current = app.package_info().version.clone();
+    Ok(updates::apk_from_manifest(&manifest, &current, &endpoint, std::env::consts::ARCH))
+}
+
+#[cfg(any(desktop, target_os = "android"))]
 async fn record_check(app: &AppHandle, core: &Arc<Core>, found: Option<updates::ReleaseInfo>) -> AppResult<()> {
     let current = app.package_info().version.clone();
     blocking(core, move |c| {
@@ -801,13 +820,20 @@ pub async fn updates_snapshot(app: AppHandle, state: S<'_>) -> AppResult<updates
 
 #[tauri::command]
 pub async fn updates_check(app: AppHandle, state: S<'_>, session: Updates<'_>) -> AppResult<updates::Snapshot> {
-    #[cfg(mobile)]
+    #[cfg(all(mobile, not(target_os = "android")))]
     let _ = session;
     #[cfg(desktop)]
     if updates::ENABLED {
         let update = find_update(&app, &state).await?;
         let found = update.as_ref().map(|u| updates::release_from_update(u, &release_endpoint(&app)));
         *session.update.lock().unwrap() = update;
+        record_check(&app, &state, found).await?;
+    }
+    #[cfg(target_os = "android")]
+    if updates::ENABLED {
+        let update = find_apk(&app, &state).await?;
+        let found = update.as_ref().map(|u| u.release.clone());
+        *session.apk.lock().unwrap() = update;
         record_check(&app, &state, found).await?;
     }
     update_snapshot(&app, &state).await
@@ -901,15 +927,115 @@ async fn download_and_install(app: &AppHandle, core: &Arc<Core>, session: &updat
     Ok(())
 }
 
+/// No Android: baixa o APK para a pasta de cache do app, confere a assinatura e o SHA-256 e abre o instalador do
+/// sistema, que pede a confirmação da pessoa. O Android ainda recusa um APK assinado com outra chave que não a do
+/// app instalado. Como no desktop, só a próxima execução confirma a atualização.
+#[cfg(target_os = "android")]
+async fn download_and_install_apk(app: &AppHandle, core: &Arc<Core>, session: &updates::Session, on_progress: &Channel<updates::Progress>) -> AppResult<()> {
+    let data_dir = core.paths.data_dir.clone();
+    if core.importer.is_busy() {
+        return Err(AppError::user("busy", "Aguarde a importação terminar para atualizar o Prancha."));
+    }
+    let known = session.apk.lock().unwrap().clone();
+    let update = match known {
+        Some(update) => update,
+        None => match find_apk(app, core).await? {
+            Some(update) => update,
+            None => {
+                record_check(app, core, None).await?;
+                return Err(AppError::user("up_to_date", "O Prancha já está na versão mais recente."));
+            }
+        },
+    };
+    let version = update.release.version.clone();
+    let release = update.release.clone();
+    blocking(core, move |c| updates::remember_release(&c.db(), &release)).await?;
+    let path = crate::android::update_file(app).map_err(|e| {
+        updates::log(&data_dir, &format!("pasta da atualização: {e}"));
+        AppError::user("disk", "Não foi possível preparar o espaço da atualização no celular.")
+    })?;
+
+    let (url, target, chunks) = (update.url.clone(), path.clone(), on_progress.clone());
+    let download = tauri::async_runtime::spawn(async move {
+        let mut reported = 0u64;
+        updates::download_to(&url, &target, move |downloaded, total| {
+            if downloaded - reported >= PROGRESS_STEP || Some(downloaded) == total {
+                reported = downloaded;
+                let _ = chunks.send(updates::Progress::Downloading { downloaded, total });
+            }
+        })
+        .await
+    });
+    let abort = download.inner().abort_handle();
+    *session.abort_download.lock().unwrap() = Some(Box::new(move || abort.abort()));
+    let outcome = download.await;
+    *session.abort_download.lock().unwrap() = None;
+    let discard = |path: &Path| {
+        let _ = std::fs::remove_file(path);
+    };
+    match outcome {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => {
+            updates::log(&data_dir, &format!("download de {version}: {e}"));
+            discard(&path);
+            return Err(AppError::user("network", "Não foi possível baixar a atualização. Verifique sua conexão e tente novamente."));
+        }
+        Err(_) => {
+            discard(&path);
+            return Err(AppError::user("cancelled", "Download cancelado."));
+        }
+    }
+
+    let _ = on_progress.send(updates::Progress::Verifying);
+    let (checked, pubkey) = (path.clone(), release_pubkey(app));
+    let verified = tauri::async_runtime::spawn_blocking(move || updates::verify_apk(&checked, &update, &pubkey))
+        .await
+        .map_err(|e| AppError::user("internal", format!("Falha interna: {e}")))?;
+    if let Err(rejected) = verified {
+        updates::log(&data_dir, &format!("APK de {version} recusado: {rejected:?}"));
+        discard(&path);
+        return Err(match rejected {
+            updates::ApkRejected::Signature => AppError::user("signature", "A atualização não passou na verificação de segurança e foi descartada. Nada foi alterado."),
+            updates::ApkRejected::Hash => AppError::user("hash", "O arquivo baixado não confere com o publicado e foi descartado. Nada foi alterado."),
+            updates::ApkRejected::Io(_) => AppError::user("disk", "Não foi possível ler a atualização baixada. Libere espaço e tente novamente."),
+        });
+    }
+
+    let ready = version.clone();
+    blocking(core, move |c| updates::mark_ready_to_install(&c.db(), &ready)).await?;
+    let _ = on_progress.send(updates::Progress::Installing);
+    let handle = app.clone();
+    let opened = tauri::async_runtime::spawn_blocking(move || crate::android::install_apk(&handle))
+        .await
+        .map_err(|e| AppError::user("internal", format!("Falha interna: {e}")))?;
+    if let Err(e) = opened {
+        updates::log(&data_dir, &format!("instalador de {version}: {e}"));
+        blocking(core, |c| updates::install_not_started(&c.db())).await?;
+        return Err(AppError::user("install", "Não foi possível abrir o instalador do Android. A versão atual continua funcionando."));
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn updates_install(app: AppHandle, state: S<'_>, session: Updates<'_>, on_progress: Channel<updates::Progress>) -> AppResult<()> {
     if !updates::ENABLED {
         return Err(AppError::user("unavailable", "Atualizações não estão disponíveis nesta compilação."));
     }
-    #[cfg(mobile)]
+    #[cfg(all(mobile, not(target_os = "android")))]
     {
         let _ = (app, state, session, on_progress);
         Err(AppError::user("unavailable", "Atualizações não estão disponíveis nesta compilação."))
+    }
+    #[cfg(target_os = "android")]
+    {
+        let outcome = download_and_install_apk(&app, &state, &session, &on_progress).await;
+        if let Err(error) = &outcome {
+            let version = session.apk.lock().unwrap().as_ref().map(|u| u.release.version.clone());
+            if let Some(version) = version.filter(|_| !matches!(error.code(), "cancelled" | "up_to_date" | "busy")) {
+                blocking(&state, move |c| Ok(notifications::publish(c, &updates::update_notice(notifications::Kind::UpdateFailed, &version)))).await?;
+            }
+        }
+        outcome
     }
     #[cfg(desktop)]
     {

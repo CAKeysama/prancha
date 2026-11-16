@@ -27,6 +27,12 @@
       }
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDUxRjkyMzNCRkZCNUI0QkEKUldTNnRMWC9PeVA1VVpJRkZvL1hQM1RGdmRNd2RWWUh2YlJvLzNzMy8wUThIU1pWQVA4Yy9lNHoK",
+      "endpoints": ["https://github.com/CAKeysama/prancha/releases/latest/download/latest.json"]
+    }
+  },
   "bundle": {
     "active": true,
     "publisher": "Prancha",

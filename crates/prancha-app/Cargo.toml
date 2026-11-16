@@ -33,6 +33,11 @@ tauri-plugin-updater = "2.14.1"
 jni = "0.22.4"
 ndk-context = "0.1.1"
 rustls-platform-verifier = "0.7.1"
+# O atualizador do Tauri não existe no Android: o APK é conferido aqui, com a mesma chave pública e a mesma assinatura minisign.
+minisign-verify = "0.3.0"
+base64 = "0.23.1"
 
 [dev-dependencies]
 tempfile = "3.27.0"
+minisign-verify = "0.3.0"
+base64 = "0.23.1"

@@ -8,6 +8,7 @@ import { useToast } from "../../components/Toast";
 import { formatBytes } from "@prancha/shared/domain/progress";
 import { parseNotes, shortSummary, type ParsedNotes, type ReleaseInfo, type UpdateProgress } from "@prancha/shared/domain/updates";
 import { api, errorMessage } from "@prancha/shared/services/api";
+import { IS_ANDROID } from "../../app/platform";
 import { useUpdates } from "./updates-context";
 
 export function ReleaseNotes({ notes }: { notes: ParsedNotes }) {
@@ -106,7 +107,10 @@ function ProgressDialog() {
         ) : (
           <Spinner label={progress.phase === "verifying" ? "Verificando assinatura e integridade…" : "Abrindo o instalador…"} />
         )}
-        <p className="text-sm text-muted">Ao terminar, o Prancha fecha e abre de novo sozinho. Sua biblioteca e seu progresso continuam como estão.</p>
+        <p className="text-sm text-muted">
+          {IS_ANDROID ? "Ao terminar, o Android pede para você confirmar a instalação." : "Ao terminar, o Prancha fecha e abre de novo sozinho."} Sua biblioteca e seu progresso
+          continuam como estão.
+        </p>
       </div>
     </Dialog>
   );

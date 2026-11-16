@@ -120,7 +120,7 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
     #[cfg(desktop)]
     let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
     #[cfg(target_os = "android")]
-    let builder = builder.plugin(android::init()).plugin(android::init_screen()).plugin(android::init_background()).plugin(android::init_vault());
+    let builder = builder.plugin(android::init()).plugin(android::init_screen()).plugin(android::init_background()).plugin(android::init_vault()).plugin(android::init_updater());
     builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())

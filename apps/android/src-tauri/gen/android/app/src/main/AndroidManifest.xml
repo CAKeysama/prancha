@@ -4,6 +4,8 @@
     <!-- O serviço que mantém os downloads correndo com o app fora da tela (DownloadService). -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Abrir o instalador do Android com o APK de uma versão nova (UpdatePlugin). A pessoa confirma cada instalação. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- AndroidTV support -->
     <uses-feature android:name="android.software.leanback" android:required="false" />

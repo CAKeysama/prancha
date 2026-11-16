@@ -90,12 +90,20 @@ describe("releases e downloads", () => {
     // latest.json, assinaturas e SHA256SUMS.txt não são downloads de instalador.
     expect(s.releases[0].downloads).toBe(15);
     expect(s.releases[0].assets.map((a: { kind: string }) => a.kind)).toEqual(["exe", "msi"]);
-    expect(s.downloads).toEqual({ total: 45, byKind: { exe: 30, msi: 15 } });
+    expect(s.downloads).toEqual({ total: 45, byKind: { exe: 30, msi: 15, apk: 0 } });
     expect(s.releases[0].share).toBeCloseTo(1 / 3);
   });
 
+  it("conta o APK do Android junto dos instaladores do Windows", () => {
+    const withApk = release("v0.13.0", "2026-11-16T00:00:00Z");
+    withApk.assets.push(asset("Prancha_0.13.0_android-arm64.apk", 4), asset("Prancha_0.13.0_android-arm64.apk.sig", 50));
+    const s = summarizeReleases([withApk]);
+    expect(s.releases[0].assets.map((a: { kind: string }) => a.kind)).toEqual(["exe", "msi", "apk"]);
+    expect(s.downloads).toEqual({ total: 19, byKind: { exe: 10, msi: 5, apk: 4 } });
+  });
+
   it("sem nenhuma versão, devolve zeros em vez de quebrar", () => {
-    expect(summarizeReleases([])).toEqual({ latest: null, count: 0, downloads: { total: 0, byKind: { exe: 0, msi: 0 } }, releases: [] });
+    expect(summarizeReleases([])).toEqual({ latest: null, count: 0, downloads: { total: 0, byKind: { exe: 0, msi: 0, apk: 0 } }, releases: [] });
   });
 });
 

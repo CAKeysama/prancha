@@ -28,6 +28,10 @@ async function fetchSums(release) {
   return new Map(parseSums(await res.text()).map((f) => [f.name, f.sha256]));
 }
 
+/** Os pacotes que a página mostra, na ordem dos botões: o instalador do Windows, o MSI e o APK do Android. */
+const PACKAGES = ["-setup.exe", ".msi", ".apk"];
+const packageOrder = (name) => PACKAGES.findIndex((suffix) => name.endsWith(suffix));
+
 /** Junta cada release publicada à sua entrada do changelog, da mais nova para a mais antiga. */
 export async function buildManifest(changelog = readChangelog()) {
   const published = await fetchReleases();
@@ -37,8 +41,8 @@ export async function buildManifest(changelog = readChangelog()) {
     if (!release) continue;
     const sums = await fetchSums(release);
     const assets = release.assets
-      .filter((a) => a.name.endsWith(".exe") || a.name.endsWith(".msi"))
-      .sort((a, b) => Number(b.name.endsWith(".exe")) - Number(a.name.endsWith(".exe")))
+      .filter((a) => packageOrder(a.name) >= 0)
+      .sort((a, b) => packageOrder(a.name) - packageOrder(b.name))
       .map((a) => ({ name: a.name, label: assetLabel(a.name), size: a.size, sha256: sums.get(a.name) ?? null, url: a.browser_download_url }));
     releases.push({ ...entry, tag: release.tag_name, url: release.html_url, assets });
   }
@@ -82,15 +86,19 @@ function renderLatest(release) {
   if (!release) {
     return `<section class="latest" aria-labelledby="versao-atual"><h2 id="versao-atual">Ainda não há versão publicada</h2><p class="muted">Quando a primeira versão sair, os instaladores aparecem aqui e em <a href="${REPO_URL}/releases">Releases</a>.</p></section>`;
   }
-  const [primary, ...others] = release.assets;
+  const find = (suffix) => release.assets.find((a) => a.name.endsWith(suffix));
+  const [primary, msi, apk] = PACKAGES.map(find);
   const buttons = [];
   if (primary) buttons.push(`<a class="button" href="${escapeHtml(primary.url)}">${DOWNLOAD_ICON} Baixar para Windows</a>`);
-  for (const a of others) buttons.push(`<a class="button button-secondary" href="${escapeHtml(a.url)}">Baixar versão MSI</a>`);
+  if (msi) buttons.push(`<a class="button button-secondary" href="${escapeHtml(msi.url)}">Baixar versão MSI</a>`);
+  if (apk) buttons.push(`<a class="button button-secondary" href="${escapeHtml(apk.url)}">Baixar para Android</a>`);
   const size = primary ? ` · ${megabytes(primary.size)}` : "";
+  // O APK é só para ARM de 64 bits, e o Tauri exige o Android 7 (API 24) ou mais novo.
+  const android = apk ? ` · Android 7 ou mais novo (64 bits), ${megabytes(apk.size)}` : "";
   return `<section class="latest" aria-labelledby="versao-atual">
           <p class="eyebrow">Versão estável mais recente</p>
           <h2 id="versao-atual">Prancha ${release.version}</h2>
-          <p class="meta">${longDate(release.date)} · Windows 10 e 11 (64 bits)${size}</p>
+          <p class="meta">${longDate(release.date)} · Windows 10 e 11 (64 bits)${size}${android}</p>
           <div class="cta-actions">${buttons.join("")}</div>
           ${renderHashes(release)}
         </section>`;

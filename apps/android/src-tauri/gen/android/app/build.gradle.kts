@@ -25,6 +25,19 @@ android {
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
     }
+    // A chave do APK publicado vem do workflow de release (.github/workflows/release.yml, ver docs/RELEASING.md),
+    // nunca do repositório. Sem ela, o APK de release sai sem assinatura; o de depuração usa a chave de depuração.
+    val releaseKeystore = System.getenv("PRANCHA_KEYSTORE")
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = System.getenv("PRANCHA_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("PRANCHA_KEY_ALIAS")
+                keyPassword = System.getenv("PRANCHA_KEY_PASSWORD")
+            }
+        }
+    }
     buildTypes {
         getByName("debug") {
             manifestPlaceholders["usesCleartextTraffic"] = "true"
@@ -39,6 +52,9 @@ android {
             }
         }
         getByName("release") {
+            if (releaseKeystore != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             optimization {
                enable = true
             }

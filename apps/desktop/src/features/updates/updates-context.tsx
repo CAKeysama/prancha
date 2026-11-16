@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Channel } from "@tauri-apps/api/core";
 import { useNav } from "../../app/navigation";
+import { IS_ANDROID } from "../../app/platform";
 import { useSettings } from "../../app/settings-context";
 import { useToast } from "../../components/Toast";
 import type { UpdateProgress, UpdatesSnapshot } from "@prancha/shared/domain/updates";
@@ -101,9 +102,13 @@ export function UpdatesProvider({ children }: { children: ReactNode }) {
     setStage({ name: "progress", progress: { phase: "downloading", downloaded: 0, total: null } });
     const channel = new Channel<UpdateProgress>();
     channel.onmessage = (progress) => setStage({ name: "progress", progress });
-    // Se der certo, esta promessa não termina: o instalador fecha o aplicativo.
+    // No Windows, se der certo, esta promessa não termina: o instalador fecha o aplicativo. No Android, ela termina
+    // quando o instalador do sistema abre por cima do app; se a pessoa cancelar lá, a versão continua oferecida.
     void api
       .updatesInstall(channel)
+      .then(() => {
+        if (IS_ANDROID) setStage({ name: "idle" });
+      })
       .catch((e) => {
         const code = e instanceof ApiError ? e.code : "";
         if (code === "cancelled") {

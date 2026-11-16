@@ -36,8 +36,9 @@ const MAX_LOG_BYTES: u64 = 256 * 1024;
 pub const CHECK_TIMEOUT: Duration = Duration::from_secs(10);
 /// O prazo do plugin vale para o download inteiro, então precisa caber uma conexão lenta.
 pub const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(30 * 60);
-/// Builds de depuração não usam a internet: testes e desenvolvimento ficam isolados. No celular o plugin não existe.
-pub const ENABLED: bool = !cfg!(debug_assertions) && cfg!(desktop);
+/// Builds de depuração não usam a internet: testes e desenvolvimento ficam isolados. No Android, sem o plugin,
+/// o APK é procurado, baixado e conferido aqui (ver [`apk_from_manifest`]).
+pub const ENABLED: bool = !cfg!(debug_assertions) && (cfg!(desktop) || cfg!(target_os = "android"));
 
 /// Uma versão publicada, com as notas como estão na release.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -110,6 +111,8 @@ pub enum Progress {
 pub struct Session {
     #[cfg(desktop)]
     pub update: Mutex<Option<Update>>,
+    #[cfg(target_os = "android")]
+    pub apk: Mutex<Option<ApkUpdate>>,
     pub abort_download: Mutex<Option<Box<dyn FnOnce() + Send>>>,
 }
 
@@ -306,11 +309,21 @@ fn releases_base(endpoint: &str) -> Option<&str> {
     endpoint.split_once("/latest/download/").map(|(base, _)| base)
 }
 
+/// O nome do arquivo, quando ele está na pasta da versão anunciada, nas releases configuradas no próprio aplicativo.
+fn official_file<'a>(endpoint: &str, version: &str, url: &'a str) -> Option<&'a str> {
+    let base = releases_base(endpoint)?;
+    url.strip_prefix(&format!("{base}/download/v{version}/")).filter(|file| !file.contains('/'))
+}
+
 /// O pacote precisa estar na pasta da versão anunciada, nas releases configuradas no próprio aplicativo.
 pub fn is_official_package(endpoint: &str, version: &str, url: &str) -> bool {
-    let Some(base) = releases_base(endpoint) else { return false };
-    let Some(file) = url.strip_prefix(&format!("{base}/download/v{version}/")) else { return false };
-    !file.contains('/') && (file.ends_with(".exe") || file.ends_with(".msi"))
+    official_file(endpoint, version, url).is_some_and(|file| file.ends_with(".exe") || file.ends_with(".msi"))
+}
+
+/// O mesmo para o APK do Android, que só o app Android aceita.
+#[cfg(any(test, target_os = "android"))]
+pub fn is_official_apk(endpoint: &str, version: &str, url: &str) -> bool {
+    official_file(endpoint, version, url).is_some_and(|file| file.ends_with(".apk"))
 }
 
 pub fn release_page(endpoint: &str, version: &str) -> Option<String> {
@@ -414,6 +427,122 @@ pub fn expected_sha256(manifest: &Value, url: &str) -> Option<String> {
 pub fn sha256_matches(bytes: &[u8], expected: &str) -> bool {
     let actual: String = Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect();
     actual.eq_ignore_ascii_case(expected)
+}
+
+// ---------------------------------------------------------------------------
+// Android
+// ---------------------------------------------------------------------------
+
+/// Uma versão nova com APK para este celular, como o `latest.json` anuncia em `android-<arquitetura>`.
+#[cfg(any(test, target_os = "android"))]
+#[derive(Clone, Debug, PartialEq)]
+pub struct ApkUpdate {
+    pub release: ReleaseInfo,
+    pub url: String,
+    pub signature: String,
+    pub sha256: String,
+}
+
+/// As mesmas regras do desktop: versão estável e maior, pacote nas releases oficiais, assinatura e SHA-256 anunciados.
+#[cfg(any(test, target_os = "android"))]
+pub fn apk_from_manifest(manifest: &Value, current: &Version, endpoint: &str, arch: &str) -> Option<ApkUpdate> {
+    let version = Version::parse(manifest["version"].as_str()?.trim_start_matches('v')).ok()?;
+    if !is_newer(current, &version) {
+        return None;
+    }
+    let version = version.to_string();
+    let platform = &manifest["platforms"][format!("android-{arch}")];
+    let url = platform["url"].as_str().filter(|url| is_official_apk(endpoint, &version, url))?;
+    let signature = platform["signature"].as_str().filter(|s| !s.is_empty())?;
+    let sha256 = platform["sha256"].as_str().filter(|h| h.len() == 64 && h.bytes().all(|b| b.is_ascii_hexdigit()))?;
+    Some(ApkUpdate {
+        release: ReleaseInfo {
+            name: format!("Prancha v{version}"),
+            date: manifest["pub_date"].as_str().map(str::to_string),
+            notes: clip_notes(manifest["notes"].as_str().unwrap_or_default().to_string()),
+            url: release_page(endpoint, &version).unwrap_or_default(),
+            version,
+        },
+        url: url.to_string(),
+        signature: signature.to_string(),
+        sha256: sha256.to_ascii_lowercase(),
+    })
+}
+
+/// Por que um APK baixado foi descartado. Os códigos são os mesmos dos erros do desktop.
+#[cfg(any(test, target_os = "android"))]
+#[derive(Debug, PartialEq)]
+pub enum ApkRejected {
+    Signature,
+    Hash,
+    Io(String),
+}
+
+/// Confere o arquivo inteiro contra a assinatura minisign (que também declara a versão, como o `requireSignedVersion`
+/// do desktop) e contra o SHA-256 anunciado. A chave pública é a mesma do `tauri.conf.json` do desktop.
+#[cfg(any(test, target_os = "android"))]
+pub fn verify_apk(path: &Path, update: &ApkUpdate, pubkey: &str) -> Result<(), ApkRejected> {
+    use base64::Engine as _;
+    use minisign_verify::{PublicKey, Signature};
+    use std::io::Read as _;
+
+    let text = |b64: &str| {
+        let bytes = base64::engine::general_purpose::STANDARD.decode(b64.trim()).map_err(|_| ApkRejected::Signature)?;
+        String::from_utf8(bytes).map_err(|_| ApkRejected::Signature)
+    };
+    let key = PublicKey::decode(&text(pubkey)?).map_err(|_| ApkRejected::Signature)?;
+    let signature = Signature::decode(&text(&update.signature)?).map_err(|_| ApkRejected::Signature)?;
+    let mut verifier = key.verify_stream(&signature).map_err(|_| ApkRejected::Signature)?;
+    let mut hasher = Sha256::new();
+    let mut file = fs::File::open(path).map_err(|e| ApkRejected::Io(e.to_string()))?;
+    let mut buf = vec![0u8; 64 * 1024];
+    loop {
+        let read = file.read(&mut buf).map_err(|e| ApkRejected::Io(e.to_string()))?;
+        if read == 0 {
+            break;
+        }
+        verifier.update(&buf[..read]);
+        hasher.update(&buf[..read]);
+    }
+    verifier.finalize().map_err(|_| ApkRejected::Signature)?;
+    // O comentário confiável só vale depois de a assinatura global passar, e é ela que cobre o comentário.
+    let signed = signature.trusted_comment().split('\t').find_map(|field| field.strip_prefix("version:"));
+    let signed = signed.and_then(|v| Version::parse(v.trim_start_matches('v')).ok());
+    if signed.is_none_or(|v| v.to_string() != update.release.version) {
+        return Err(ApkRejected::Signature);
+    }
+    let actual: String = hasher.finalize().iter().map(|b| format!("{b:02x}")).collect();
+    if actual != update.sha256 {
+        return Err(ApkRejected::Hash);
+    }
+    Ok(())
+}
+
+/// O `latest.json` da release mais recente, o mesmo que o plugin lê no desktop.
+#[cfg(target_os = "android")]
+pub async fn fetch_manifest(endpoint: &str) -> Result<Value, String> {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let client = reqwest::Client::builder().user_agent("Prancha").timeout(CHECK_TIMEOUT).build().map_err(|e| e.to_string())?;
+    let response = client.get(endpoint).send().await.and_then(|r| r.error_for_status()).map_err(|e| e.to_string())?;
+    let body = response.text().await.map_err(|e| e.to_string())?;
+    serde_json::from_str(&body).map_err(|e| e.to_string())
+}
+
+/// Baixa direto para o arquivo, sem guardar o APK inteiro na memória do celular.
+#[cfg(target_os = "android")]
+pub async fn download_to(url: &str, path: &Path, mut progress: impl FnMut(u64, Option<u64>)) -> Result<(), String> {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let client = reqwest::Client::builder().user_agent("Prancha").timeout(DOWNLOAD_TIMEOUT).build().map_err(|e| e.to_string())?;
+    let mut response = client.get(url).send().await.and_then(|r| r.error_for_status()).map_err(|e| e.to_string())?;
+    let total = response.content_length();
+    let mut file = fs::File::create(path).map_err(|e| e.to_string())?;
+    let mut downloaded = 0u64;
+    while let Some(chunk) = response.chunk().await.map_err(|e| e.to_string())? {
+        file.write_all(&chunk).map_err(|e| e.to_string())?;
+        downloaded += chunk.len() as u64;
+        progress(downloaded, total);
+    }
+    file.sync_all().map_err(|e| e.to_string())
 }
 
 // ---------------------------------------------------------------------------
@@ -640,6 +769,85 @@ mod tests {
             assert!(!is_official_package(ENDPOINT, "1.3.0", bad), "{bad}");
         }
         assert!(!is_official_package("https://exemplo.com/latest.json", "1.3.0", ok));
+    }
+
+    // Chave descartável, gerada só para estes testes com `tauri signer generate`; o arquivo foi assinado com
+    // `tauri signer sign --app-version 9.9.9`, como o workflow de release assina o APK.
+    const TEST_PUBKEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDA4N0YyRkM4MUFCRkMxRDUKUldUVndiOGF5QzkvQ0NEVVJFUzdrcUViN2kxK09NSmtyRDBOT256QWkvUzAxY0JTYnhFUFIvR2sK";
+    const TEST_APK: &[u8] = b"APK de teste do Prancha\n";
+    const TEST_SIGNATURE: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVndiOGF5QzkvQ0tocGpQVVk3UldmYkM2cU5qQVhBWHVhbENFeEhNdmNuTlcyWktVN0Q0clpNRjJNQVIycnkvU0RnaGdqcXo0WFAwQ2srNnFoOHdNQm9hamp2WlllR3dJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0ODQyMzM3CWZpbGU6cGF5bG9hZC5hcGsJdmVyc2lvbjo5LjkuOQp0OUM4VDU4RlpVby94ejJRRHFlUjd5VlVtK1E1U3VBemx3bTZpenVGY2YveWNjRW9FczFabUZ2Rk1JV1J2R2NUc0hHUUtoYzlWa3VDeE44L3kwdU9Cdz09Cg==";
+    const TEST_SHA256: &str = "0966529c4da04f8d39faa8d8b4050ff3e1fa075ccf088ee84cc1c76780a30e27";
+
+    fn apk_manifest(version: &str, platform: Value) -> Value {
+        json!({ "version": version, "notes": "## Novidades\n- No celular", "pub_date": "2026-11-16T12:00:00Z", "platforms": {
+            "windows-x86_64": { "url": format!("https://github.com/CAKeysama/prancha/releases/download/v{version}/Prancha_{version}_x64-setup.exe"), "signature": "x" },
+            "android-aarch64": platform,
+        }})
+    }
+
+    fn apk_platform(version: &str) -> Value {
+        json!({ "url": format!("https://github.com/CAKeysama/prancha/releases/download/v{version}/Prancha_{version}_android-arm64.apk"), "signature": TEST_SIGNATURE, "sha256": TEST_SHA256 })
+    }
+
+    #[test]
+    fn the_android_app_takes_only_its_own_official_apk_from_a_newer_version() {
+        let found = apk_from_manifest(&apk_manifest("9.9.9", apk_platform("9.9.9")), &v("9.9.8"), ENDPOINT, "aarch64").expect("versão nova com APK");
+        assert_eq!(found.release.version, "9.9.9");
+        assert_eq!(found.release.url, "https://github.com/CAKeysama/prancha/releases/tag/v9.9.9");
+        assert_eq!(found.release.notes, "## Novidades\n- No celular");
+        assert!(found.url.ends_with("/v9.9.9/Prancha_9.9.9_android-arm64.apk"));
+
+        let none = |manifest: Value, current: &str, arch: &str| apk_from_manifest(&manifest, &v(current), ENDPOINT, arch).is_none();
+        assert!(none(apk_manifest("9.9.9", apk_platform("9.9.9")), "9.9.9", "aarch64"), "mesma versão");
+        assert!(none(apk_manifest("10.0.0-beta.1", apk_platform("10.0.0-beta.1")), "9.9.8", "aarch64"), "prévia");
+        assert!(none(apk_manifest("9.9.9", apk_platform("9.9.9")), "9.9.8", "x86_64"), "sem APK para a arquitetura");
+        assert!(none(apk_manifest("9.9.9", apk_platform("9.9.8")), "9.9.7", "aarch64"), "APK de outra versão");
+        let mut other = apk_platform("9.9.9");
+        other["url"] = json!("https://github.com/outra-pessoa/prancha/releases/download/v9.9.9/Prancha_9.9.9_android-arm64.apk");
+        assert!(none(apk_manifest("9.9.9", other), "9.9.8", "aarch64"), "fora das releases oficiais");
+        let mut exe = apk_platform("9.9.9");
+        exe["url"] = json!("https://github.com/CAKeysama/prancha/releases/download/v9.9.9/Prancha_9.9.9_x64-setup.exe");
+        assert!(none(apk_manifest("9.9.9", exe), "9.9.8", "aarch64"), "instalador do Windows no lugar do APK");
+        for field in ["signature", "sha256"] {
+            let mut missing = apk_platform("9.9.9");
+            missing[field] = json!("");
+            assert!(none(apk_manifest("9.9.9", missing), "9.9.8", "aarch64"), "sem {field}");
+        }
+        // O APK não serve ao desktop, e o instalador do Windows não serve ao Android.
+        assert!(!is_official_package(ENDPOINT, "9.9.9", &found.url));
+        assert!(!is_official_apk(ENDPOINT, "9.9.9", "https://github.com/CAKeysama/prancha/releases/download/v9.9.9/Prancha_9.9.9_x64-setup.exe"));
+    }
+
+    #[test]
+    fn the_apk_is_installed_only_with_a_valid_signature_for_the_announced_version_and_the_announced_hash() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("Prancha.apk");
+        fs::write(&path, TEST_APK).unwrap();
+        let update = apk_from_manifest(&apk_manifest("9.9.9", apk_platform("9.9.9")), &v("9.9.8"), ENDPOINT, "aarch64").unwrap();
+        assert_eq!(verify_apk(&path, &update, TEST_PUBKEY), Ok(()));
+
+        // Arquivo trocado: a assinatura já recusa, antes do SHA-256.
+        fs::write(&path, b"outro arquivo").unwrap();
+        assert_eq!(verify_apk(&path, &update, TEST_PUBKEY), Err(ApkRejected::Signature));
+        fs::write(&path, TEST_APK).unwrap();
+
+        // Assinatura verdadeira de uma versão, apresentada como outra.
+        let mut relabeled = update.clone();
+        relabeled.release.version = "9.9.10".into();
+        assert_eq!(verify_apk(&path, &relabeled, TEST_PUBKEY), Err(ApkRejected::Signature));
+
+        // Outra chave pública: a do Prancha de verdade não reconhece a chave de teste.
+        let official = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDUxRjkyMzNCRkZCNUI0QkEKUldTNnRMWC9PeVA1VVpJRkZvL1hQM1RGdmRNd2RWWUh2YlJvLzNzMy8wUThIU1pWQVA4Yy9lNHoK";
+        assert_eq!(verify_apk(&path, &update, official), Err(ApkRejected::Signature));
+
+        let mut wrong_hash = update.clone();
+        wrong_hash.sha256 = "0".repeat(64);
+        assert_eq!(verify_apk(&path, &wrong_hash, TEST_PUBKEY), Err(ApkRejected::Hash));
+
+        let mut garbage = update.clone();
+        garbage.signature = "não é base64".into();
+        assert_eq!(verify_apk(&path, &garbage, TEST_PUBKEY), Err(ApkRejected::Signature));
+        assert!(matches!(verify_apk(&dir.path().join("sumiu.apk"), &update, TEST_PUBKEY), Err(ApkRejected::Io(_))));
     }
 
     #[test]
