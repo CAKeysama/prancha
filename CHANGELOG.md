@@ -3,6 +3,14 @@
 Tudo o que mudou em cada versão do Prancha. O projeto segue o [versionamento semântico](https://semver.org/lang/pt-BR/),
 e as notas das releases e a [página de downloads](https://cakeysama.github.io/prancha/) são geradas a partir deste arquivo.
 
+## [0.12.2] - 2026-11-15
+
+Prepara o banco na nuvem da sincronização entre PC e celular. O app não muda.
+
+### Observações
+
+- O Supabase do projeto ganha o schema `sync`, com as tabelas e as funções que vão guardar o estado da leitura online (repositórios, extensões, obras, capítulos lidos e a posição em cada um) de quem entrar com uma conta. Nenhum arquivo, imagem ou HQ local sobe. O app passa a usar isso numa versão seguinte; detalhes em `docs/SINCRONIZACAO.md`.
+
 ## [0.12.1] - 2026-11-14
 
 O site oficial volta a mostrar a versão mais recente. O app não muda.

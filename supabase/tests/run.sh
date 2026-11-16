@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sobe um Postgres vazio numa pasta temporária, aplica o stub do Supabase e as migrações e roda os testes.
+# Sobe um Postgres vazio numa pasta temporária, aplica o stub do Supabase e as migrações e roda os testes (*.test.sql).
 # Uso: bash supabase/tests/run.sh   (precisa do Postgres 15 ou mais novo instalado: initdb, pg_ctl, psql)
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -21,4 +21,6 @@ psql=(psql -X -q -v ON_ERROR_STOP=1 -h "$tmp" -p "$port" -U postgres -d postgres
 for migration in "$here"/../migrations/*.sql; do
   "${psql[@]}" -f "$migration"
 done
-"${psql[@]}" -f "$here/telemetry.test.sql"
+for test in "$here"/*.test.sql; do
+  "${psql[@]}" -f "$test"
+done
