@@ -114,7 +114,18 @@ bool File::Open(const std::wstring &Name,uint Mode)
   std::string NameA;
   WideToChar(Name,NameA);
 
-  int handle=open(NameA.c_str(),flags);
+  // Prancha: no Android, um endereço content:// chega como /proc/self/fd/<n> de um descritor que o sistema
+  // entregou. Reabrir esse caminho passa de novo pela permissão do armazenamento e falha; duplicar o descritor não.
+  int handle=-1,FdNum=-1,FdUsed=0;
+  if (!WriteMode && !UpdateMode && sscanf(NameA.c_str(),"/proc/self/fd/%d%n",&FdNum,&FdUsed)==1 &&
+      FdUsed==(int)NameA.size() && FdNum>=0)
+  {
+    handle=fcntl(FdNum,F_DUPFD_CLOEXEC,0);
+    if (handle>=0)
+      lseek(handle,0,SEEK_SET);
+  }
+  else
+    handle=open(NameA.c_str(),flags);
 #ifdef LOCK_EX
 
 #ifdef _OSF_SOURCE

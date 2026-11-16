@@ -2,6 +2,10 @@
 // O original decide por `cfg!(windows)`, que olha o computador que compila e não o alvo, e o
 // Android (API 24) não tem `lutimes`. Ver vendor/README.md.
 fn main() {
+    // O cc avisa variáveis de ambiente ao Cargo, o que desliga a recompilação quando um arquivo do pacote muda:
+    // sem isto, uma mudança no UnRAR copiado não entraria no build.
+    println!("cargo:rerun-if-changed=vendor/unrar");
+    println!("cargo:rerun-if-changed=build.rs");
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     let target_env = std::env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
     let windows = target_os == "windows";
