@@ -98,7 +98,7 @@ jobs:
           cache: npm
 
       - name: Prepara o Rust
-        run: rustup toolchain install stable --profile minimal --target aarch64-linux-android
+        run: rustup toolchain install stable --profile minimal --target aarch64-linux-android --target x86_64-linux-android
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -109,11 +109,12 @@ jobs:
       - run: npm ci
 
       # API 24 é o mínimo do Tauri para Android; o Tauri escolhe os compiladores do NDK a partir do NDK_HOME.
+      # ARM para celulares e x86_64 para o emulador do Android, num APK só.
       - name: Gera o APK de depuração
         working-directory: apps/android
         run: |
           export NDK_HOME="$ANDROID_NDK_LATEST_HOME"
-          npx tauri android build --debug --apk --target aarch64 --ci
+          npx tauri android build --debug --apk --target aarch64 --target x86_64 --ci
 
       # O build passa mesmo quando falta o Kotlin de um plugin, e o app só fecha ao abrir no celular: confere as classes no APK.
       - name: Confere os plugins Android no APK
