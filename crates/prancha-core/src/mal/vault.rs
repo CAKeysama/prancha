@@ -1,6 +1,7 @@
 //! Onde os tokens do MyAnimeList ficam guardados. Nunca em texto: no Windows, cifrados pela DPAPI do sistema,
 //! presa à conta do Windows de quem usa o Prancha. Outro usuário do computador, ou uma cópia do banco levada para
-//! outra máquina, não consegue abrir. Sem um cofre do sistema, a conexão não é guardada.
+//! outra máquina, não consegue abrir. No Android, por uma chave do Keystore que não sai do aparelho. Sem um cofre
+//! do sistema, a conexão não é guardada.
 
 use crate::error::{AppError, AppResult};
 
@@ -21,20 +22,34 @@ pub fn system() -> Box<dyn Vault> {
     }
     #[cfg(not(windows))]
     {
-        Box::new(Unavailable)
+        Box::new(Registered)
     }
 }
 
+/// Fora do Windows, o cofre vem de quem monta o app: no Android, o Keystore pelo plugin Kotlin, que se registra
+/// ao abrir. Sem registro, a conexão não é guardada.
 #[cfg(not(windows))]
-struct Unavailable;
+static REGISTERED: std::sync::OnceLock<std::sync::Arc<dyn Vault>> = std::sync::OnceLock::new();
+
+/// Registra o cofre do sistema. Só a primeira chamada vale.
+#[cfg(not(windows))]
+pub fn register(vault: std::sync::Arc<dyn Vault>) {
+    let _ = REGISTERED.set(vault);
+}
 
 #[cfg(not(windows))]
-impl Vault for Unavailable {
-    fn seal(&self, _plain: &[u8]) -> AppResult<Vec<u8>> {
-        Err(AppError::user("mal_vault", "Este sistema não tem um cofre compatível para guardar a conexão com o MyAnimeList."))
+struct Registered;
+
+#[cfg(not(windows))]
+impl Vault for Registered {
+    fn seal(&self, plain: &[u8]) -> AppResult<Vec<u8>> {
+        match REGISTERED.get() {
+            Some(vault) => vault.seal(plain),
+            None => Err(AppError::user("mal_vault", "Este sistema não tem um cofre compatível para guardar a conexão com o MyAnimeList.")),
+        }
     }
-    fn open(&self, _sealed: &[u8]) -> AppResult<Vec<u8>> {
-        Err(unavailable())
+    fn open(&self, sealed: &[u8]) -> AppResult<Vec<u8>> {
+        REGISTERED.get().ok_or_else(unavailable)?.open(sealed)
     }
 }
 

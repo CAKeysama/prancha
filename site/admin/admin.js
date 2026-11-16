@@ -17,8 +17,8 @@ const METRIC_LABELS = {
   startup: "Abertura do app", library_load: "Biblioteca", explore_results: "Resultados do Explorar",
   series_open: "Abrir obra", chapter_open: "Abrir capítulo", reader_first_page: "Primeira página",
 };
-const PLATFORM_LABELS = { windows: "Windows", macos: "macOS", linux: "Linux" };
-const CHANNEL_LABELS = { nsis: "Instalador EXE", msi: "Instalador MSI", dev: "Desenvolvimento", unknown: "Desconhecido" };
+const PLATFORM_LABELS = { windows: "Windows", macos: "macOS", linux: "Linux", android: "Android" };
+const CHANNEL_LABELS = { nsis: "Instalador EXE", msi: "Instalador MSI", apk: "APK do Android", dev: "Desenvolvimento", unknown: "Desconhecido" };
 
 let config = null;
 let session = null;

@@ -122,7 +122,7 @@ jobs:
           apk=$(find apps/android/src-tauri/gen/android/app/build/outputs/apk -name '*.apk' | head -n 1)
           dex=$(mktemp -d)
           unzip -q -o "$apk" 'classes*.dex' -d "$dex"
-          for class in app/tauri/dialog/DialogPlugin com/plugin/fs/FsPlugin app/tauri/notification/NotificationPlugin app/tauri/opener/OpenerPlugin app/prancha/FilesPlugin app/prancha/ScreenPlugin app/prancha/BackgroundPlugin app/prancha/DownloadService app/prancha/FollowWorker; do
+          for class in app/tauri/dialog/DialogPlugin com/plugin/fs/FsPlugin app/tauri/notification/NotificationPlugin app/tauri/opener/OpenerPlugin app/prancha/FilesPlugin app/prancha/ScreenPlugin app/prancha/BackgroundPlugin app/prancha/DownloadService app/prancha/FollowWorker app/prancha/VaultPlugin; do
             if ! grep -q -a "L$class;" "$dex"/classes*.dex; then
               echo "::error::O APK não tem a classe $class."
               exit 1

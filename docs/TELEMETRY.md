@@ -47,7 +47,7 @@ Tudo é agregado no app antes de sair: um lote leva somas por dia, nunca eventos
 | `error` | `day`, `hour`, `category`, `component`, `code`, `httpStatus`, `count` | Falhas de fontes (código do `AppError`), saídas inesperadas (`crash/app/unclean_exit`) e erros não tratados da interface (`interface/window/uncaught_error` e `unhandled_rejection`). |
 | `perf` | `day`, `metric`, `count`, `totalMs`, `maxMs` | `startup` (do início do processo até a primeira tela), `explore_results`, `series_open`, `chapter_open`. As métricas `library_load` e `reader_first_page` já são aceitas pelo servidor, mas o app ainda não as mede. |
 
-Cada lote ainda leva `schema: 1`, `batchId` (UUID para o servidor descartar repetidos), `installId` e `app` (`version` sem sufixo de pré-lançamento, `platform`, `arch`, `channel`: `nsis`, `msi`, `dev` ou `unknown`).
+Cada lote ainda leva `schema: 1`, `batchId` (UUID para o servidor descartar repetidos), `installId` e `app` (`version` sem sufixo de pré-lançamento, `platform`: `windows`, `macos`, `linux` ou `android`, `arch`, `channel`: `nsis`, `msi`, `apk` (o APK do Android), `dev` ou `unknown`).
 
 A versão do sistema operacional não é enviada (`app.os` fica vazio): o Prancha não tem hoje uma forma confiável de lê-la sem uma dependência nova.
 

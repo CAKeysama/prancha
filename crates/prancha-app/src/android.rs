@@ -130,6 +130,48 @@ pub fn init_screen() -> TauriPlugin<Wry> {
         .build()
 }
 
+/// O cofre do Android (`VaultPlugin`): os tokens do MyAnimeList cifrados por uma chave do Keystore.
+struct KeystoreVault(PluginHandle<Wry>);
+
+#[derive(Serialize, Deserialize)]
+struct VaultData {
+    data: String,
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn unhex(text: &str) -> Option<Vec<u8>> {
+    (0..text.len()).step_by(2).map(|i| text.get(i..i + 2).and_then(|pair| u8::from_str_radix(pair, 16).ok())).collect()
+}
+
+impl KeystoreVault {
+    fn call(&self, command: &str, bytes: &[u8]) -> prancha_core::error::AppResult<Vec<u8>> {
+        let vault_error = |e: String| prancha_core::error::AppError::user("mal_vault", format!("Não foi possível usar o cofre do Android: {e}"));
+        let out: VaultData = self.0.run_mobile_plugin(command, VaultData { data: hex(bytes) }).map_err(|e| vault_error(e.to_string()))?;
+        unhex(&out.data).ok_or_else(|| vault_error("resposta inválida".into()))
+    }
+}
+
+impl prancha_core::mal::vault::Vault for KeystoreVault {
+    fn seal(&self, plain: &[u8]) -> prancha_core::error::AppResult<Vec<u8>> {
+        self.call("seal", plain)
+    }
+    fn open(&self, sealed: &[u8]) -> prancha_core::error::AppResult<Vec<u8>> {
+        self.call("unseal", sealed)
+    }
+}
+
+pub fn init_vault() -> TauriPlugin<Wry> {
+    Builder::new("prancha-vault")
+        .setup(|_app, api| {
+            prancha_core::mal::vault::register(Arc::new(KeystoreVault(api.register_android_plugin("app.prancha", "VaultPlugin")?)));
+            Ok(())
+        })
+        .build()
+}
+
 /// O plugin Kotlin do que roda com o app fora da tela (`BackgroundPlugin`): o serviço de downloads.
 pub struct Background(PluginHandle<Wry>);
 

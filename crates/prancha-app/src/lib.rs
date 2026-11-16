@@ -81,6 +81,9 @@ fn start_telemetry(app: &tauri::App, core: &Arc<Core>) {
     use tauri::utils::config::BundleType;
     let channel = if cfg!(debug_assertions) {
         "dev"
+    } else if cfg!(target_os = "android") {
+        // O APK publicado nas releases do GitHub; o servidor aceita desde a migração 20261116150000.
+        "apk"
     } else {
         match tauri::utils::platform::bundle_type() {
             Some(BundleType::Nsis) => "nsis",
@@ -117,7 +120,7 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
     #[cfg(desktop)]
     let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
     #[cfg(target_os = "android")]
-    let builder = builder.plugin(android::init()).plugin(android::init_screen()).plugin(android::init_background());
+    let builder = builder.plugin(android::init()).plugin(android::init_screen()).plugin(android::init_background()).plugin(android::init_vault());
     builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())

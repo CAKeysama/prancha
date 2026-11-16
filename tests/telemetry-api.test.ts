@@ -54,6 +54,12 @@ describe("validateBatch", () => {
     expect(r.batch.events[1]).toEqual({ type: "source", day: "2026-11-09", source: "mangadex/pt-br", queries: 3, opens: 0, chapters: 0, errors: 0 });
   });
 
+  it("aceita o app Android (APK do GitHub)", () => {
+    const r = validateBatch(batch([], { app: { version: "0.13.0", platform: "android", arch: "aarch64", channel: "apk" } }), NOW);
+    expect(r.ok).toBe(true);
+    expect(r.batch.app).toMatchObject({ platform: "android", channel: "apk" });
+  });
+
   it.each([
     ["campo a mais no lote", batch([], { ip: "1.2.3.4" })],
     ["campo a mais no evento", batch([{ type: "error", day: "2026-11-09", hour: 1, category: "network", component: "x", code: "y", count: 1, message: "Falha ao abrir C:\\Users\\ana" }])],
@@ -67,7 +73,8 @@ describe("validateBatch", () => {
     ["data futura", batch([{ type: "session", day: "2026-11-12", launches: 1 }])],
     ["contagem negativa", batch([{ type: "perf", day: "2026-11-09", metric: "startup", count: 1, totalMs: -1, maxMs: 1 }])],
     ["versão inválida", batch([], { app: { version: "0.9.0-beta", platform: "windows" } })],
-    ["plataforma desconhecida", batch([], { app: { version: "0.9.0", platform: "android" } })],
+    ["plataforma desconhecida", batch([], { app: { version: "0.9.0", platform: "ios" } })],
+    ["canal desconhecido", batch([], { app: { version: "0.9.0", platform: "android", channel: "playstore" } })],
     ["identificador que não é UUID", batch([], { installId: "ana@example.com" })],
     ["schema desconhecido", batch([], { schema: 2 })],
     ["eventos demais", batch(Array.from({ length: 201 }, () => ({ type: "session", day: "2026-11-09", launches: 1 })))],

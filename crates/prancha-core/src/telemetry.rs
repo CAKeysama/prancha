@@ -256,6 +256,7 @@ impl AppMeta {
         let platform = match std::env::consts::OS {
             "windows" => "windows",
             "macos" => "macos",
+            "android" => "android",
             _ => "linux",
         };
         let arch = match std::env::consts::ARCH {

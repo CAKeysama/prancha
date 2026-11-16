@@ -7,8 +7,8 @@ export const MAX_EVENTS = 200;
 export const MAX_COUNT = 100_000;
 export const MAX_MS = 3_600_000;
 
-export const PLATFORMS = ["windows", "macos", "linux"];
-export const CHANNELS = ["nsis", "msi", "dev", "unknown"];
+export const PLATFORMS = ["windows", "macos", "linux", "android"];
+export const CHANNELS = ["nsis", "msi", "dev", "unknown", "apk"];
 export const ARCHS = ["x86_64", "aarch64", "x86", "arm"];
 export const ERROR_CATEGORIES = ["network", "source", "extension", "reader", "library", "import", "database", "update", "interface", "crash", "other"];
 export const METRICS = ["startup", "library_load", "explore_results", "series_open", "chapter_open", "reader_first_page"];

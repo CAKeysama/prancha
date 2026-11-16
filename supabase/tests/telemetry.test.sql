@@ -218,4 +218,24 @@ do $$ begin
   if exists (select 1 from telemetry.install_days where day < current_date - 180) then raise exception 'prune não apagou o antigo'; end if;
 end $$;
 
+\echo '11. o app Android (android/apk) entra; plataforma e canal fora da lista, não'
+set role service_role;
+do $$
+declare r jsonb;
+begin
+  r := public.telemetry_ingest(jsonb_build_object('schema', 1, 'batchId', gen_random_uuid(), 'installId', gen_random_uuid(),
+    'app', jsonb_build_object('version', '0.13.0', 'platform', 'android', 'os', '16', 'arch', 'aarch64', 'channel', 'apk'), 'events', '[]'::jsonb));
+  if (r ->> 'accepted')::int <> 0 or (r ->> 'duplicate')::boolean then raise exception 'lote do Android recusado: %', r; end if;
+  begin
+    perform public.telemetry_ingest(jsonb_build_object('schema', 1, 'batchId', gen_random_uuid(), 'installId', gen_random_uuid(),
+      'app', jsonb_build_object('version', '0.13.0', 'platform', 'ios', 'channel', 'apk'), 'events', '[]'::jsonb));
+    raise exception 'plataforma ios aceita';
+  exception when invalid_parameter_value then null; end;
+  begin
+    perform public.telemetry_ingest(jsonb_build_object('schema', 1, 'batchId', gen_random_uuid(), 'installId', gen_random_uuid(),
+      'app', jsonb_build_object('version', '0.13.0', 'platform', 'android', 'channel', 'playstore'), 'events', '[]'::jsonb));
+    raise exception 'canal playstore aceito';
+  exception when invalid_parameter_value then null; end;
+end $$;
+
 \echo 'Tudo certo.'

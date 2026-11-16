@@ -7,7 +7,7 @@ O Prancha funciona no seu computador e não tem conta. Suas HQs, o progresso, os
 - **Atualizações:** para saber se há uma versão nova, o Prancha consulta as releases do projeto no GitHub.
 - **Fontes de leitura (plugin opcional):** quando você usa repositórios e extensões, o Prancha fala com os sites dessas fontes para buscar obras, capas e páginas.
 - **Telemetria (opcional, desligada até você aceitar):** estatísticas de uso enviadas ao servidor do projeto. Detalhes abaixo.
-- **MyAnimeList (opcional, só com a conta conectada):** o Prancha procura no catálogo do MAL o título, o autor e o número de capítulos das obras das fontes que você abre, e atualiza os capítulos lidos na sua lista quando você termina um capítulo. Você entra pelo site do MAL, e o Prancha não vê sua senha; o acesso fica cifrado pelo Windows neste computador. Desconectar apaga esse acesso. Detalhes em [MYANIMELIST.md](MYANIMELIST.md).
+- **MyAnimeList (opcional, só com a conta conectada):** o Prancha procura no catálogo do MAL o título, o autor e o número de capítulos das obras das fontes que você abre, e atualiza os capítulos lidos na sua lista quando você termina um capítulo. Você entra pelo site do MAL, e o Prancha não vê sua senha; o acesso fica cifrado pelo Windows neste computador (no Android, por uma chave do próprio celular, no Android Keystore). Desconectar apaga esse acesso. Detalhes em [MYANIMELIST.md](MYANIMELIST.md).
 
 ## Telemetria
 
@@ -17,7 +17,7 @@ O Prancha funciona no seu computador e não tem conta. Suas HQs, o progresso, os
 
 ### O que é enviado
 
-- Versão do Prancha, sistema (Windows, macOS ou Linux), arquitetura e tipo de instalador.
+- Versão do Prancha, sistema (Windows, macOS, Linux ou Android), arquitetura e tipo de instalador (ou APK, no Android).
 - Quantas vezes o app abriu por dia e se a vez anterior fechou de forma inesperada.
 - Por fonte de leitura, só o identificador técnico da extensão e da fonte: quantas buscas, obras e capítulos foram abertos e quantos erros houve.
 - Falhas por categoria, componente e código técnico (por exemplo, "network / sources / timeout"), somadas por hora.
