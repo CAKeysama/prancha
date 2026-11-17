@@ -2,6 +2,8 @@
 //! Os comandos que a interface chama ficam em `prancha-app`.
 
 pub mod core;
+pub mod account;
+pub mod sync;
 pub mod covers;
 pub mod db;
 pub mod error;

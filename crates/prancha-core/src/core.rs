@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use rusqlite::Connection;
 use serde_json::json;
 
+use crate::account::Account;
 use crate::db;
 use crate::error::{AppError, AppResult};
 use crate::extensions::downloads::Downloads;
@@ -66,6 +67,10 @@ pub struct Core {
     pub telemetry: Arc<Telemetry>,
     /// Integração com o MyAnimeList. Sem conta conectada, não faz nada. Ver mal/mod.rs.
     pub mal: Arc<Mal>,
+    /// A conta do Prancha (Google ou Discord). Sem conta, nada sai do aparelho. Ver account/mod.rs.
+    pub account: Arc<Account>,
+    /// A sincronização da leitura online entre aparelhos. Parada sem conta. Ver sync/mod.rs.
+    pub sync: crate::sync::Sync,
 }
 
 impl Core {
@@ -84,11 +89,12 @@ impl Core {
             log::warn!("estado da telemetria não lido: {e}");
         }
         let mal = Arc::new(Mal::from_env(paths.db.clone(), emit.clone()));
+        let account = Arc::new(Account::from_env(paths.db.clone(), emit.clone()));
         let db_path = paths.db.clone();
         let importer = Importer::spawn(move || db::open(&db_path), paths.covers.clone(), emit.clone())?;
         // Capas pendentes ou geradas com parâmetros antigos são refeitas em segundo plano.
         importer.enqueue_covers();
-        Ok(Core { pages: PageService::new(paths.pages_cache.clone()), paths, db: Mutex::new(conn), importer, emit, guided_lock: Mutex::new(()), net: Arc::new(Net::from_env()), engine: OnceLock::new(), downloads: Downloads::default(), requests: Requests::default(), cover_gate: Gate::default(), page_gate: Gate::default(), chapter_pages: ChapterPages::default(), suwayomi: Suwayomi::default(), notifier: OnceLock::new(), telemetry, mal })
+        Ok(Core { pages: PageService::new(paths.pages_cache.clone()), paths, db: Mutex::new(conn), importer, emit, guided_lock: Mutex::new(()), net: Arc::new(Net::from_env()), engine: OnceLock::new(), downloads: Downloads::default(), requests: Requests::default(), cover_gate: Gate::default(), page_gate: Gate::default(), chapter_pages: ChapterPages::default(), suwayomi: Suwayomi::default(), notifier: OnceLock::new(), telemetry, mal, account, sync: crate::sync::Sync::default() })
     }
 
     pub fn db(&self) -> MutexGuard<'_, Connection> {

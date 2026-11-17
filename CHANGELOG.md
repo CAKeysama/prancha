@@ -3,6 +3,23 @@
 Tudo o que mudou em cada versão do Prancha. O projeto segue o [versionamento semântico](https://semver.org/lang/pt-BR/),
 e as notas das releases e a [página de downloads](https://cakeysama.github.io/prancha/) são geradas a partir deste arquivo.
 
+## [0.14.0] - 2026-11-17
+
+Conta do Prancha e sincronização da leitura online entre o PC e o celular. A conta é opcional: sem ela, nada muda e nada sai do aparelho.
+
+### Novidades
+
+- **Conta do Prancha**: em Configurações › Conta, entre com o Google ou o Discord. O login acontece no site do provedor, o Prancha não vê a senha, e o acesso fica cifrado pelo cofre do sistema (DPAPI no Windows, Keystore no Android), como o do MyAnimeList.
+- **Sincronização entre aparelhos**: com a conta, o que você lê online no PC continua no celular e o contrário. Sobem as obras das fontes do Prancha que estão na biblioteca (favorita, acompanhando, ordem dos capítulos, modo de leitura), o estado de cada capítulo (iniciado, lido ou não lido, novidade vista), a página em que você parou, as pastas, as associações feitas à mão com o MyAnimeList, e os repositórios e extensões instalados. No outro aparelho, os repositórios são adicionados e as extensões do Prancha instaladas sozinhos, e o estado de cada capítulo entra assim que a lista de capítulos chega da fonte.
+- Cada mudança tem a própria data: mexer no favorito no celular e na ordem dos capítulos no PC não se apagam, e entre duas mudanças no mesmo campo a mais nova vence. Tirar uma obra da biblioteca num aparelho tira dos outros.
+- A tela Conta mostra a última sincronização e o que está esperando para subir, sincroniza na hora, lista os aparelhos da conta (e remove um), baixa tudo o que a conta guarda num arquivo JSON (no computador) e apaga a conta com os dados da nuvem.
+
+### Observações
+
+- Nunca sobem HQs locais (PDF, CBZ, CBR, pastas) nem o progresso delas, capítulos baixados, imagens, dados que as extensões guardam (que podem ter logins de sites), os tokens do MyAnimeList nem a telemetria. A conta não é ligada ao identificador da telemetria.
+- Obras de extensões do Mihon ainda não sincronizam: no Windows, o Suwayomi identifica cada obra por um número que só vale naquele computador.
+- Uma pasta apagada em outro aparelho que tem HQs deste aparelho continua aqui; só as obras das fontes saem dela. Uma conclusão que chega pela sincronização não entra na fila do MyAnimeList: só o aparelho onde o capítulo foi lido avisa o MAL.
+
 ## [0.13.0] - 2026-11-16
 
 O Prancha chega ao Android: a mesma biblioteca, o leitor, as fontes de leitura, o MyAnimeList e as atualizações, com uma interface de toque. O app do Windows não muda.

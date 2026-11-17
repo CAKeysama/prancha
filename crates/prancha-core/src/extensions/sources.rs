@@ -784,6 +784,10 @@ pub fn store_chapters(conn: &mut Connection, series_id: i64, chapters: &[super::
         }
     }
     tx.execute("UPDATE online_series SET last_checked_at = ?2, last_update_at = coalesce(?3, last_update_at), updated_at = ?2 WHERE id = ?1", params![series_id, now, newest])?;
+    // O estado que outro aparelho deixou na nuvem para estes capítulos. Uma falha aqui não impede a lista de entrar.
+    if let Err(e) = crate::sync::chapters_listed(&tx, series_id) {
+        log::warn!("sincronização: estado dos capítulos não aplicado: {e}");
+    }
     tx.commit()?;
     Ok(fresh)
 }
@@ -1199,7 +1203,11 @@ pub fn set_series_read(conn: &mut Connection, id: i64, read: bool) -> AppResult<
 
 /// Tira a obra da biblioteca. Capítulos baixados continuam lá, como as HQs que são.
 pub fn forget_series(core: &Core, id: i64) -> AppResult<()> {
-    let conn = core.db();
+    forget_series_on(core, &core.db(), id)
+}
+
+/// `forget_series` numa conexão dada. A sincronização usa para aplicar uma remoção feita em outro aparelho.
+pub(crate) fn forget_series_on(core: &Core, conn: &Connection, id: i64) -> AppResult<()> {
     conn.execute("UPDATE online_series SET favorite = 0, following = 0 WHERE id = ?1", [id])?;
     conn.execute("DELETE FROM series_collections WHERE series_id = ?1", [id])?;
     conn.execute("DELETE FROM chapter_progress WHERE chapter_id IN (SELECT id FROM online_chapters WHERE series_id = ?1)", [id])?;
@@ -1208,7 +1216,7 @@ pub fn forget_series(core: &Core, id: i64) -> AppResult<()> {
         [id],
     )?;
     conn.execute("DELETE FROM reading_sessions WHERE chapter_id IN (SELECT id FROM online_chapters WHERE series_id = ?1)", [id])?;
-    remove_if_unused(core, &conn, id)
+    remove_if_unused(core, conn, id)
 }
 
 #[derive(Debug, Clone, Serialize)]

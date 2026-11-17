@@ -1,6 +1,6 @@
 # Sincronização entre aparelhos
 
-**Estado:** o banco está pronto ([`supabase/migrations/20261115220000_sync.sql`](../supabase/migrations/20261115220000_sync.sql)); o app ainda não sincroniza. A proposta completa, com as decisões, está no documento de design.
+**Estado:** no ar desde a 0.14.0. O banco está em [`supabase/migrations/20261115220000_sync.sql`](../supabase/migrations/20261115220000_sync.sql); o login em [`crates/prancha-core/src/account/`](../crates/prancha-core/src/account/) e a sincronização em [`crates/prancha-core/src/sync/`](../crates/prancha-core/src/sync/).
 
 A sincronização deixa a pessoa ler um capítulo online no PC e continuar no celular de onde parou. É opcional e só funciona com conta (Google ou Discord). Vai para a nuvem só o que é preciso para continuar a leitura online:
 
@@ -18,9 +18,9 @@ A sincronização deixa a pessoa ler um capítulo online no PC e continuar no ce
 O banco local identifica tudo por números que só valem naquele aparelho. Na nuvem, cada obra e cada capítulo são identificados por uma chave portátil:
 
 - **Extensão do Prancha:** o `remote_id` que a extensão devolve, que já precisa ser estável ([DEVELOPMENT.md](extensions/DEVELOPMENT.md)).
-- **Extensão do Mihon (pelo Suwayomi):** o `remote_id` local é o número da obra no banco do Suwayomi daquele PC e não serve. A chave portátil é o endereço (`url`) da obra e do capítulo na fonte, que o Suwayomi também devolve, junto com o id da fonte, que é o mesmo em qualquer instalação do Mihon.
+- **Extensão do Mihon:** ainda não sincroniza. No Windows, o `remote_id` local é o número da obra no banco do Suwayomi daquele PC e não serve em outro aparelho. A chave portátil vai ser o endereço (`url`) da obra e do capítulo na fonte, que o Android já usa (`<fonte>:<endereço>`) e o Suwayomi também devolve.
 
-`series_key` é o BLAKE3 de `extension_id`, `source_id` e a chave portátil da obra, cortado em 16 bytes e escrito em hexadecimal (32 caracteres). `chapter_key` é o mesmo sobre a chave portátil do capítulo. A obra sobe também com as três partes legíveis, porque o outro aparelho precisa delas para abri-la na fonte; o capítulo sobe só com o hash, e o outro aparelho o reconhece calculando o mesmo hash sobre a lista de capítulos que a fonte devolve.
+`series_key` é o BLAKE3 de `extension_id`, `source_id` e a chave portátil da obra, separados por um byte zero, cortado em 16 bytes e escrito em hexadecimal minúsculo (32 caracteres). `chapter_key` é o BLAKE3 de `series_key`, um byte zero e o `remote_id` do capítulo, cortado do mesmo jeito. A obra sobe também com as três partes legíveis, porque o outro aparelho precisa delas para abri-la na fonte; o capítulo sobe só com o hash, e o outro aparelho o reconhece calculando o mesmo hash sobre a lista de capítulos que a fonte devolve.
 
 ## Protocolo
 
@@ -64,6 +64,16 @@ O banco aplica as regras ao receber, e o app aplica as mesmas ao puxar, então d
 | Remoção da obra | Apaga o estado dos capítulos e as pastas dela; capítulos que chegam depois são pulados até a obra ser adicionada de novo com `removed_at` mais novo. |
 
 Uma conclusão que chega pela sincronização não entra na fila do MyAnimeList: só o aparelho onde o capítulo foi concluído no leitor avisa o MAL.
+
+## No app
+
+- **Gatilhos** (migração `0012_sync.sql`) anotam, a cada mudança da pessoa, quando cada campo mudou (`sync_*_meta`) e qual obra precisa subir (`sync_dirty`). Quando o app aplica o que veio da nuvem, liga `sync_state.applying` e os gatilhos ficam quietos, então nada volta para a fila.
+- **Ciclo** (`sync::run`): puxa desde o cursor guardado para o espelho (`sync_remote_*`), aplica no aparelho pelas datas, adiciona repositórios e instala extensões do Prancha que faltam (só acrescenta: uma remoção em outro aparelho não desinstala nada aqui), busca a lista de capítulos das obras que chegaram só com estado de capítulos (até 5 por ciclo), e sobe a fila em lotes de até 500 mudanças e 200 KB. A fila sai do banco antes do envio e volta inteira se ele falhar.
+- **Quando:** a cada 20 segundos, se houver algo na fila; sem mudança local, consulta a nuvem a cada 2 minutos; logo ao entrar na conta e em **Sincronizar agora**. Depois de uma falha, espera de 1 a 10 minutos. Nada roda sem conta, e o Java do Suwayomi nunca é iniciado só para sincronizar.
+- **Primeira vez** (entrar na conta, ou trocar de conta): o espelho começa vazio, puxa tudo, e sobe tudo o que está na biblioteca. Um valor escolhido antes de a sincronização existir sobe com a data em que a obra entrou no aparelho, e um valor padrão nunca apaga o de outro aparelho.
+- **Capítulos que ainda não estão na lista:** o estado fica no espelho e entra quando a lista chega da fonte (`sources::store_chapters` chama `sync::chapters_listed`).
+- **Remoção:** tirar a obra da biblioteca sobe `removed`, e no outro aparelho ela sai da biblioteca (como "Remover da biblioteca") se a remoção for mais nova que tudo o que foi feito com ela lá.
+- **Pastas:** uma pasta que chega com o mesmo nome de uma pasta local que nunca subiu vira a mesma pasta. Uma pasta apagada em outro aparelho que tem HQs deste aparelho fica, sem as obras das fontes.
 
 ## Limites
 
