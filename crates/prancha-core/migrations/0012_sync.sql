@@ -130,6 +130,8 @@ CREATE TABLE sync_remote_items (
 
 -- ---------------------------------------------------------------------------------------------------------------------
 -- Gatilhos. Ficam quietos enquanto `sync_state.applying` = 1 (a sincronização aplicando o que veio da nuvem).
+-- Sem `INSERT OR IGNORE`/`OR REPLACE`: dentro de um gatilho, o SQLite troca essa política pela do comando que
+-- disparou o gatilho (um upsert, por exemplo), e a linha repetida vira erro. `ON CONFLICT` vale sempre.
 -- ---------------------------------------------------------------------------------------------------------------------
 
 CREATE TRIGGER sync_series_following AFTER UPDATE OF following ON online_series
@@ -137,7 +139,7 @@ WHEN old.following IS NOT new.following AND (SELECT applying FROM sync_state) = 
 BEGIN
     INSERT INTO sync_series_meta (series_id, following_at) VALUES (new.id, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))
     ON CONFLICT (series_id) DO UPDATE SET following_at = excluded.following_at;
-    INSERT OR IGNORE INTO sync_dirty (kind, ref) VALUES ('series', new.id);
+    INSERT INTO sync_dirty (kind, ref) VALUES ('series', new.id) ON CONFLICT DO NOTHING;
 END;
 
 CREATE TRIGGER sync_series_favorite AFTER UPDATE OF favorite ON online_series
@@ -145,7 +147,7 @@ WHEN old.favorite IS NOT new.favorite AND (SELECT applying FROM sync_state) = 0
 BEGIN
     INSERT INTO sync_series_meta (series_id, favorite_at) VALUES (new.id, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))
     ON CONFLICT (series_id) DO UPDATE SET favorite_at = excluded.favorite_at;
-    INSERT OR IGNORE INTO sync_dirty (kind, ref) VALUES ('series', new.id);
+    INSERT INTO sync_dirty (kind, ref) VALUES ('series', new.id) ON CONFLICT DO NOTHING;
 END;
 
 CREATE TRIGGER sync_series_chapter_sort AFTER UPDATE OF chapter_sort ON online_series
@@ -153,7 +155,7 @@ WHEN old.chapter_sort IS NOT new.chapter_sort AND (SELECT applying FROM sync_sta
 BEGIN
     INSERT INTO sync_series_meta (series_id, chapter_sort_at) VALUES (new.id, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))
     ON CONFLICT (series_id) DO UPDATE SET chapter_sort_at = excluded.chapter_sort_at;
-    INSERT OR IGNORE INTO sync_dirty (kind, ref) VALUES ('series', new.id);
+    INSERT INTO sync_dirty (kind, ref) VALUES ('series', new.id) ON CONFLICT DO NOTHING;
 END;
 
 CREATE TRIGGER sync_series_reader_mode AFTER UPDATE OF reader_mode ON online_series
@@ -161,13 +163,14 @@ WHEN old.reader_mode IS NOT new.reader_mode AND (SELECT applying FROM sync_state
 BEGIN
     INSERT INTO sync_series_meta (series_id, reader_mode_at) VALUES (new.id, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))
     ON CONFLICT (series_id) DO UPDATE SET reader_mode_at = excluded.reader_mode_at;
-    INSERT OR IGNORE INTO sync_dirty (kind, ref) VALUES ('series', new.id);
+    INSERT INTO sync_dirty (kind, ref) VALUES ('series', new.id) ON CONFLICT DO NOTHING;
 END;
 
 CREATE TRIGGER sync_series_delete AFTER DELETE ON online_series WHEN (SELECT applying FROM sync_state) = 0
 BEGIN
-    INSERT OR REPLACE INTO sync_series_gone (extension_id, source_id, remote_id, removed_at)
-    VALUES (old.extension_id, old.source_id, old.remote_id, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER));
+    INSERT INTO sync_series_gone (extension_id, source_id, remote_id, removed_at)
+    VALUES (old.extension_id, old.source_id, old.remote_id, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))
+    ON CONFLICT (extension_id, source_id, remote_id) DO UPDATE SET removed_at = excluded.removed_at;
 END;
 
 CREATE TRIGGER sync_chapter_read AFTER UPDATE OF completed_at, manual_unread ON online_chapters
@@ -176,24 +179,24 @@ WHEN ((old.completed_at IS NULL) <> (new.completed_at IS NULL) OR old.manual_unr
 BEGIN
     INSERT INTO sync_chapter_meta (chapter_id, read_at) VALUES (new.id, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))
     ON CONFLICT (chapter_id) DO UPDATE SET read_at = excluded.read_at;
-    INSERT OR IGNORE INTO sync_dirty (kind, ref) VALUES ('series', new.series_id);
+    INSERT INTO sync_dirty (kind, ref) VALUES ('series', new.series_id) ON CONFLICT DO NOTHING;
 END;
 
 CREATE TRIGGER sync_chapter_started AFTER UPDATE OF reading_started_at, acknowledged_at ON online_chapters
 WHEN (old.reading_started_at IS NOT new.reading_started_at OR old.acknowledged_at IS NOT new.acknowledged_at)
      AND (SELECT applying FROM sync_state) = 0
 BEGIN
-    INSERT OR IGNORE INTO sync_dirty (kind, ref) VALUES ('series', new.series_id);
+    INSERT INTO sync_dirty (kind, ref) VALUES ('series', new.series_id) ON CONFLICT DO NOTHING;
 END;
 
 CREATE TRIGGER sync_progress_insert AFTER INSERT ON chapter_progress WHEN (SELECT applying FROM sync_state) = 0
 BEGIN
-    INSERT OR IGNORE INTO sync_dirty (kind, ref) SELECT 'series', series_id FROM online_chapters WHERE id = new.chapter_id;
+    INSERT INTO sync_dirty (kind, ref) SELECT 'series', series_id FROM online_chapters WHERE id = new.chapter_id ON CONFLICT DO NOTHING;
 END;
 
 CREATE TRIGGER sync_progress_update AFTER UPDATE ON chapter_progress WHEN (SELECT applying FROM sync_state) = 0
 BEGIN
-    INSERT OR IGNORE INTO sync_dirty (kind, ref) SELECT 'series', series_id FROM online_chapters WHERE id = new.chapter_id;
+    INSERT INTO sync_dirty (kind, ref) SELECT 'series', series_id FROM online_chapters WHERE id = new.chapter_id ON CONFLICT DO NOTHING;
 END;
 
 CREATE TRIGGER sync_member_insert AFTER INSERT ON series_collections WHEN (SELECT applying FROM sync_state) = 0
@@ -201,7 +204,7 @@ BEGIN
     INSERT INTO sync_member_meta (series_id, collection_id, member, changed_at)
     VALUES (new.series_id, new.collection_id, 1, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))
     ON CONFLICT (series_id, collection_id) DO UPDATE SET member = 1, changed_at = excluded.changed_at;
-    INSERT OR IGNORE INTO sync_dirty (kind, ref) VALUES ('series', new.series_id);
+    INSERT INTO sync_dirty (kind, ref) VALUES ('series', new.series_id) ON CONFLICT DO NOTHING;
 END;
 
 CREATE TRIGGER sync_member_delete AFTER DELETE ON series_collections WHEN (SELECT applying FROM sync_state) = 0
@@ -209,7 +212,7 @@ BEGIN
     INSERT INTO sync_member_meta (series_id, collection_id, member, changed_at)
     VALUES (old.series_id, old.collection_id, 0, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))
     ON CONFLICT (series_id, collection_id) DO UPDATE SET member = 0, changed_at = excluded.changed_at;
-    INSERT OR IGNORE INTO sync_dirty (kind, ref) VALUES ('series', old.series_id);
+    INSERT INTO sync_dirty (kind, ref) VALUES ('series', old.series_id) ON CONFLICT DO NOTHING;
 END;
 
 CREATE TRIGGER sync_collection_insert AFTER INSERT ON collections
@@ -219,7 +222,7 @@ BEGIN
      WHERE id = new.id AND sync_id IS NULL;
     INSERT INTO sync_collection_meta (collection_id, changed_at)
     SELECT new.id, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER) WHERE (SELECT applying FROM sync_state) = 0;
-    INSERT OR IGNORE INTO sync_dirty (kind, ref) SELECT 'collections', 0 WHERE (SELECT applying FROM sync_state) = 0;
+    INSERT INTO sync_dirty (kind, ref) SELECT 'collections', 0 WHERE (SELECT applying FROM sync_state) = 0 ON CONFLICT DO NOTHING;
 END;
 
 CREATE TRIGGER sync_collection_rename AFTER UPDATE OF name ON collections
@@ -227,68 +230,78 @@ WHEN old.name IS NOT new.name AND (SELECT applying FROM sync_state) = 0
 BEGIN
     INSERT INTO sync_collection_meta (collection_id, changed_at) VALUES (new.id, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))
     ON CONFLICT (collection_id) DO UPDATE SET changed_at = excluded.changed_at;
-    INSERT OR IGNORE INTO sync_dirty (kind, ref) VALUES ('collections', 0);
+    INSERT INTO sync_dirty (kind, ref) VALUES ('collections', 0) ON CONFLICT DO NOTHING;
 END;
 
 CREATE TRIGGER sync_collection_delete AFTER DELETE ON collections
 WHEN old.sync_id IS NOT NULL AND (SELECT applying FROM sync_state) = 0
 BEGIN
-    INSERT OR REPLACE INTO sync_collection_gone (sync_id, removed_at) VALUES (old.sync_id, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER));
-    INSERT OR IGNORE INTO sync_dirty (kind, ref) VALUES ('collections', 0);
+    INSERT INTO sync_collection_gone (sync_id, removed_at) VALUES (old.sync_id, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)) ON CONFLICT (sync_id) DO UPDATE SET removed_at = excluded.removed_at;
+    INSERT INTO sync_dirty (kind, ref) VALUES ('collections', 0) ON CONFLICT DO NOTHING;
 END;
 
 CREATE TRIGGER sync_mal_insert AFTER INSERT ON mal_links
 WHEN new.origin IN ('manual','none') AND (SELECT applying FROM sync_state) = 0
 BEGIN
-    INSERT OR REPLACE INTO sync_mal_meta (extension_id, source_id, remote_id, changed_at)
-    VALUES (new.extension_id, new.source_id, new.remote_id, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER));
-    INSERT OR IGNORE INTO sync_dirty (kind, ref)
-    SELECT 'series', id FROM online_series WHERE extension_id = new.extension_id AND source_id = new.source_id AND remote_id = new.remote_id;
+    INSERT INTO sync_mal_meta (extension_id, source_id, remote_id, changed_at)
+    VALUES (new.extension_id, new.source_id, new.remote_id, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))
+    ON CONFLICT (extension_id, source_id, remote_id) DO UPDATE SET changed_at = excluded.changed_at;
+    INSERT INTO sync_dirty (kind, ref)
+    SELECT 'series', id FROM online_series WHERE extension_id = new.extension_id AND source_id = new.source_id AND remote_id = new.remote_id
+    ON CONFLICT DO NOTHING;
 END;
 
 CREATE TRIGGER sync_mal_delete AFTER DELETE ON mal_links
 WHEN old.origin IN ('manual','none') AND (SELECT applying FROM sync_state) = 0
 BEGIN
-    INSERT OR REPLACE INTO sync_mal_meta (extension_id, source_id, remote_id, changed_at)
-    VALUES (old.extension_id, old.source_id, old.remote_id, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER));
-    INSERT OR IGNORE INTO sync_dirty (kind, ref)
-    SELECT 'series', id FROM online_series WHERE extension_id = old.extension_id AND source_id = old.source_id AND remote_id = old.remote_id;
+    INSERT INTO sync_mal_meta (extension_id, source_id, remote_id, changed_at)
+    VALUES (old.extension_id, old.source_id, old.remote_id, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))
+    ON CONFLICT (extension_id, source_id, remote_id) DO UPDATE SET changed_at = excluded.changed_at;
+    INSERT INTO sync_dirty (kind, ref)
+    SELECT 'series', id FROM online_series WHERE extension_id = old.extension_id AND source_id = old.source_id AND remote_id = old.remote_id
+    ON CONFLICT DO NOTHING;
 END;
 
 CREATE TRIGGER sync_repository_insert AFTER INSERT ON source_repositories WHEN (SELECT applying FROM sync_state) = 0
 BEGIN
-    INSERT OR REPLACE INTO sync_catalog_meta (kind, key, removed, changed_at) VALUES ('repository', new.url, 0, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER));
-    INSERT OR IGNORE INTO sync_dirty (kind, ref) VALUES ('catalog', 0);
+    INSERT INTO sync_catalog_meta (kind, key, removed, changed_at) VALUES ('repository', new.url, 0, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))
+    ON CONFLICT (kind, key) DO UPDATE SET removed = excluded.removed, changed_at = excluded.changed_at;
+    INSERT INTO sync_dirty (kind, ref) VALUES ('catalog', 0) ON CONFLICT DO NOTHING;
 END;
 
 CREATE TRIGGER sync_repository_update AFTER UPDATE OF enabled, public_key ON source_repositories
 WHEN (old.enabled IS NOT new.enabled OR old.public_key IS NOT new.public_key) AND (SELECT applying FROM sync_state) = 0
 BEGIN
-    INSERT OR REPLACE INTO sync_catalog_meta (kind, key, removed, changed_at) VALUES ('repository', new.url, 0, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER));
-    INSERT OR IGNORE INTO sync_dirty (kind, ref) VALUES ('catalog', 0);
+    INSERT INTO sync_catalog_meta (kind, key, removed, changed_at) VALUES ('repository', new.url, 0, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))
+    ON CONFLICT (kind, key) DO UPDATE SET removed = excluded.removed, changed_at = excluded.changed_at;
+    INSERT INTO sync_dirty (kind, ref) VALUES ('catalog', 0) ON CONFLICT DO NOTHING;
 END;
 
 CREATE TRIGGER sync_repository_delete AFTER DELETE ON source_repositories WHEN (SELECT applying FROM sync_state) = 0
 BEGIN
-    INSERT OR REPLACE INTO sync_catalog_meta (kind, key, removed, changed_at) VALUES ('repository', old.url, 1, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER));
-    INSERT OR IGNORE INTO sync_dirty (kind, ref) VALUES ('catalog', 0);
+    INSERT INTO sync_catalog_meta (kind, key, removed, changed_at) VALUES ('repository', old.url, 1, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))
+    ON CONFLICT (kind, key) DO UPDATE SET removed = excluded.removed, changed_at = excluded.changed_at;
+    INSERT INTO sync_dirty (kind, ref) VALUES ('catalog', 0) ON CONFLICT DO NOTHING;
 END;
 
 CREATE TRIGGER sync_extension_insert AFTER INSERT ON installed_extensions WHEN (SELECT applying FROM sync_state) = 0
 BEGIN
-    INSERT OR REPLACE INTO sync_catalog_meta (kind, key, removed, changed_at) VALUES ('extension', new.id, 0, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER));
-    INSERT OR IGNORE INTO sync_dirty (kind, ref) VALUES ('catalog', 0);
+    INSERT INTO sync_catalog_meta (kind, key, removed, changed_at) VALUES ('extension', new.id, 0, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))
+    ON CONFLICT (kind, key) DO UPDATE SET removed = excluded.removed, changed_at = excluded.changed_at;
+    INSERT INTO sync_dirty (kind, ref) VALUES ('catalog', 0) ON CONFLICT DO NOTHING;
 END;
 
 CREATE TRIGGER sync_extension_update AFTER UPDATE OF enabled, version ON installed_extensions
 WHEN (old.enabled IS NOT new.enabled OR old.version IS NOT new.version) AND (SELECT applying FROM sync_state) = 0
 BEGIN
-    INSERT OR REPLACE INTO sync_catalog_meta (kind, key, removed, changed_at) VALUES ('extension', new.id, 0, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER));
-    INSERT OR IGNORE INTO sync_dirty (kind, ref) VALUES ('catalog', 0);
+    INSERT INTO sync_catalog_meta (kind, key, removed, changed_at) VALUES ('extension', new.id, 0, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))
+    ON CONFLICT (kind, key) DO UPDATE SET removed = excluded.removed, changed_at = excluded.changed_at;
+    INSERT INTO sync_dirty (kind, ref) VALUES ('catalog', 0) ON CONFLICT DO NOTHING;
 END;
 
 CREATE TRIGGER sync_extension_delete AFTER DELETE ON installed_extensions WHEN (SELECT applying FROM sync_state) = 0
 BEGIN
-    INSERT OR REPLACE INTO sync_catalog_meta (kind, key, removed, changed_at) VALUES ('extension', old.id, 1, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER));
-    INSERT OR IGNORE INTO sync_dirty (kind, ref) VALUES ('catalog', 0);
+    INSERT INTO sync_catalog_meta (kind, key, removed, changed_at) VALUES ('extension', old.id, 1, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))
+    ON CONFLICT (kind, key) DO UPDATE SET removed = excluded.removed, changed_at = excluded.changed_at;
+    INSERT INTO sync_dirty (kind, ref) VALUES ('catalog', 0) ON CONFLICT DO NOTHING;
 END;
