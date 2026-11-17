@@ -111,7 +111,7 @@ Gerar os instaladores pede a chave de assinatura das atualizações ([`docs/RELE
 npm run tauri build -- --config "{\"bundle\":{\"createUpdaterArtifacts\":false}}"
 ```
 
-Os arquivos de teste são gerados por `src-tauri/examples/make_fixtures.rs` (desenhos geométricos
+Os arquivos de teste são gerados por `crates/prancha-core/examples/make_fixtures.rs` (desenhos geométricos
 próprios; nenhum quadrinho comercial no repositório). Resultados: [`docs/TEST_REPORT.md`](docs/TEST_REPORT.md).
 
 Os testes da Leitura Guiada só rodam com páginas reais: os quadrinhos ficam no seu disco e o gabarito em
@@ -134,20 +134,24 @@ O instalador baixa o WebView2 se ele não estiver presente.
 
 ### Renomear o aplicativo
 
-O nome está centralizado em dois pontos: `src/app/config.ts` (`APP_NAME`, usado em toda a interface)
-e `src-tauri/tauri.conf.json` (`productName` e `app.windows[0].title`, usados no executável e no instalador).
+O nome está centralizado em dois pontos: `apps/desktop/src/app/config.ts` (`APP_NAME`, usado em toda a interface)
+e `apps/desktop/src-tauri/tauri.conf.json` (`productName` e `app.windows[0].title`, usados no executável e no instalador).
 
 ## Estrutura do projeto
 
 | Pasta | Conteúdo |
 |---|---|
-| `src/` | Interface em React: `features/` (biblioteca, leitor, configuração inicial, configurações), `domain/` (regras sem interface), `services/` e `components/` |
-| `src-tauri/` | Backend em Rust: formatos, importação, capas, banco de dados, em `src/guided/` a detecção da Leitura Guiada e em `src/extensions/` repositórios, runtime, fontes e downloads |
+| `apps/desktop/` | Aplicativo para Windows: a interface em React (`src/`, com `features/`, `components/` e `app/`), o projeto Tauri (`src-tauri/`, com o `tauri.conf.json`, os ícones e as permissões) e os testes de interface (`tests/unit/`), no executável real (`tests/e2e/`) e de atualização (`tests/update/`) |
+| `apps/android/` | Aplicativo para Android, em desenvolvimento: o projeto Tauri (`src-tauri/`) com o projeto Gradle (`gen/android`) e os plugins Kotlin (arquivos do seletor do sistema, tela, downloads e verificação em segundo plano, cofre do MyAnimeList e atualização pelo APK) |
+| `packages/shared/` | O que a interface usa sem depender de tela: `domain/` (tipos e regras) e `services/` (chamadas ao backend, eventos, PDF, sons, cache) |
+| `crates/prancha-core/` | Núcleo em Rust, sem Tauri: formatos, importação, capas, banco de dados (`migrations/`), em `src/guided/` a detecção da Leitura Guiada, em `src/extensions/` repositórios, runtime, fontes e downloads, MyAnimeList e telemetria |
+| `crates/prancha-app/` | Os comandos que a interface chama, o protocolo `prancha://` e o atualizador, sobre o núcleo |
+| `vendor/` | Cópia corrigida do `unrar_sys` para compilar para o Android ([`vendor/README.md`](vendor/README.md)) |
 | `extensions/` | Contrato WIT, SDK, modelo, ferramenta `prancha-ext` e a extensão e o repositório de demonstração |
 | `site/` | Site oficial, publicado na Vercel, com as funções da telemetria e das métricas do GitHub (`api/`), o painel administrativo (`admin/`) e a página de [visão geral do projeto](docs/METRICAS_DO_PROJETO.md) (`visao-geral.html`) |
 | `supabase/` | Migrações e testes do banco da telemetria |
 | `scripts/` | Geração do site, da página de downloads, das notas de versão e das licenças de terceiros |
-| `tests/` | Testes de interface (`unit/`) e no executável real (`e2e/`) |
+| `tests/` | Testes do repositório (versão, changelog, funções do site) e, fora do git, as páginas reais (`real/`) e os arquivos temporários dos testes (`.tmp/`) |
 | `docs/` | [Arquitetura](docs/ARCHITECTURE.md), [extensões](docs/extensions/README.md), [relatório de testes](docs/TEST_REPORT.md), [como publicar uma versão](docs/RELEASING.md), [telemetria](docs/TELEMETRY.md), [sincronização entre aparelhos](docs/SINCRONIZACAO.md), [aviso de privacidade](docs/PRIVACIDADE.md), [visão geral do projeto](docs/METRICAS_DO_PROJETO.md) e [plano de implementação](docs/IMPLEMENTATION_PLAN.md) |
 
 ## Versões

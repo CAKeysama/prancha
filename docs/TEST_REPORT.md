@@ -111,7 +111,7 @@ Atualizações, nos temas escuro e claro. Builds de depuração não acessam a r
 33. Novidades depois de atualizar, sem repetir na abertura seguinte.
 34. Histórico e menor janela (720×520), sem rolagem horizontal.
 
-### Atualização instalada de verdade (`tests/update/run.mjs`)
+### Atualização instalada de verdade (`apps/desktop/tests/update/run.mjs`)
 Instala um pacote NSIS assinado e atualiza da 9.8.0 para a 9.8.1. O pacote, a assinatura e o instalador são reais. O servidor é local, a chave é descartável e o produto tem outro nome, para não tocar no Prancha instalado. O GitHub não participa.
 
 - **Consulta:** sem versão nova, nada aparece. Servidor travado não segura a abertura nem mostra erro. Sem conexão e com erro do servidor, o app abre normalmente e sem alerta. Release sem pacote para o sistema, ou com pacote fora das releases oficiais, não é oferecida.
@@ -143,7 +143,7 @@ Em 2026-11-03, a v0.4.0 foi conferida do mesmo jeito, pelos endereços públicos
 
 Na execução normal, nenhum teste depende de site externo. O servidor é local e controlado pelo teste, os componentes WebAssembly são compilados de verdade (`extensions/test-fixture`, `extensions/template` e `extensions/demo`) e as assinaturas usam chaves geradas na hora. Esse servidor só é alcançável pela exceção de rede para `127.0.0.1`, que existe apenas em builds de depuração.
 
-### Rust (`src-tauri/tests/extensions.rs` e testes de unidade em `src/extensions/`)
+### Rust (`crates/prancha-core/tests/extensions.rs` e testes de unidade em `src/extensions/`)
 - **Isolamento:** laço infinito para por tempo e por cancelamento, o excesso de processamento esgota o combustível, memória acima do limite é recusada, estouro de pilha e pânico viram erro e o motor continua funcionando. Arquivos e ambiente não existem para a extensão, e um componente que importa WASI nem carrega.
 - **Rede da extensão:** exige a capacidade e um host autorizado, redirecionamentos não saem da lista, cabeçalhos privados são recusados, resposta grande não chega à extensão e o número de requisições por chamada é limitado.
 - **Rede do Prancha:** endereços privados, loopback, link-local e metadados são bloqueados na URL e na resolução de DNS. Redirecionamentos são conferidos de novo, até 3. Limite de tamanho sem tamanho declarado, servidor lento, cancelamento durante a espera, tipo de conteúdo e `ETag`.
@@ -155,10 +155,10 @@ Na execução normal, nenhum teste depende de site externo. O servidor é local 
 - **Demonstração:** do repositório à leitura sem rede, sem interface.
 - **Banco:** migração em banco novo e em banco usado da 0.2.0, regras de exclusão e unicidade.
 
-### Vitest (`tests/unit/online.test.tsx`, IPC simulado)
-Telas de Repositórios, Extensões, Explorar, obra e Downloads: revisão de confiança, mudança de chave, catálogo com paginação, revisão de permissões antes de atualizar, pesquisa com fonte falhando, seleção de capítulos e estados de download. Também as regras sem interface de `src/domain/online.ts`.
+### Vitest (`apps/desktop/tests/unit/online.test.tsx`, IPC simulado)
+Telas de Repositórios, Extensões, Explorar, obra e Downloads: revisão de confiança, mudança de chave, catálogo com paginação, revisão de permissões antes de atualizar, pesquisa com fonte falhando, seleção de capítulos e estados de download. Também as regras sem interface de `packages/shared/src/domain/online.ts`.
 
-### E2E (`tests/e2e/extensions.spec.ts`, executável real)
+### E2E (`apps/desktop/tests/e2e/extensions.spec.ts`, executável real)
 O executável real fala com um servidor HTTP local que publica o repositório de demonstração, gerado na hora com uma chave descartável. Os 16 passos da definição de pronto, nesta ordem:
 
 | Passos | O que acontece |
@@ -224,8 +224,8 @@ Na execução normal, estes testes também não dependem de site externo. Leitur
 ### Automático
 - **Rust:** o filtro +18 começa ligado e decide o que aparece, o catálogo só mostra extensões +18 com ele desligado, uma obra marcada +18 nos detalhes é recusada e sai das listas, um gênero adulto marca a obra, um capítulo é lido sem gravar nada, próximo e anterior seguem a ordem de leitura, a leitura online continua de onde parou, uma obra guardada mostra onde parou e nunca é limpa, uma mudança de chave do Mihon para tudo até a confirmação, e os cookies de um site trocam só o que era desse site.
 - **Vitest:** sem o plugin, o menu não tem nada das fontes, e instalar traz tudo de volta. Remover pergunta antes e para o que estava rodando. Todo capítulo tem Ler, sem baixar. Favoritar e guardar em coleção valem para a obra. Um site com verificação oferece abrir o site, tenta de novo quando a janela fecha e diz quando o site liberou e recusou mesmo assim.
-- **E2E (`tests/e2e/extensions.spec.ts`):** clicar, ler e passar de um capítulo para o outro sem botão e sem baixar. A obra guardada vai para o início, a biblioteca e as coleções, e mostra onde parou.
-- **E2E (`tests/e2e/verification.spec.ts`):** com um site local no lugar da fonte, a janela se apresenta com o mesmo navegador do servidor, a página dela recebe 403 ao pedir algo da biblioteca, e o que o site liberou chega ao arquivo de cookies do servidor.
+- **E2E (`apps/desktop/tests/e2e/extensions.spec.ts`):** clicar, ler e passar de um capítulo para o outro sem botão e sem baixar. A obra guardada vai para o início, a biblioteca e as coleções, e mostra onde parou.
+- **E2E (`apps/desktop/tests/e2e/verification.spec.ts`):** com um site local no lugar da fonte, a janela se apresenta com o mesmo navegador do servidor, a página dela recebe 403 ao pedir algo da biblioteca, e o que o site liberou chega ao arquivo de cookies do servidor.
 
 ### Conferência avulsa com sites de verdade
 Em 2026-11-03, uma vez, o build de depuração percorreu o link da Keiyoushi (`https://raw.githubusercontent.com/keiyoushi/extensions/repo`) com dados isolados e o Suwayomi-Server v2.4.2366. Ela usa a internet e sites de terceiros, por isso não fica no repositório, e nenhuma captura dela foi guardada. Esse build ainda não tinha a classificação +18 por gênero.

@@ -1,0 +1,44 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Prancha",
+  "version": "../../../package.json",
+  "identifier": "app.prancha",
+  "build": {
+    "beforeBuildCommand": "npm run build -w @prancha/desktop",
+    "frontendDist": "../../desktop/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Prancha",
+        "backgroundColor": "#0D1117"
+      }
+    ],
+    "security": {
+      "csp": {
+        "default-src": "'self'",
+        "img-src": "'self' data: blob: http://prancha.localhost prancha:",
+        "connect-src": "'self' ipc: http://ipc.localhost http://prancha.localhost prancha:",
+        "style-src": "'self' 'unsafe-inline'",
+        "font-src": "'self' data:",
+        "worker-src": "'self' blob:",
+        "script-src": "'self' 'wasm-unsafe-eval'"
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDUxRjkyMzNCRkZCNUI0QkEKUldTNnRMWC9PeVA1VVpJRkZvL1hQM1RGdmRNd2RWWUh2YlJvLzNzMy8wUThIU1pWQVA4Yy9lNHoK",
+      "endpoints": ["https://github.com/CAKeysama/prancha/releases/latest/download/latest.json"]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "publisher": "Prancha",
+    "shortDescription": "Leitor e organizador de quadrinhos",
+    "category": "Utility",
+    "copyright": "© 2026 Prancha",
+    "icon": ["../../desktop/src-tauri/icons/32x32.png", "../../desktop/src-tauri/icons/128x128.png", "../../desktop/src-tauri/icons/icon.ico", "../../desktop/src-tauri/icons/icon.png"]
+  }
+}

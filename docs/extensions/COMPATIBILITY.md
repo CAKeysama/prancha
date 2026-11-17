@@ -18,6 +18,16 @@ A decisão e as alternativas estão na [ADR 0002](../adr/0002-repositorios-do-mi
 4. As fontes aparecem em Explorar, e os capítulos abrem direto, sem baixar. O que você baixar vira CBZ na biblioteca, como nas outras extensões, e abre sem internet e sem o Suwayomi.
 5. Remover o plugin **Fontes de leitura** para o Suwayomi na hora, mas não apaga os 229 MB nem as extensões, para que tudo volte igual se você instalar de novo.
 
+## No Android
+
+No celular não há Suwayomi: as extensões do Mihon são APKs do Android, e o próprio Prancha as carrega, como o Mihon faz.
+
+1. O Prancha baixa o APK que o `index.json` anuncia (`apkUrl`) e confere, antes de rodar qualquer código dele, que é uma extensão do Mihon com o nome do índice, numa versão da API que o app tem (1.4 a 1.6) e assinada pelo certificado cuja impressão digital o repositório anuncia.
+2. O APK fica na pasta do app, só para leitura, e roda dentro do Prancha sobre a mesma API que o Mihon oferece. O código dessa API foi copiado do Mihon e está em `apps/android/src-tauri/gen/android/app/src/main/java/eu/kanade/tachiyomi`, com o que mudou anotado ali.
+3. Sem isolamento, como no Windows: a extensão tem acesso aos dados do app e à internet.
+4. As obras, os capítulos e as imagens guardam o endereço que a extensão deu, com o número da fonte na frente (`<fonte>:<endereço>`), e não o identificador interno do Suwayomi.
+5. **Verificar no site** abre o site numa tela do app, com o navegador do sistema que as extensões usam. A tela fecha sozinha quando o site libera, ou com **Pronto**, e não há cookies para entregar a ninguém depois.
+
 ## O que muda em relação às extensões do Prancha
 
 | | Extensão do Prancha | Extensão do Mihon |
@@ -51,7 +61,7 @@ A janela é anônima e não alcança nada do Prancha. Ela se apresenta com o mes
 
 A liberação expira, e aí é só verificar de novo. O site também pode recusar mesmo depois de liberar, porque nem tudo que ele confere é igual entre a janela e o servidor. Em 2026-11-03 foi o que aconteceu com a Lycan Toons, e o Prancha avisa quando isso acontece. A passagem reinicia o servidor, então um download em andamento pode falhar e pedir nova tentativa.
 
-- **APKs não são executados.** O que roda é o `.jar` publicado no `index.json`.
+- **No Windows, APKs não são executados.** O que roda é o `.jar` publicado no `index.json`.
 
 ## Formato de um repositório Keiyoushi
 

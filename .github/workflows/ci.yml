@@ -59,8 +59,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
-            src-tauri -> target
-            extensions -> ../src-tauri/target/extensions-wasm
+            . -> target
+            extensions -> ../target/extensions-wasm
           # Muda junto com o opt-level das dependências abaixo, para não reaproveitar dependências compiladas de outro jeito.
           key: deps-opt2
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -71,11 +71,78 @@ jobs:
       - run: npm run build
 
       # Os testes de detecção (--test guided) e o E2E usam páginas reais, que não vão para o git: rodam localmente, antes de cada versão.
+      # --workspace testa o núcleo (crates/prancha-core) e os comandos (crates/prancha-app) e compila o aplicativo de desktop.
       # As dependências saem otimizadas (o código do Prancha não): em modo debug, o Cranelift do wasmtime compila cada extensão
       # dos testes muito devagar. Só muda a velocidade, não o que é testado; elas ficam no cache e só recompilam quando mudam.
       - name: Testes do backend
         shell: bash
-        run: cargo test --manifest-path src-tauri/Cargo.toml --lib --test backend --test extensions --config 'profile.dev.package."*".opt-level=2'
+        run: cargo test --workspace --lib --test backend --test content --test extensions --config 'profile.dev.package."*".opt-level=2'
+
+  # O app Android (apps/android) usa o mesmo núcleo e os mesmos comandos. Gera o APK de depuração com o SDK e o NDK
+  # que já vêm no Ubuntu do GitHub, inclusive o código em C e C++ (UnRAR, SQLite, ring) e o plugin Kotlin de arquivos.
+  # O APK fica nos artefatos da execução, para testar no celular; nada vai para as releases.
+  android:
+    name: App Android (APK de teste)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CARGO_PROFILE_DEV_DEBUG: 0
+      # O Rust otimizado deixa o APK de depuração com a velocidade real de leitura; o APK continua inspecionável.
+      CARGO_PROFILE_DEV_OPT_LEVEL: 2
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Prepara o Rust
+        run: rustup toolchain install stable --profile minimal --target aarch64-linux-android --target x86_64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+          key: android
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - run: npm ci
+
+      # API 24 é o mínimo do Tauri para Android; o Tauri escolhe os compiladores do NDK a partir do NDK_HOME.
+      # ARM para celulares e x86_64 para o emulador do Android, num APK só.
+      - name: Gera o APK de depuração
+        working-directory: apps/android
+        run: |
+          export NDK_HOME="$ANDROID_NDK_LATEST_HOME"
+          npx tauri android build --debug --apk --target aarch64 --target x86_64 --ci
+
+      # O build passa mesmo quando falta o Kotlin de um plugin, e o app só fecha ao abrir no celular: confere as classes no APK.
+      - name: Confere os plugins Android no APK
+        run: |
+          apk=$(find apps/android/src-tauri/gen/android/app/build/outputs/apk -name '*.apk' | head -n 1)
+          dex=$(mktemp -d)
+          unzip -q -o "$apk" 'classes*.dex' -d "$dex"
+          for class in app/tauri/dialog/DialogPlugin com/plugin/fs/FsPlugin app/tauri/notification/NotificationPlugin app/tauri/opener/OpenerPlugin app/prancha/FilesPlugin app/prancha/ScreenPlugin app/prancha/BackgroundPlugin app/prancha/DownloadService app/prancha/FollowWorker app/prancha/VaultPlugin app/prancha/UpdatePlugin app/prancha/MihonPlugin app/prancha/VerifyActivity eu/kanade/tachiyomi/source/online/HttpSource okhttp3/OkHttpClient org/jsoup/Jsoup rx/Observable uy/kohesive/injekt/api/InjektScope; do
+            if ! grep -q -a "L$class;" "$dex"/classes*.dex; then
+              echo "::error::O APK não tem a classe $class."
+              exit 1
+            fi
+          done
+          # O FollowWorker chama o Rust por este nome: sem ele, a verificação em segundo plano falha só no celular.
+          unzip -q -o "$apk" 'lib/*/libprancha_android_lib.so' -d "$dex"
+          for lib in "$dex"/lib/*/libprancha_android_lib.so; do
+            if ! grep -q -a "Java_app_prancha_PranchaNative_checkFollowing" "$lib"; then
+              echo "::error::$lib não exporta a ponte da verificação em segundo plano."
+              exit 1
+            fi
+          done
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: prancha-android-debug
+          path: apps/android/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+          retention-days: 14
 
   # Confere o Client ID do MyAnimeList (variável do repositório MAL_CLIENT_ID) contra a API real: uma pesquisa pública só com
   # ele, sem conta. Fica fora da proteção da main porque depende de um serviço de fora; o build da versão confere de novo.
@@ -121,7 +188,7 @@ jobs:
   # Um nome só para a proteção da main: passa apenas quando todas as verificações passam.
   checks:
     name: Tipos, lint, testes e backend
-    needs: [frontend, backend]
+    needs: [frontend, backend, android]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

@@ -34,7 +34,7 @@ A posição continua onde estava (`chapter_progress`, ou `reading_progress` quan
 
 ### Quem decide o que é ler
 
-O leitor (`src/domain/reading-lifecycle.ts`) sabe como a pessoa chegou a cada página:
+O leitor (`packages/shared/src/domain/reading-lifecycle.ts`) sabe como a pessoa chegou a cada página:
 
 | Navegação | Inicia | Conclui |
 |---|---|---|

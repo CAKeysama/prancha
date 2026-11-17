@@ -1,39 +1,29 @@
 {
   "name": "prancha",
   "private": true,
-  "version": "0.12.2",
+  "version": "0.13.0",
   "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "scripts": {
-    "predev": "node scripts/copy-pdfjs-assets.mjs",
-    "dev": "vite",
-    "prebuild": "node scripts/copy-pdfjs-assets.mjs",
-    "build": "tsc -b && vite build",
+    "dev": "npm run dev -w @prancha/desktop",
+    "build": "npm run build -w @prancha/desktop",
     "typecheck": "tsc -b --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
-    "e2e:build": "node scripts/build-e2e.mjs",
-    "test:e2e": "playwright test",
-    "test:update": "node tests/update/run.mjs",
-    "licenses": "node scripts/generate-licenses.mjs",
+    "test:rust": "cargo test -p prancha-core -p prancha-app",
+    "e2e:build": "npm run e2e:build -w @prancha/desktop",
+    "test:e2e": "npm run test:e2e -w @prancha/desktop",
+    "test:update": "npm run test:update -w @prancha/desktop",
+    "licenses": "npm run licenses -w @prancha/desktop",
     "version:bump": "node scripts/version.mjs bump",
     "version:check": "node scripts/version.mjs check",
     "site:build": "node scripts/build-site.mjs",
     "site:preview": "vite site --port 4321 --strictPort",
-    "tauri": "tauri"
-  },
-  "dependencies": {
-    "@fontsource-variable/atkinson-hyperlegible-next": "^5.3.0",
-    "@fontsource-variable/hanken-grotesk": "^5.3.0",
-    "@fontsource-variable/ibm-plex-sans": "^5.3.0",
-    "@fontsource/ibm-plex-mono": "^5.3.0",
-    "@tanstack/react-virtual": "^3.14.21",
-    "@tauri-apps/api": "^2.12.4",
-    "lucide-react": "^1.60.0",
-    "pdfjs-dist": "^6.4.299",
-    "react": "^19.3.1",
-    "react-dom": "^19.3.1"
+    "tauri": "npm run tauri -w @prancha/desktop --"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

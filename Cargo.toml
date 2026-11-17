@@ -1,0 +1,25 @@
+# Workspace do Rust: o núcleo sem Tauri, os comandos do aplicativo e os aplicativos de desktop e de Android.
+# As extensões em extensions/ ficam num workspace à parte, porque compilam para wasm32.
+[workspace]
+resolver = "3"
+members = ["apps/desktop/src-tauri", "apps/android/src-tauri", "crates/prancha-core", "crates/prancha-app"]
+exclude = ["extensions"]
+
+# A versão é uma só para o repositório inteiro (ver CONTRIBUTING.md).
+[workspace.package]
+version = "0.13.0"
+authors = ["Prancha"]
+edition = "2024"
+license = "MIT"
+rust-version = "1.95"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+strip = true
+panic = "unwind"
+
+# Cópia do unrar_sys com o build.rs corrigido para compilar para o Android (ver vendor/README.md).
+[patch.crates-io]
+unrar_sys = { path = "vendor/unrar_sys" }

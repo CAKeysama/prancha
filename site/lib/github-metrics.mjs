@@ -72,6 +72,7 @@ const median = (xs) => {
 export function installerKind(name) {
   if (name.endsWith("-setup.exe")) return "exe";
   if (name.endsWith(".msi")) return "msi";
+  if (name.endsWith(".apk")) return "apk";
   return null;
 }
 
@@ -95,7 +96,7 @@ export function summarizeReleases(raw) {
       };
     });
   const total = releases.reduce((s, r) => s + r.downloads, 0);
-  const byKind = { exe: 0, msi: 0 };
+  const byKind = { exe: 0, msi: 0, apk: 0 };
   for (const r of releases) for (const a of r.assets) byKind[a.kind] += a.downloads;
   return {
     latest: releases[0] ?? null,

@@ -5,11 +5,15 @@
     "lib": ["ES2023", "DOM"],
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "types": ["node"],
+    "types": ["node", "vite/client", "vitest/globals"],
     "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "resolveJsonModule": true,
     "skipLibCheck": true,
     "noEmit": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["vite.config.ts", "playwright.config.ts", "tests/e2e", "scripts/*.ts"]
+  "include": ["vitest.config.ts", "tests/*.ts"]
 }

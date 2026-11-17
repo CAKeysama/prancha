@@ -3,6 +3,32 @@
 Tudo o que mudou em cada versão do Prancha. O projeto segue o [versionamento semântico](https://semver.org/lang/pt-BR/),
 e as notas das releases e a [página de downloads](https://cakeysama.github.io/prancha/) são geradas a partir deste arquivo.
 
+## [0.13.0] - 2026-11-16
+
+O Prancha chega ao Android: a mesma biblioteca, o leitor, as fontes de leitura, o MyAnimeList e as atualizações, com uma interface de toque. O app do Windows não muda.
+
+### Novidades
+
+- O núcleo do Prancha compila para o Android: no celular, a Lixeira fica desligada (apagar o arquivo original avisa que ainda não dá), e as conexões HTTPS usam os certificados do sistema do Android.
+- O app Android ganha um projeto próprio em `apps/android` (identificador `app.prancha`). Ele escolhe arquivos e pastas pelo seletor do sistema e guarda a permissão de leitura, então a biblioteca continua abrindo depois de reiniciar o celular. CBZ, CBR, CB7, CBT, PDF e pastas de imagens são lidos direto pelo endereço que o Android entrega, sem copiar o arquivo.
+- No Android, abrir um CBZ, CBR, CB7, CBT ou PDF pelo gerenciador de arquivos põe a HQ na biblioteca e abre o leitor. Quando o outro app só dá acesso enquanto o Prancha está aberto, a HQ é copiada para a pasta do app, para não sumir da biblioteca depois.
+- **Interface de toque no Android**: barra de navegação embaixo (Início, Biblioteca, Explorar quando as fontes de leitura estão ligadas, e Mais), seções da biblioteca em abas, menus que viram folhas subindo da borda, toque longo numa HQ para as ações e botões maiores para o dedo. O botão Voltar do sistema fecha o que estiver aberto, volta uma tela, volta ao Início e, só no segundo toque, sai. O conteúdo fica entre as barras do sistema, que acompanham o tema do app.
+- **Leitor no Android**: toque nas bordas vira a página (invertido na leitura da direita para a esquerda), arrastar para o lado também, pinça amplia no ponto tocado, dois toques ampliam 2,5× e o meio mostra ou esconde os controles. A leitura é sempre em tela cheia, e as páginas vêm reduzidas à largura da tela (e de novo maiores ao ampliar), para o WebView gastar menos memória. Opções que só fazem sentido com mouse e teclado (roda do mouse, atalhos de teclado, abrir a pasta de dados, mandar para a Lixeira) não aparecem no celular.
+- **Fontes de leitura no Android**: as extensões ficam guardadas já compiladas, então abrir uma fonte depois de reiniciar o app não espera a compilação de novo. Os downloads continuam com o app fora da tela, com um aviso fixo "Baixando capítulos" enquanto houver fila. A cada 6 horas, com internet e bateria boa, o Prancha verifica as obras acompanhadas mesmo fechado e avisa dos capítulos novos. A permissão de notificações do Android 13 ou mais novo é pedida no primeiro aviso, não ao abrir o app. Repositórios do Mihon, como o Keiyoushi, também funcionam no celular: lá as extensões são carregadas pelo próprio app, como o Mihon faz, depois de conferir a assinatura do repositório, e o botão **Verificar no site** abre o site numa tela do app.
+- **MyAnimeList no Android**: o acesso à conta fica cifrado por uma chave do próprio celular, no Android Keystore, como o Windows faz no computador. A telemetria opcional passa a identificar o app Android (sistema Android, instalação pelo APK).
+- **Atualizações no Android**: as releases passam a trazer o APK do Android (ARM de 64 bits), e o app avisa da versão nova como no Windows. O APK é baixado direto para o celular e só vai para o instalador do Android depois de conferir a assinatura do Prancha, a versão assinada e o SHA-256 publicado; o Android pede a confirmação. A página de downloads ganha o botão **Baixar para Android** quando a versão tem APK.
+
+### Melhorias
+
+- O código foi reorganizado em um monorepo: o aplicativo do Windows em `apps/desktop`, o núcleo em Rust em `crates/prancha-core` (sem depender do Tauri), os comandos do app em `crates/prancha-app` e o código da interface que não depende de tela em `packages/shared`. As verificações do GitHub geram também um APK de teste do Android, que fica nos artefatos da execução.
+
+### Correções
+
+- A compilação para o Android a partir do Windows escolhia as bibliotecas do sistema pelo computador que compila, e não pelo celular; e a leitura de CBR não compilava para o Android (a função `lutimes` não existe nas versões mais antigas que o app aceita). Uma cópia corrigida do `unrar_sys` fica em `vendor/` até a correção sair no pacote.
+- No Android, um CBR escolhido pelo seletor do sistema não abria ("O arquivo não foi encontrado"): o leitor de RAR reabria o arquivo pelo caminho `/proc/self/fd/…`, que não aponta para um arquivo de verdade. A cópia do `unrar_sys` em `vendor/` passa a usar o descritor que o app já tem aberto.
+- PDFs não abriam nos celulares com o WebView anterior à versão 140 ("a.toHex is not a function"): o leitor de PDF passa a usar a versão do PDF.js compatível com navegadores mais antigos.
+- No Android, trocar para o tema claro com o app aberto deixava a faixa atrás das barras do sistema escura, com os ícones escuros por cima; ao abrir já no tema claro, a faixa ficava lilás. Voltar de uma tela aberta por um botão de outra (como Repositórios, aberta em Extensões) voltava ao Início em vez da tela anterior.
+
 ## [0.12.2] - 2026-11-15
 
 Prepara o banco na nuvem da sincronização entre PC e celular. O app não muda.

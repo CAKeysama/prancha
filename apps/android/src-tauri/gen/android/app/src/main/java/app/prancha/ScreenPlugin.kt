@@ -1,0 +1,144 @@
+package app.prancha
+
+import android.app.Activity
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
+import android.os.Build
+import android.view.View
+import android.view.WindowManager
+import android.webkit.WebView
+import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
+import androidx.activity.enableEdgeToEdge
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import app.tauri.annotation.Command
+import app.tauri.annotation.InvokeArg
+import app.tauri.annotation.TauriPlugin
+import app.tauri.plugin.Invoke
+import app.tauri.plugin.JSObject
+import app.tauri.plugin.Plugin
+
+@InvokeArg
+class ImmersiveArgs {
+  var on: Boolean = false
+}
+
+@InvokeArg
+class BarsArgs {
+  var dark: Boolean = true
+  lateinit var color: String
+}
+
+/**
+ * A tela do app no Android: o conteúdo fica entre as barras do sistema (a interface não desenha embaixo delas),
+ * o leitor usa a tela inteira e o Voltar na tela inicial manda o app para segundo plano, como os apps do sistema.
+ * Também diz ao Rust se o app está na tela, para os avisos do sistema. O Rust chama estes comandos (crates/prancha-app/src/android.rs).
+ */
+@TauriPlugin
+class ScreenPlugin(private val activity: Activity) : Plugin(activity) {
+  private val content: View get() = activity.findViewById(android.R.id.content)
+
+  override fun load(webView: WebView) {
+    activity.runOnUiThread {
+      // Com a tela de ponta a ponta (MainActivity), o espaço das barras e do teclado vira margem do conteúdo. No
+      // modo imersivo as barras somem, a margem vai a zero e a página ocupa a tela toda.
+      ViewCompat.setOnApplyWindowInsetsListener(content) { view, insets ->
+        val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+        val keyboard = insets.getInsets(WindowInsetsCompat.Type.ime())
+        view.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, keyboard.bottom))
+        WindowInsetsCompat.CONSUMED
+      }
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        activity.window.attributes = activity.window.attributes.apply {
+          layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+      }
+      ViewCompat.requestApplyInsets(content)
+    }
+  }
+
+  /** O app está na tela: os avisos do sistema só aparecem quando ele não está (com ele aberto, a central basta). */
+  @Volatile private var visible = true
+
+  override fun onResume(activity: AppCompatActivity) {
+    visible = true
+  }
+
+  override fun onPause(activity: AppCompatActivity) {
+    visible = false
+  }
+
+  @Command
+  fun isVisible(invoke: Invoke) {
+    invoke.resolve(JSObject().put("visible", visible))
+  }
+
+  private fun controller() = WindowCompat.getInsetsController(activity.window, activity.window.decorView)
+
+  /** Leitor: some com as barras do sistema; deslizar da borda mostra elas por um instante. */
+  @Command
+  fun setImmersive(invoke: Invoke) {
+    val on = invoke.parseArgs(ImmersiveArgs::class.java).on
+    activity.runOnUiThread {
+      val c = controller()
+      if (on) {
+        c.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        c.hide(WindowInsetsCompat.Type.systemBars())
+      } else {
+        c.show(WindowInsetsCompat.Type.systemBars())
+      }
+      invoke.resolve()
+    }
+  }
+
+  /**
+   * A faixa atrás das barras na cor do tema do app, com ícones claros ou escuros conforme o tema. O estilo das barras
+   * é refeito pelo tema do app, não pelo do sistema: o `enableEdgeToEdge` da MainActivity escolhe pelo modo escuro do
+   * celular, e um app claro num celular escuro ficava com a faixa escura e os ícones escuros por cima.
+   */
+  @Command
+  fun setBars(invoke: Invoke) {
+    val args = invoke.parseArgs(BarsArgs::class.java)
+    activity.runOnUiThread {
+      val color = try {
+        Color.parseColor(fullHex(args.color))
+      } catch (e: IllegalArgumentException) {
+        null // Cor que o Android não entende: fica a do tema do sistema.
+      }
+      if (color != null) {
+        content.setBackgroundColor(color)
+        activity.window.setBackgroundDrawable(ColorDrawable(color))
+      }
+      val bars = if (args.dark) SystemBarStyle.dark(Color.TRANSPARENT) else SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
+      (activity as ComponentActivity).enableEdgeToEdge(bars, bars)
+      val c = controller()
+      c.isAppearanceLightStatusBars = !args.dark
+      c.isAppearanceLightNavigationBars = !args.dark
+      invoke.resolve()
+    }
+  }
+
+  /**
+   * O build da interface encurta as cores (`#ffffff` vira `#fff`), e o `Color.parseColor` só aceita 6 ou 8 dígitos.
+   * `#rgb` e `#rgba` viram `#rrggbb` e `#aarrggbb`; o resto passa como veio.
+   */
+  private fun fullHex(color: String): String {
+    val hex = color.trim().removePrefix("#")
+    if (!color.trim().startsWith("#") || (hex.length != 3 && hex.length != 4)) return color.trim()
+    val d = hex.map { "$it$it" }
+    return if (d.size == 3) "#" + d.joinToString("") else "#" + d[3] + d[0] + d[1] + d[2]
+  }
+
+  /** Voltar na tela inicial: o app vai para segundo plano em vez de fechar, e volta onde estava. */
+  @Command
+  fun moveToBack(invoke: Invoke) {
+    activity.runOnUiThread {
+      activity.moveTaskToBack(true)
+      invoke.resolve()
+    }
+  }
+}

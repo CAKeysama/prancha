@@ -54,6 +54,7 @@ export function parseSums(text) {
 export function assetLabel(name) {
   if (name.endsWith("-setup.exe")) return "Instalador para Windows (recomendado)";
   if (name.endsWith(".msi")) return "Pacote MSI para Windows";
+  if (name.endsWith(".apk")) return "App para Android (APK)";
   return name;
 }
 

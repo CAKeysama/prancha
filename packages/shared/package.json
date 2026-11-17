@@ -1,0 +1,13 @@
+{
+  "name": "@prancha/shared",
+  "private": true,
+  "type": "module",
+  "description": "Tipos, regras e serviços da interface do Prancha que não dependem de tela: usados pelo desktop e, depois, pelo Android.",
+  "exports": {
+    "./*": "./src/*.ts"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.12.4",
+    "pdfjs-dist": "^6.4.299"
+  }
+}

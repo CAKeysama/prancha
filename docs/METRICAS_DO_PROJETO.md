@@ -91,7 +91,7 @@ A pasta `site/` continua sendo publicada pelo job "Site oficial na Vercel" do `p
 
 ## Testes
 
-`tests/unit/github-metrics.test.ts`, com o GitHub simulado e sem rede:
+`tests/github-metrics.test.ts`, com o GitHub simulado e sem rede:
 
 - releases: rascunhos e pré-lançamentos fora, só instaladores contam, ordem e fatias certas, zeros sem versão;
 - CI: espera separada da execução, jobs pulados ignorados, taxa de aprovação sem as canceladas, médias, um dia por linha, médias vazias sem execuções;
@@ -100,4 +100,4 @@ A pasta `site/` continua sendo publicada pelo job "Site oficial na Vercel" do `p
 - cache: uma consulta por período, consultas simultâneas juntadas, resumo antigo marcado como `stale`, espera após falha, nenhuma chamada até o limite passar, nada mais velho que 24 horas;
 - função: cabeçalhos de cache, `503` sem dados, `405` para escrita.
 
-`tests/unit/app.test.tsx` confere que o botão das Configurações só chama `open_project_overview`.
+`apps/desktop/tests/unit/app.test.tsx` confere que o botão das Configurações só chama `open_project_overview`.

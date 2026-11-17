@@ -1,0 +1,10 @@
+import { IS_ANDROID } from "./platform";
+
+// Identidade do aplicativo centralizada. Para renomear, altere aqui e em
+// `apps/desktop/src-tauri/tauri.conf.json` (productName / title) — ver README, "Renomear o aplicativo".
+export const APP_NAME = "Prancha";
+export const APP_DESCRIPTION = "Leitor e organizador de quadrinhos";
+export const SUPPORTED_FORMATS_TEXT = "CBZ, CBR, CB7, CBT, PDF e pastas com imagens";
+
+/** No celular não há janela para soltar arquivos: só os botões de adicionar. */
+export const ADD_COMICS_HINT = `${SUPPORTED_FORMATS_TEXT}${IS_ANDROID ? "." : ", ou arraste para esta janela."}`;

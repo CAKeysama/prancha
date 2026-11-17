@@ -15,7 +15,7 @@ App (Rust, telemetry.rs)                       Vercel (projeto prancha, pasta si
                                                 /admin  (painel, login pelo Supabase Auth)  ◄──
 ```
 
-- **App.** `src-tauri/src/telemetry.rs` soma contadores em memória e envia lotes pela rede do backend (a CSP da interface continua sem endereços externos). A interface só repassa falhas e tempos por `telemetry_record`, e o backend confere tudo de novo.
+- **App.** `crates/prancha-core/src/telemetry.rs` soma contadores em memória e envia lotes pela rede do backend (a CSP da interface continua sem endereços externos). A interface só repassa falhas e tempos por `telemetry_record`, e o backend confere tudo de novo.
 - **Vercel.** Funções em `site/api/telemetry/`, no mesmo projeto do site oficial. Elas validam cada lote (`site/api/_telemetry.mjs`) antes de chegar ao banco e nunca guardam IP, cabeçalhos ou corpo.
 - **Supabase.** Um schema `telemetry` que a API não expõe, com RLS ligado e sem políticas. Só três funções `security definer` entram nele, cada uma liberada para um papel.
 - **Painel.** `https://prancha-beta.vercel.app/admin`, com login por link mágico do Supabase Auth. Quem decide se a pessoa é administradora é o banco.
@@ -47,7 +47,7 @@ Tudo é agregado no app antes de sair: um lote leva somas por dia, nunca eventos
 | `error` | `day`, `hour`, `category`, `component`, `code`, `httpStatus`, `count` | Falhas de fontes (código do `AppError`), saídas inesperadas (`crash/app/unclean_exit`) e erros não tratados da interface (`interface/window/uncaught_error` e `unhandled_rejection`). |
 | `perf` | `day`, `metric`, `count`, `totalMs`, `maxMs` | `startup` (do início do processo até a primeira tela), `explore_results`, `series_open`, `chapter_open`. As métricas `library_load` e `reader_first_page` já são aceitas pelo servidor, mas o app ainda não as mede. |
 
-Cada lote ainda leva `schema: 1`, `batchId` (UUID para o servidor descartar repetidos), `installId` e `app` (`version` sem sufixo de pré-lançamento, `platform`, `arch`, `channel`: `nsis`, `msi`, `dev` ou `unknown`).
+Cada lote ainda leva `schema: 1`, `batchId` (UUID para o servidor descartar repetidos), `installId` e `app` (`version` sem sufixo de pré-lançamento, `platform`: `windows`, `macos`, `linux` ou `android`, `arch`, `channel`: `nsis`, `msi`, `apk` (o APK do Android), `dev` ou `unknown`).
 
 A versão do sistema operacional não é enviada (`app.os` fica vazio): o Prancha não tem hoje uma forma confiável de lê-la sem uma dependência nova.
 
@@ -145,9 +145,9 @@ Nomes alternativos aceitos: `SUPABASE_PUBLISHABLE_KEY` e `SUPABASE_SECRET_KEY`. 
 
 | O que | Onde | Como rodar |
 |---|---|---|
-| Consentimento, revogação, envio em andamento cancelado, repetição com o mesmo lote, saída inesperada, sanitização, limite de memória, exclusão | `src-tauri/src/telemetry.rs` (`mod tests`) | `cargo test --manifest-path src-tauri/Cargo.toml --lib telemetry` |
-| Tela de Privacidade, convite, revogação, cliente de falhas da interface, backend indisponível | `tests/unit/telemetry.test.tsx` | `npx vitest run tests/unit/telemetry.test.tsx` |
-| Validação, limites, chaves que não vazam, mapeamento de erros, autorização do relatório | `tests/unit/telemetry-api.test.ts` | `npx vitest run tests/unit/telemetry-api.test.ts` |
+| Consentimento, revogação, envio em andamento cancelado, repetição com o mesmo lote, saída inesperada, sanitização, limite de memória, exclusão | `crates/prancha-core/src/telemetry.rs` (`mod tests`) | `cargo test -p prancha-core --lib telemetry` |
+| Tela de Privacidade, convite, revogação, cliente de falhas da interface, backend indisponível | `apps/desktop/tests/unit/telemetry.test.tsx` | `npx vitest run apps/desktop/tests/unit/telemetry.test.tsx` |
+| Validação, limites, chaves que não vazam, mapeamento de erros, autorização do relatório | `tests/telemetry-api.test.ts` | `npx vitest run tests/telemetry-api.test.ts` |
 | Permissões, RLS, validação no banco, frequência, painel só para admin, exclusão, retenção | `supabase/tests/telemetry.test.sql` | `bash supabase/tests/run.sh` |
 
 O CI roda os três primeiros grupos e o teste do banco no job de interface (Ubuntu já traz o Postgres).

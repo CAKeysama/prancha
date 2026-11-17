@@ -1,6 +1,6 @@
 # Integração com o MyAnimeList
 
-Com a conta conectada, o Prancha associa cada obra das fontes de leitura à obra correspondente no [MyAnimeList](https://myanimelist.net) (MAL) e atualiza os capítulos lidos na lista da pessoa quando ela termina um capítulo. Sem conta, nada muda: o MAL não é consultado e o app funciona como antes. O código fica em `src-tauri/src/mal/` e a interface em `src/features/mal/`.
+Com a conta conectada, o Prancha associa cada obra das fontes de leitura à obra correspondente no [MyAnimeList](https://myanimelist.net) (MAL) e atualiza os capítulos lidos na lista da pessoa quando ela termina um capítulo. Sem conta, nada muda: o MAL não é consultado e o app funciona como antes. O código fica em `crates/prancha-core/src/mal/` e a interface em `apps/desktop/src/features/mal/`.
 
 ## Configuração feita uma vez
 
@@ -13,7 +13,7 @@ O MAL só aceita aplicativos cadastrados. O do Prancha já está cadastrado em <
 | Homepage URL | `https://github.com/CAKeysama/prancha` |
 | Commercial / Non-Commercial | Non-Commercial |
 
-O endereço de retorno é fixo no código (`REDIRECT_PORT` e `REDIRECT_PATH` em `src-tauri/src/mal/oauth.rs`, com um teste que confere o valor): mudar um exige mudar o outro. O **Client ID** do cadastro fica na variável do repositório (não segredo, porque ele aparece no endereço de autorização):
+O endereço de retorno é fixo no código (`REDIRECT_PORT` e `REDIRECT_PATH` em `crates/prancha-core/src/mal/oauth.rs`, com um teste que confere o valor): mudar um exige mudar o outro. O **Client ID** do cadastro fica na variável do repositório (não segredo, porque ele aparece no endereço de autorização):
 
 ```bash
 gh variable set MAL_CLIENT_ID --repo CAKeysama/prancha
@@ -23,7 +23,7 @@ O Client ID é público (aparece no endereço de autorização), não é segredo
 
 Como ele chega ao app:
 
-1. No job **Gerar os instaladores** do `release.yml`, `vars.MAL_CLIENT_ID` vira a variável de ambiente `PRANCHA_MAL_CLIENT_ID` do `npm run tauri build`, e o Rust a embute no executável com `option_env!` (`client_id_from_env` em `src-tauri/src/mal/mod.rs`). Ela não existe em arquivo nenhum do repositório.
+1. No job **Gerar os instaladores** do `release.yml`, `vars.MAL_CLIENT_ID` vira a variável de ambiente `PRANCHA_MAL_CLIENT_ID` do `npm run tauri build`, e o Rust a embute no executável com `option_env!` (`client_id_from_env` em `crates/prancha-core/src/mal/mod.rs`). Ela não existe em arquivo nenhum do repositório.
 2. Antes de compilar, o mesmo job confere que a variável existe e tem formato de Client ID; depois, que o valor está dentro do `prancha.exe`. Por ser uma variável, e não um segredo, o GitHub mostra o valor no registro dessas etapas: ele é público de qualquer forma. Sem ela, nenhuma versão sai.
 3. O job **Client ID do MyAnimeList** do `ci.yml` pesquisa na API real (`GET /v2/manga?q=berserk&limit=1` com `X-MAL-CLIENT-ID`) a cada PR e push na main: uma recusa (401/403) mostra que a variável não corresponde ao cadastro. Ele fica fora da proteção da main, porque depende de um serviço de fora.
 
@@ -34,7 +34,7 @@ Sem o Client ID (num build local, por exemplo), a categoria **Integrações** di
 - **OAuth 2.0 com código e PKCE** ([guia oficial](https://myanimelist.net/apiconfig/references/authorization)). O MAL só aceita o método `plain`, então o desafio é o próprio verificador: 96 caracteres aleatórios, novos a cada conexão, junto com um `state` aleatório que a resposta precisa trazer de volta.
 - O Prancha abre `https://myanimelist.net/v1/oauth2/authorize` no navegador da pessoa e espera a volta num endereço local `http://localhost:3641/callback` (só em `127.0.0.1` e `::1`, nunca na rede), que só existe durante a conexão (até 5 minutos, ou até **Cancelar**). Respostas com outro `state` (proteção contra CSRF), em outro caminho, sem código ou com outro método são recusadas e não encerram a espera; um `error` com o `state` certo encerra como recusa. A página de volta não repete o código e pede ao navegador para não guardá-la nem enviar o endereço adiante. A senha nunca passa pelo Prancha.
 - O código é trocado em `https://myanimelist.net/v1/oauth2/token` (`grant_type=authorization_code`, com o verificador e sem segredo do cliente). O nome da conta vem de `GET /v2/users/@me`.
-- **Armazenamento:** os tokens de acesso e de renovação ficam só cifrados, na tabela `mal_account`, pela DPAPI do Windows (`CryptProtectData`, presa à conta do Windows, com entropia própria do Prancha). Outro usuário do computador ou uma cópia do banco em outra máquina não abre. A tabela não passa pelas configurações e nenhum comando devolve tokens à interface. Fora do Windows, sem um cofre do sistema, a conexão não é guardada.
+- **Armazenamento:** os tokens de acesso e de renovação ficam só cifrados, na tabela `mal_account`, pela DPAPI do Windows (`CryptProtectData`, presa à conta do Windows, com entropia própria do Prancha). Outro usuário do computador ou uma cópia do banco em outra máquina não abre. A tabela não passa pelas configurações e nenhum comando devolve tokens à interface. No Android, ficam cifrados com AES-GCM por uma chave do Android Keystore, que não sai do aparelho. Nos outros sistemas, sem um cofre, a conexão não é guardada.
 - **Logs e erros:** o cabeçalho `Authorization` e os corpos com código ou token só existem no envio; o `Debug` das requisições os esconde, e as mensagens de erro dizem o que aconteceu sem repetir a requisição.
 - **Renovação:** cinco minutos antes de vencer (o MAL informa em `expires_in`) ou depois de um 401, o token é renovado (`grant_type=refresh_token`) uma vez, e o novo token de renovação substitui o anterior. Se o MAL recusar a renovação, a conta fica como **Sessão expirada**: a fila espera, sem gastar tentativas, até a pessoa conectar de novo.
 - **Desconectar** apaga os tokens e as atualizações que ainda não foram enviadas (eram para aquela conta). As associações ficam. O MAL não tem um endereço para revogar tokens; para tirar o acesso do lado dele, use as configurações da conta no site.

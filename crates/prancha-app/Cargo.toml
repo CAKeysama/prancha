@@ -1,0 +1,43 @@
+[package]
+name = "prancha-app"
+description = "Comandos do Prancha para a interface, o protocolo prancha:// e o atualizador"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+prancha-core = { path = "../prancha-core" }
+tauri = { version = "2.12.4", features = [] }
+tauri-plugin-dialog = "2.8.3"
+tauri-plugin-opener = "2.7.2"
+tauri-plugin-notification = "2.8.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+log = "0.4.34"
+rusqlite = { version = "0.40.2", features = ["bundled", "collation"] }
+semver = "1.0.28"
+sha2 = "0.10.9"
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no-provider"] }
+rustls = { version = "0.23.46", default-features = false, features = ["ring"] }
+url = "2.5.8"
+
+# A Lixeira e o atualizador do Tauri não existem no Android.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+trash = "5.2.9"
+tauri-plugin-updater = "2.14.1"
+
+# O verificador de certificados do Android chama a JVM e precisa do contexto do app.
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.22.4"
+ndk-context = "0.1.1"
+rustls-platform-verifier = "0.7.1"
+# O atualizador do Tauri não existe no Android: o APK é conferido aqui, com a mesma chave pública e a mesma assinatura minisign.
+minisign-verify = "0.3.0"
+base64 = "0.23.1"
+
+[dev-dependencies]
+tempfile = "3.27.0"
+minisign-verify = "0.3.0"
+base64 = "0.23.1"

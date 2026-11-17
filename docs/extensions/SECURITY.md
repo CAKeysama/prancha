@@ -32,7 +32,7 @@ Assinaturas inválidas não têm opção de "ignorar".
 
 ## Rede
 
-Toda requisição passa pelo módulo `src-tauri/src/extensions/net.rs`, inclusive as de repositórios, capas e páginas. As duas exceções são o download do componente, de um endereço fixo no código, e as chamadas ao Suwayomi em `127.0.0.1`, que o próprio Prancha iniciou.
+Toda requisição passa pelo módulo `crates/prancha-core/src/extensions/net.rs`, inclusive as de repositórios, capas e páginas. As duas exceções são o download do componente, de um endereço fixo no código, e as chamadas ao Suwayomi em `127.0.0.1`, que o próprio Prancha iniciou.
 
 - Só HTTPS na porta 443, sem proxy e sem credenciais no endereço.
 - Extensões só alcançam os hosts de `allowedHosts`, e o mesmo vale para as URLs de capas e páginas que elas devolvem.
@@ -94,6 +94,6 @@ Esse comando confere a assinatura do índice e o SHA-256 e a assinatura de cada 
 
 ## Testes
 
-A suíte `src-tauri/tests/extensions.rs` usa uma extensão de teste real (`extensions/test-fixture`) e servidores locais para cobrir: laço infinito, memória, pilha, pânico, importação de arquivo, ambiente, rede sem capacidade, host não autorizado, redirecionamento para endereço bloqueado, índice e pacote adulterados, chave trocada, índice antigo e pacotes trocados.
+A suíte `crates/prancha-core/tests/extensions.rs` usa uma extensão de teste real (`extensions/test-fixture`) e servidores locais para cobrir: laço infinito, memória, pilha, pânico, importação de arquivo, ambiente, rede sem capacidade, host não autorizado, redirecionamento para endereço bloqueado, índice e pacote adulterados, chave trocada, índice antigo e pacotes trocados.
 
 Para informar um problema de segurança, abra uma issue em <https://github.com/CAKeysama/prancha/issues>.
