@@ -109,7 +109,7 @@ CREATE TABLE sync_catalog_meta (
 ) WITHOUT ROWID;
 
 -- O último estado que a nuvem informou. Fica guardado mesmo quando ainda não há onde aplicar (o capítulo ainda não
--- apareceu na lista, a obra do Mihon ainda não foi encontrada neste aparelho), e é aplicado assim que der.
+-- apareceu na lista deste aparelho), e é aplicado assim que der.
 CREATE TABLE sync_remote_series (
     series_key  TEXT    PRIMARY KEY,
     data        TEXT    NOT NULL,                     -- JSON como a nuvem devolve

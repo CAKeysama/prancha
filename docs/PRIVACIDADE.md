@@ -1,6 +1,6 @@
 # Aviso de privacidade do Prancha
 
-O Prancha funciona no seu computador e não tem conta. Suas HQs, o progresso, os favoritos, as coleções e as obras que você acompanha ficam só na pasta de dados do aplicativo.
+O Prancha funciona no seu computador sem conta. Suas HQs, o progresso, os favoritos, as coleções e as obras que você acompanha ficam só na pasta de dados do aplicativo, a menos que você entre na conta do Prancha para sincronizar a leitura online entre aparelhos.
 
 ## Quando o Prancha usa a internet
 
@@ -8,6 +8,7 @@ O Prancha funciona no seu computador e não tem conta. Suas HQs, o progresso, os
 - **Fontes de leitura (plugin opcional):** quando você usa repositórios e extensões, o Prancha fala com os sites dessas fontes para buscar obras, capas e páginas.
 - **Telemetria (opcional, desligada até você aceitar):** estatísticas de uso enviadas ao servidor do projeto. Detalhes abaixo.
 - **MyAnimeList (opcional, só com a conta conectada):** o Prancha procura no catálogo do MAL o título, o autor e o número de capítulos das obras das fontes que você abre, e atualiza os capítulos lidos na sua lista quando você termina um capítulo. Você entra pelo site do MAL, e o Prancha não vê sua senha; o acesso fica cifrado pelo Windows neste computador (no Android, por uma chave do próprio celular, no Android Keystore). Desconectar apaga esse acesso. Detalhes em [MYANIMELIST.md](MYANIMELIST.md).
+- **Conta do Prancha (opcional, só se você entrar):** com o Google ou o Discord, para continuar a leitura online em outro aparelho. Ficam na nuvem do projeto (Supabase), ligados à sua conta, o seu e-mail e nome como o provedor informa, os aparelhos (nome, sistema e versão do app), e o que a sincronização precisa: repositórios e extensões instalados, as obras das fontes que estão na biblioteca (título, endereço da capa, favorita, acompanhando, ordem e modo de leitura), o estado e a posição de cada capítulo, as pastas e as associações feitas à mão com o MyAnimeList. HQs do seu computador ou celular, capítulos baixados, imagens, logins de sites e os tokens do MyAnimeList nunca sobem. A conta não é ligada à telemetria. Em Configurações › Conta, você baixa tudo o que a conta guarda e apaga a conta com os dados. Detalhes em [SINCRONIZACAO.md](SINCRONIZACAO.md).
 
 ## Telemetria
 
