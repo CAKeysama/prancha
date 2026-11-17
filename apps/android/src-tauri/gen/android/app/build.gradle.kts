@@ -105,6 +105,7 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp-zstd:5.5.1")
     implementation("org.jsoup:jsoup:1.24.1")
     implementation("io.reactivex:rxjava:1.3.8")
+    implementation("uy.kohesive.injekt:injekt-api:1.16.1")
     implementation("uy.kohesive.injekt:injekt-core:1.16.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.13.0")
