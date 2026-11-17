@@ -1,11 +1,12 @@
 // Índice da pesquisa das configurações: cada opção com as palavras que alguém usaria para procurá-la,
 // não só o título que aparece na tela. Os `id`s são as âncoras `setting-<id>` da tela.
 
-export type SettingsCategory = "aparencia" | "leitura" | "biblioteca" | "notificacoes" | "sons" | "armazenamento" | "atualizacoes" | "integracoes" | "privacidade" | "geral";
+export type SettingsCategory = "conta" | "aparencia" | "leitura" | "biblioteca" | "notificacoes" | "sons" | "armazenamento" | "atualizacoes" | "integracoes" | "privacidade" | "geral";
 /** `plugins` aponta para a tela Plugins, onde moram as opções de leitura online. */
 export type SettingPlace = SettingsCategory | "plugins";
 
 export const SETTINGS_CATEGORIES: ReadonlyArray<{ id: SettingsCategory; label: string }> = [
+  { id: "conta", label: "Conta" },
   { id: "aparencia", label: "Aparência" },
   { id: "leitura", label: "Leitura" },
   { id: "biblioteca", label: "Biblioteca" },
@@ -32,6 +33,11 @@ export interface SettingEntry {
 }
 
 export const SETTINGS_INDEX: readonly SettingEntry[] = [
+  { id: "conta", place: "conta", title: "Conta do Prancha", description: "Entre com Google ou Discord para continuar a leitura online em outro aparelho.", keywords: ["conta", "login", "entrar", "sair", "google", "discord", "sincronizar", "sincronização", "nuvem", "celular", "android", "pc", "backup"] },
+  { id: "conta-sincronizacao", place: "conta", title: "Sincronização entre aparelhos", description: "Quando sincronizou pela última vez e o que está esperando.", keywords: ["sincronizar agora", "nuvem", "pendente", "erro", "celular", "pc"] },
+  { id: "conta-aparelhos", place: "conta", title: "Aparelhos da conta", description: "Os computadores e celulares que sincronizam com a conta.", keywords: ["aparelhos", "dispositivos", "celular", "computador", "remover"] },
+  { id: "conta-dados", place: "conta", title: "Seus dados na nuvem", description: "Baixar tudo o que a conta guarda ou apagar a conta.", keywords: ["exportar", "baixar", "apagar conta", "excluir conta", "lgpd", "privacidade", "dados"] },
+
   { id: "tema", place: "aparencia", title: "Tema", description: "Escuro, claro ou seguindo o sistema.", keywords: ["modo escuro", "modo claro", "noturno", "dark", "light", "cores", "visual"] },
   { id: "fonte", place: "aparencia", title: "Fonte da interface", description: "Hanken Grotesk, Atkinson Hyperlegible, IBM Plex Sans ou a do sistema.", keywords: ["fonte", "tipografia", "letra", "texto", "legibilidade", "leitura difícil", "dislexia", "baixa visão"] },
   { id: "densidade", place: "aparencia", title: "Densidade da biblioteca", description: "Confortável ou compacta.", keywords: ["espaçamento", "compacta", "confortável"] },

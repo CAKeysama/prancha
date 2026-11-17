@@ -36,6 +36,7 @@ import licenses from "../../generated/licenses.json";
 import { useTelemetry } from "../telemetry/telemetry-context";
 import { TelemetryDetails } from "../telemetry/TelemetryDetails";
 import { MalSettings } from "../mal/MalSettings";
+import { AccountSettings } from "../account/AccountSettings";
 import { FontChoice, SoundControls } from "./PreferenceControls";
 
 /** A opção escolhida na pesquisa, destacada por um instante. */
@@ -890,6 +891,12 @@ export function SettingsScreen({ section }: { section?: string } = {}) {
             <SearchResults query={query} results={results} onChoose={choose} onClear={() => setQuery("")} />
           ) : (
             <Highlight.Provider value={target}>
+              {category === "conta" && (
+                <Section id="conta" title="Conta" description="Opcional. Sem conta, o Prancha funciona igual e nada sai deste aparelho.">
+                  <AccountSettings anchor={(id, children) => <Anchor id={id}>{children}</Anchor>} />
+                </Section>
+              )}
+
               {category === "aparencia" && (
                 <Section id="aparencia" title="Aparência">
                   <SegmentedRow

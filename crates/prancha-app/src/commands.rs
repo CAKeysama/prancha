@@ -1801,6 +1801,117 @@ pub async fn mal_status(state: S<'_>) -> AppResult<crate::mal::Status> {
     blocking(&state, |c| c.mal.status(&c.db())).await
 }
 
+// ---------------------------------------------------------------------------
+// Conta do Prancha e sincronização
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn account_status(state: S<'_>) -> AppResult<crate::account::Status> {
+    blocking(&state, |c| c.account.status(&c.db())).await
+}
+
+/// Abre o login (Google ou Discord) no navegador e espera a volta. Depois, a primeira sincronização começa sozinha.
+#[tauri::command]
+pub async fn account_sign_in(app: AppHandle, state: S<'_>, provider: String) -> AppResult<crate::account::Status> {
+    let opener = app.clone();
+    let status = blocking(&state, move |c| {
+        let status = c.account.sign_in(&provider, &|url| {
+            opener.opener().open_url(url, None::<&str>).map_err(|_| AppError::user("open_failed", "Não foi possível abrir o navegador para entrar na conta."))
+        })?;
+        c.sync.request();
+        Ok(status)
+    })
+    .await?;
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+        #[cfg(desktop)]
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+    Ok(status)
+}
+
+#[tauri::command]
+pub async fn account_cancel(state: S<'_>) -> AppResult<()> {
+    state.account.cancel_sign_in();
+    Ok(())
+}
+
+/// O retorno do login que o sistema entregou ao app (`app.prancha://auth?code=...`, no Android).
+#[tauri::command]
+pub async fn account_deliver_redirect(state: S<'_>, url: String) -> AppResult<bool> {
+    Ok(state.account.deliver_redirect(&url))
+}
+
+#[tauri::command]
+pub async fn account_sign_out(state: S<'_>) -> AppResult<()> {
+    blocking(&state, |c| c.account.sign_out(&c.db())).await
+}
+
+#[tauri::command]
+pub async fn account_devices(state: S<'_>) -> AppResult<Value> {
+    blocking(&state, |c| c.account.devices()).await
+}
+
+#[tauri::command]
+pub async fn account_remove_device(state: S<'_>, id: String) -> AppResult<bool> {
+    blocking(&state, move |c| c.account.remove_device(&id)).await
+}
+
+/// Tudo o que a conta tem na nuvem, num arquivo JSON que a pessoa escolhe onde salvar. Devolve o caminho, ou nada se
+/// a pessoa cancelou.
+#[cfg(desktop)]
+#[tauri::command]
+pub async fn account_export(app: AppHandle, state: S<'_>) -> AppResult<Option<String>> {
+    let data = blocking(&state, |c| c.account.export()).await?;
+    let date = chrono_like_date(prancha_core::db::now_ms());
+    let picked = app.dialog().file().set_file_name(format!("prancha-conta-{date}.json")).add_filter("JSON", &["json"]).blocking_save_file();
+    let Some(path) = picked.and_then(|p| p.into_path().ok()) else { return Ok(None) };
+    let text = serde_json::to_string_pretty(&data).map_err(|_| AppError::user("internal", "Falha interna."))?;
+    std::fs::write(&path, text).map_err(|e| AppError::user("export_failed", format!("Não foi possível salvar o arquivo: {e}")))?;
+    Ok(Some(path.display().to_string()))
+}
+
+/// No Android ainda não há onde salvar o arquivo: a exportação fica no PC.
+#[cfg(mobile)]
+#[tauri::command]
+pub async fn account_export() -> AppResult<Option<String>> {
+    Err(AppError::user("unsupported", "Exporte os dados pelo Prancha no computador."))
+}
+
+/// AAAA-MM-DD em UTC, sem depender de uma biblioteca de datas.
+#[cfg(desktop)]
+fn chrono_like_date(ms: i64) -> String {
+    let days = ms.div_euclid(86_400_000);
+    // Algoritmo de Howard Hinnant (dias desde 1970-01-01 para a data civil).
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    format!("{year:04}-{month:02}-{day:02}")
+}
+
+/// Apaga na nuvem os dados e a própria conta. O que está neste aparelho fica.
+#[tauri::command]
+pub async fn account_delete(state: S<'_>) -> AppResult<()> {
+    blocking(&state, |c| c.account.delete_everything(&c.db())).await
+}
+
+#[tauri::command]
+pub async fn sync_status(state: S<'_>) -> AppResult<crate::sync::SyncStatus> {
+    blocking(&state, |c| crate::sync::status(c, &c.db())).await
+}
+
+#[tauri::command]
+pub async fn sync_now(state: S<'_>) -> AppResult<()> {
+    state.sync.request();
+    Ok(())
+}
+
 /// Abre a autorização no navegador e espera a pessoa voltar (até alguns minutos, ou `mal_connect_cancel`).
 #[tauri::command]
 pub async fn mal_connect(app: AppHandle, state: S<'_>) -> AppResult<crate::mal::Status> {

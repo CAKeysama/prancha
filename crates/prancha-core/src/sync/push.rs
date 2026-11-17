@@ -37,7 +37,7 @@ impl Outgoing {
 }
 
 /// Os envios em lotes abaixo dos limites da nuvem, na mesma ordem.
-fn batches(changes: Vec<Value>) -> Vec<Vec<Value>> {
+pub(super) fn batches(changes: Vec<Value>) -> Vec<Vec<Value>> {
     let mut out: Vec<Vec<Value>> = Vec::new();
     let mut size = 0;
     for change in changes {

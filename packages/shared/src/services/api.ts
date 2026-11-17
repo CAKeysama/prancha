@@ -35,6 +35,7 @@ import type {
 import type { ReaderMode } from "../domain/settings";
 import type { UpdateProgress, UpdatesHistory, UpdatesSnapshot } from "../domain/updates";
 import type { TelemetryStatus } from "../domain/telemetry";
+import type { AccountDevice, AccountProvider, AccountStatus, SyncStatus } from "../domain/account";
 import type { MalCandidate, MalSeriesStatus, MalStatus } from "../domain/mal";
 import type { NotificationAction, NotificationCategory, NotificationPage, NotificationQuery, NotificationTarget } from "../domain/notifications";
 
@@ -232,6 +233,19 @@ export const api = {
   telemetryForget: () => call<TelemetryStatus>("telemetry_forget"),
   telemetryRecord: (events: unknown[]) => call<number>("telemetry_record", { events }),
   telemetryReady: () => call<void>("telemetry_ready"),
+
+  accountStatus: () => call<AccountStatus>("account_status"),
+  accountSignIn: (provider: AccountProvider) => call<AccountStatus>("account_sign_in", { provider }),
+  accountCancel: () => call<void>("account_cancel"),
+  accountDeliverRedirect: (url: string) => call<boolean>("account_deliver_redirect", { url }),
+  accountSignOut: () => call<void>("account_sign_out"),
+  accountDevices: () => call<AccountDevice[]>("account_devices"),
+  accountRemoveDevice: (id: string) => call<boolean>("account_remove_device", { id }),
+  /** O caminho do arquivo salvo, ou `null` se a pessoa cancelou. */
+  accountExport: () => call<string | null>("account_export"),
+  accountDelete: () => call<void>("account_delete"),
+  syncStatus: () => call<SyncStatus>("sync_status"),
+  syncNow: () => call<void>("sync_now"),
 
   malStatus: () => call<MalStatus>("mal_status"),
   malConnect: () => call<MalStatus>("mal_connect"),

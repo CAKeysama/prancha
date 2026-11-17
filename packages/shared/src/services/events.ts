@@ -11,6 +11,8 @@ const EVENTS = {
   notifications: "notifications:changed",
   notificationActivate: "notifications:activate",
   mal: "mal:changed",
+  account: "account:changed",
+  sync: "sync:changed",
   comicOpened: "comic:opened",
 } as const;
 
@@ -47,6 +49,9 @@ export const onNotificationsChanged = (h: (e: { unread: number; created?: number
   subscribe<{ unread: number; created?: number }>(EVENTS.notifications, h);
 /** Clique numa notificação do sistema operacional. */
 export const onNotificationActivated = (h: (e: { id: number }) => void) => subscribe<{ id: number }>(EVENTS.notificationActivate, h);
+
+export const onAccountChanged = (h: () => void) => subscribe<unknown>(EVENTS.account, () => h());
+export const onSyncChanged = (h: () => void) => subscribe<unknown>(EVENTS.sync, () => h());
 
 export const onMalChanged = (h: () => void) => subscribe<unknown>(EVENTS.mal, () => h());
 

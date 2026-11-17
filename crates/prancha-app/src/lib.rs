@@ -8,7 +8,7 @@ pub mod protocol;
 pub mod updates;
 
 // Os módulos do núcleo ficam acessíveis como `crate::db`, `crate::core`… como eram antes da separação.
-use prancha_core::{core, covers, db, error, extensions, formats, guided, import, library, location, mal, notifications, pages, telemetry};
+use prancha_core::{account, core, covers, db, error, extensions, formats, guided, import, library, location, mal, notifications, pages, sync, telemetry};
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -156,6 +156,7 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
                     connect_native_notifications(app.handle(), &core);
                     start_telemetry(app, &core);
                     core.mal.spawn();
+                    sync::Sync::spawn(core.clone());
                     app.manage(core.clone());
                     #[cfg(target_os = "android")]
                     android::watch_opened(app.handle(), core.clone());
@@ -317,6 +318,17 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
             commands::telemetry_forget,
             commands::telemetry_record,
             commands::telemetry_ready,
+            commands::account_status,
+            commands::account_sign_in,
+            commands::account_cancel,
+            commands::account_deliver_redirect,
+            commands::account_sign_out,
+            commands::account_devices,
+            commands::account_remove_device,
+            commands::account_export,
+            commands::account_delete,
+            commands::sync_status,
+            commands::sync_now,
             commands::mal_status,
             commands::mal_connect,
             commands::mal_connect_cancel,
